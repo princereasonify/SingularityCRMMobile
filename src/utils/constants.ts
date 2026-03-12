@@ -1,7 +1,7 @@
 import { UserRole, LeadStage } from '../types';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-export const API_BASE_URL = 'http://localhost:5097/api';
+export const API_BASE_URL = 'https://singularity-learn.com/sales-crm/api';
 
 // ─── Role Colors ──────────────────────────────────────────────────────────────
 export const ROLE_COLORS: Record<UserRole, { primary: string; light: string; dark: string }> = {

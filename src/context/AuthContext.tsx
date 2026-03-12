@@ -53,11 +53,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [logout]);
 
   const login = async (email: string, password: string) => {
-    const { data } = await authApi.login(email, password);
-    await AsyncStorage.setItem('auth_token', data.token);
-    await AsyncStorage.setItem('auth_user', JSON.stringify(data.user));
-    setToken(data.token);
-    setUser(data.user);
+    const { data: res } = await authApi.login(email, password);
+    const { token, user } = res.data;
+    await AsyncStorage.setItem('auth_token', token);
+    await AsyncStorage.setItem('auth_user', JSON.stringify(user));
+    setToken(token);
+    setUser(user);
   };
 
   return (

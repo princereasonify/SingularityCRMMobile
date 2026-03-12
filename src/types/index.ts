@@ -333,8 +333,12 @@ export interface PaginatedResult<T> {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface LoginResponse {
-  token: string;
-  user: UserDto;
+  success: boolean;
+  message: string | null;
+  data: {
+    token: string;
+    user: UserDto;
+  };
 }
 
 // ─── API Requests ──────────────────────────────────────────────────────────────
