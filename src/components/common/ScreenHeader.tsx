@@ -2,13 +2,13 @@ import React from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   StatusBar,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
+import { CS, Colors } from '../../theme';
 import { rf } from '../../utils/responsive';
 
 interface ScreenHeaderProps {
@@ -22,7 +22,7 @@ interface ScreenHeaderProps {
 export const ScreenHeader = ({
   title,
   subtitle,
-  color = '#0d9488',
+  color = Colors.roles.FO.primary,
   onBack,
   rightAction,
 }: ScreenHeaderProps) => {
@@ -30,50 +30,25 @@ export const ScreenHeader = ({
   const pt = insets.top + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0);
 
   return (
-    <View style={[styles.header, { paddingTop: pt + 12, backgroundColor: color }]}>
-      <View style={styles.row}>
+    <View style={[CS.headerContainer, { paddingTop: pt + 12, backgroundColor: color }]}>
+      <View style={CS.headerRow}>
         {onBack && (
-          <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-            <ArrowLeft size={22} color="#FFF" />
+          <TouchableOpacity style={CS.headerBackBtn} onPress={onBack}>
+            <ArrowLeft size={22} color={Colors.textInverse} />
           </TouchableOpacity>
         )}
-        <View style={styles.titleWrap}>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
-          {subtitle && <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>}
+        <View style={CS.headerTitleWrap}>
+          <Text style={{ fontSize: rf(20), fontWeight: '700', color: Colors.textInverse }} numberOfLines={1}>
+            {title}
+          </Text>
+          {subtitle && (
+            <Text style={{ fontSize: rf(13), color: 'rgba(255,255,255,0.75)', marginTop: 2 }} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          )}
         </View>
-        {rightAction && <View style={styles.rightAction}>{rightAction}</View>}
+        {rightAction && <View style={CS.headerRightAction}>{rightAction}</View>}
       </View>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backBtn: {
-    marginRight: 8,
-    padding: 4,
-  },
-  titleWrap: {
-    flex: 1,
-  },
-  title: {
-    fontSize: rf(20),
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  subtitle: {
-    fontSize: rf(13),
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 2,
-  },
-  rightAction: {
-    marginLeft: 8,
-  },
-});

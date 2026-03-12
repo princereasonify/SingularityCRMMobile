@@ -2,11 +2,11 @@ import React from 'react';
 import {
   TouchableOpacity,
   Text,
-  StyleSheet,
   ActivityIndicator,
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { CS, Colors } from '../../theme';
 import { rf } from '../../utils/responsive';
 
 interface ButtonProps {
@@ -25,7 +25,7 @@ export const Button = ({
   title,
   onPress,
   variant = 'primary',
-  color = '#0d9488',
+  color = Colors.roles.FO.primary,
   loading = false,
   disabled = false,
   style,
@@ -34,20 +34,16 @@ export const Button = ({
 }: ButtonProps) => {
   const getStyle = () => {
     switch (variant) {
-      case 'secondary':
-        return { bg: 'transparent', border: color, text: color };
-      case 'danger':
-        return { bg: '#EF4444', border: '#EF4444', text: '#FFF' };
-      case 'ghost':
-        return { bg: 'transparent', border: 'transparent', text: color };
-      default:
-        return { bg: color, border: color, text: '#FFF' };
+      case 'secondary': return { bg: 'transparent',    border: color,           text: color };
+      case 'danger':    return { bg: Colors.danger,    border: Colors.danger,   text: Colors.textInverse };
+      case 'ghost':     return { bg: 'transparent',    border: 'transparent',   text: color };
+      default:          return { bg: color,            border: color,           text: Colors.textInverse };
     }
   };
 
   const s = getStyle();
   const sizeMap = {
-    sm: { py: 8, px: 14, fontSize: rf(13) },
+    sm: { py: 8,  px: 14, fontSize: rf(13) },
     md: { py: 12, px: 20, fontSize: rf(14) },
     lg: { py: 15, px: 24, fontSize: rf(15) },
   };
@@ -56,7 +52,7 @@ export const Button = ({
   return (
     <TouchableOpacity
       style={[
-        styles.btn,
+        CS.buttonBase,
         {
           backgroundColor: s.bg,
           borderColor: s.border,
@@ -73,23 +69,10 @@ export const Button = ({
       {loading ? (
         <ActivityIndicator color={s.text} size="small" />
       ) : (
-        <Text style={[styles.text, { color: s.text, fontSize: sz.fontSize }, textStyle]}>
+        <Text style={[{ color: s.text, fontSize: sz.fontSize, fontWeight: '600' }, textStyle]}>
           {title}
         </Text>
       )}
     </TouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  btn: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  text: {
-    fontWeight: '600',
-  },
-});

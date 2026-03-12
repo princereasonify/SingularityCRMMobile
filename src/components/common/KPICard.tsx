@@ -1,14 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, ViewStyle } from 'react-native';
 import { Card } from './Card';
 import { ProgressBar } from './ProgressBar';
-import { rf, wp } from '../../utils/responsive';
+import { CS, Colors } from '../../theme';
+import { rf } from '../../utils/responsive';
 
 interface KPICardProps {
   title: string;
   value: string;
   subtitle?: string;
-  progress?: number; // 0–100
+  progress?: number;
   progressColor?: string;
   icon?: React.ReactNode;
   iconBg?: string;
@@ -23,62 +24,31 @@ export const KPICard = ({
   progress,
   progressColor,
   icon,
-  iconBg = '#F3F4F6',
+  iconBg = Colors.surfaceAlt,
   style,
-  valueColor = '#111827',
+  valueColor = Colors.textPrimary,
 }: KPICardProps) => (
   <Card style={style}>
-    <View style={styles.header}>
-      <Text style={styles.title} numberOfLines={1}>{title}</Text>
+    <View style={CS.kpiHeader}>
+      <Text style={[CS.kpiTitle, { fontSize: rf(12) }]} numberOfLines={1}>{title}</Text>
       {icon && (
-        <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>{icon}</View>
+        <View style={[CS.kpiIconWrap, { backgroundColor: iconBg }]}>{icon}</View>
       )}
     </View>
-    <Text style={[styles.value, { color: valueColor }]} numberOfLines={1}>{value}</Text>
-    {subtitle && <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>}
+    <Text style={[CS.kpiValue, { color: valueColor, fontSize: rf(22) }]} numberOfLines={1}>
+      {value}
+    </Text>
+    {subtitle && (
+      <Text style={[CS.kpiSubtitle, { fontSize: rf(12) }]} numberOfLines={1}>{subtitle}</Text>
+    )}
     {progress !== undefined && (
       <ProgressBar
         value={progress}
         height={5}
         showLabel
         color={progressColor}
-        style={styles.progressBar}
+        style={CS.kpiProgressBar}
       />
     )}
   </Card>
 );
-
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: rf(12),
-    color: '#6B7280',
-    fontWeight: '500',
-    flex: 1,
-  },
-  iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  value: {
-    fontSize: rf(22),
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontSize: rf(12),
-    color: '#9CA3AF',
-    marginBottom: 8,
-  },
-  progressBar: {
-    marginTop: 8,
-  },
-});
