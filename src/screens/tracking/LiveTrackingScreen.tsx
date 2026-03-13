@@ -275,6 +275,19 @@ export const LiveTrackingScreen = () => {
                       <Text style={styles.userStatLabel}>Allowance</Text>
                     </View>
                   </View>
+
+                  {/* Battery & Fraud indicators */}
+                  <View style={styles.indicatorRow}>
+                    {u.batteryLevel != null && (
+                      <Badge
+                        label={`🔋 ${Math.round(u.batteryLevel * 100)}%`}
+                        color={u.batteryLevel < 0.2 ? '#DC2626' : '#6B7280'}
+                      />
+                    )}
+                    {u.isSuspicious && (
+                      <Badge label={`⚠ Fraud: ${u.fraudScore}`} color="#DC2626" />
+                    )}
+                  </View>
                 </Card>
               ))
             )}
@@ -354,6 +367,12 @@ export const LiveTrackingScreen = () => {
                         </Text>
                       </View>
                     </View>
+
+                    {a.isSuspicious && (
+                      <View style={styles.fraudWarning}>
+                        <Text style={styles.fraudWarningText}>⚠ Fraud score: {a.fraudScore}/100</Text>
+                      </View>
+                    )}
 
                     {a.approvedByName && (
                       <Text style={styles.approvedBy}>
@@ -529,6 +548,14 @@ const styles = StyleSheet.create({
   allowanceDetailItem: { flex: 1, alignItems: 'center' },
   allowanceDetailLabel: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500' },
   allowanceDetailValue: { fontSize: rf(13), fontWeight: '600', color: '#111827', marginTop: 2 },
+  fraudWarning: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 10,
+  },
+  fraudWarningText: { fontSize: rf(12), fontWeight: '600', color: '#DC2626' },
+  indicatorRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
   approvedBy: { fontSize: rf(12), color: '#6B7280', marginTop: 10 },
   remarks: { fontSize: rf(12), color: '#9CA3AF', fontStyle: 'italic', marginTop: 4 },
   approvalActions: { flexDirection: 'row', gap: 10, marginTop: 12 },

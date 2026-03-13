@@ -412,6 +412,12 @@ export interface TrackingSessionDto {
   totalDistanceKm: number;
   allowanceAmount: number;
   pingCount?: number;
+  rawDistanceKm?: number;
+  filteredDistanceKm?: number;
+  reconstructedDistanceKm?: number;
+  fraudScore?: number;
+  isSuspicious?: boolean;
+  fraudFlags?: string[];
 }
 
 export interface ButtonStateDto {
@@ -440,6 +446,9 @@ export interface LiveLocationDto {
   totalDistanceKm: number;
   allowanceAmount: number;
   status: string;
+  fraudScore?: number;
+  isSuspicious?: boolean;
+  batteryLevel?: number;
 }
 
 export interface RoutePointDto {
@@ -447,6 +456,8 @@ export interface RoutePointDto {
   lon: number;
   recordedAt: string;
   speedKmh?: number;
+  isFiltered?: boolean;
+  clusterGroup?: number;
 }
 
 export interface AllowanceDto {
@@ -462,6 +473,27 @@ export interface AllowanceDto {
   approvedByName?: string;
   approvedAt?: string;
   remarks?: string;
+  rawDistanceKm?: number;
+  filteredDistanceKm?: number;
+  fraudScore?: number;
+  isSuspicious?: boolean;
+}
+
+export interface FraudReportDto {
+  sessionId: number;
+  userId: number;
+  userName: string;
+  sessionDate: string;
+  fraudScore: number;
+  isSuspicious: boolean;
+  fraudFlags: string[];
+  rawDistanceKm: number;
+  filteredDistanceKm: number;
+  reconstructedDistanceKm: number;
+  totalPings: number;
+  invalidPings: number;
+  filteredPings: number;
+  mockedPings: number;
 }
 
 export interface CreateTargetRequest {
