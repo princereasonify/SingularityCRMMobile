@@ -399,6 +399,71 @@ export interface CreateDealRequest {
   paymentStatus?: string;
 }
 
+// ─── Tracking ────────────────────────────────────────────────────────────────
+
+export type TrackingSessionStatus = 'not_started' | 'active' | 'ended';
+
+export interface TrackingSessionDto {
+  sessionId: number;
+  status: TrackingSessionStatus;
+  startedAt?: string;
+  endedAt?: string;
+  sessionDate: string;
+  totalDistanceKm: number;
+  allowanceAmount: number;
+  pingCount?: number;
+}
+
+export interface ButtonStateDto {
+  startDayEnabled: boolean;
+  endDayEnabled: boolean;
+}
+
+export interface SessionResponseDto {
+  success: boolean;
+  session: TrackingSessionDto;
+  buttonState: ButtonStateDto;
+}
+
+export interface LiveLocationDto {
+  userId: number;
+  name: string;
+  role: string;
+  zoneId?: number;
+  zoneName?: string;
+  regionId?: number;
+  regionName?: string;
+  latitude: number;
+  longitude: number;
+  speedKmh?: number;
+  lastSeen: string;
+  totalDistanceKm: number;
+  allowanceAmount: number;
+  status: string;
+}
+
+export interface RoutePointDto {
+  lat: number;
+  lon: number;
+  recordedAt: string;
+  speedKmh?: number;
+}
+
+export interface AllowanceDto {
+  id: number;
+  userId: number;
+  userName: string;
+  role: string;
+  allowanceDate: string;
+  distanceKm: number;
+  ratePerKm: number;
+  grossAmount: number;
+  approved: boolean;
+  approvedByName?: string;
+  approvedAt?: string;
+  remarks?: string;
+}
+
 export interface CreateTargetRequest {
   title: string;
   description?: string;
