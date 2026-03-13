@@ -8,6 +8,9 @@ import {
   TouchableOpacity,
   Alert,
   AppState,
+  Platform,
+  PermissionsAndroid,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -21,16 +24,7 @@ import {
   WifiOff,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Use React Native's built-in Geolocation via navigator.geolocation
-const Geolocation = {
-  getCurrentPosition: (
-    success: (pos: any) => void,
-    error: (err: any) => void,
-    options?: any,
-  ) => navigator.geolocation.getCurrentPosition(success, error, options),
-  clearWatch: (id: number) => navigator.geolocation.clearWatch(id),
-};
+import BackgroundService from 'react-native-background-actions';
 import { trackingApi } from '../../api/tracking';
 import {
   SessionResponseDto,
@@ -82,11 +76,9 @@ export const MyDayTrackingScreen = () => {
   const [queuedPings, setQueuedPings] = useState(0);
 
   // GPS tracking refs
-  const watchIdRef = useRef<number | null>(null);
   const lastPingRef = useRef<{ lat: number; lon: number; time: number } | null>(null);
   const isMovingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastPositionRef = useRef<any>(null);
 
   // History
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -97,6 +89,188 @@ export const MyDayTrackingScreen = () => {
   // Allowances
   const [allowances, setAllowances] = useState<AllowanceDto[]>([]);
   const [allowancesLoading, setAllowancesLoading] = useState(false);
+
+  // Location permission state
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [locationChecked, setLocationChecked] = useState(false);
+
+  // ─── Location Permission Handling ───────────────────────────────────────
+  const requestLocationPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      try {
+        const fineStatus = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        );
+        if (fineStatus) {
+          setLocationGranted(true);
+          return true;
+        }
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission Required',
+            message:
+              'SingularityCRM needs access to your location to track your daily travel and calculate travel allowance.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'Allow',
+          },
+        );
+        const isGranted = granted === PermissionsAndroid.RESULTS.GRANTED;
+        setLocationGranted(isGranted);
+        if (!isGranted) {
+          showPermissionDeniedAlert();
+        }
+        return isGranted;
+      } catch {
+        setLocationGranted(false);
+        return false;
+      }
+    } else {
+      // iOS: Trigger the system permission dialog by requesting a position
+      return new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          () => {
+            setLocationGranted(true);
+            resolve(true);
+          },
+          (err) => {
+            // Error code 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE
+            if (err.code === 1) {
+              setLocationGranted(false);
+              showPermissionDeniedAlert();
+              resolve(false);
+            } else if (err.code === 2) {
+              setLocationGranted(false);
+              showLocationDisabledAlert();
+              resolve(false);
+            } else {
+              // Timeout or other — assume permission is ok but GPS slow
+              setLocationGranted(true);
+              resolve(true);
+            }
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+      });
+    }
+  };
+
+  const showPermissionDeniedAlert = () => {
+    Alert.alert(
+      'Location Permission Required',
+      'Location access is required for tracking. Please enable it in your device settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            if (Platform.OS === 'android') {
+              Linking.openSettings();
+            } else {
+              Linking.openURL('app-settings:');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const showLocationDisabledAlert = () => {
+    Alert.alert(
+      'Location Services Disabled',
+      'Please turn on Location Services in your device settings to use tracking.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            if (Platform.OS === 'android') {
+              Linking.openSettings();
+            } else {
+              Linking.openURL('app-settings:');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Check location permission on mount and when app comes to foreground
+  useEffect(() => {
+    const checkPermission = async () => {
+      await requestLocationPermission();
+      setLocationChecked(true);
+    };
+    checkPermission();
+
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active') {
+        // Re-check permission when user comes back from settings
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          );
+          setLocationGranted(granted);
+          if (!granted && session?.status === 'active') {
+            showPermissionDeniedAlert();
+          }
+        } else {
+          // On iOS, try a quick position check
+          navigator.geolocation.getCurrentPosition(
+            () => setLocationGranted(true),
+            (err) => {
+              if (err.code === 1 || err.code === 2) {
+                setLocationGranted(false);
+                if (session?.status === 'active') {
+                  showPermissionDeniedAlert();
+                }
+              }
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
+          );
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [session?.status]);
+
+  // Periodically verify location is still accessible during active session
+  useEffect(() => {
+    if (session?.status !== 'active') return;
+
+    const locationCheckInterval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          if (!locationGranted) setLocationGranted(true);
+        },
+        (err) => {
+          if (err.code === 1 || err.code === 2) {
+            setLocationGranted(false);
+            Alert.alert(
+              'Location Lost',
+              'Your location has been turned off or permission was revoked. Please enable it to continue tracking.',
+              [
+                {
+                  text: 'Open Settings',
+                  onPress: () => {
+                    if (Platform.OS === 'android') {
+                      Linking.openSettings();
+                    } else {
+                      Linking.openURL('app-settings:');
+                    }
+                  },
+                },
+              ],
+            );
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
+    }, 60000); // Check every 60 seconds
+
+    return () => clearInterval(locationCheckInterval);
+  }, [session?.status, locationGranted]);
 
   // Generate last 30 days
   const last30Days = useCallback(() => {
@@ -155,115 +329,199 @@ export const MyDayTrackingScreen = () => {
     }
   };
 
-  // ─── GPS Tracking Engine ────────────────────────────────────────────────
-  const sendPing = async (position: any) => {
-    const { latitude, longitude, accuracy, speed, altitude } = position.coords;
-    const speedKmh = speed != null ? speed * 3.6 : undefined;
+  // ─── GPS Tracking Engine (Background-capable) ──────────────────────────
 
-    // Client-side noise filter: ignore movements < 15m
-    if (lastPingRef.current) {
-      const dist = haversineMeters(lastPingRef.current.lat, lastPingRef.current.lon, latitude, longitude);
-      if (dist < MIN_MOVEMENT_M) return; // Skip — GPS jitter
-    }
+  // Helper: get current position as a promise
+  const getCurrentPosition = (): Promise<any> =>
+    new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000,
+      });
+    });
 
-    const pingData = {
-      latitude,
-      longitude,
-      accuracyMetres: accuracy,
-      speedKmh,
-      altitudeMetres: altitude,
-      recordedAt: new Date().toISOString(),
-      provider: 'GPS',
-      isMocked: position.mocked ?? false,
-      batteryLevel: undefined as number | undefined,
-    };
+  // The background task function — runs in a foreground service on Android
+  const backgroundTrackingTask = async (taskData: any) => {
+    await new Promise<void>(async (resolve) => {
+      // Keep running until stopped
+      while (BackgroundService.isRunning()) {
+        try {
+          const position = await getCurrentPosition();
+          const { latitude, longitude, accuracy, speed, altitude } = position.coords;
+          const speedKmh = speed != null ? speed * 3.6 : undefined;
 
-    lastPingRef.current = { lat: latitude, lon: longitude, time: Date.now() };
+          // Client-side noise filter: ignore movements < 15m
+          if (lastPingRef.current) {
+            const dist = haversineMeters(
+              lastPingRef.current.lat, lastPingRef.current.lon,
+              latitude, longitude,
+            );
+            if (dist < MIN_MOVEMENT_M) {
+              // Still wait before next check
+              const interval = isMovingRef.current ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS;
+              await sleep(interval);
+              continue;
+            }
+          }
 
-    // Adaptive tracking: detect if moving or stationary
-    const wasMoving = isMovingRef.current;
-    isMovingRef.current = (speedKmh ?? 0) > SPEED_THRESHOLD_KMH;
-    if (wasMoving !== isMovingRef.current) {
-      restartTracking();
-    }
+          const pingData = {
+            latitude,
+            longitude,
+            accuracyMetres: accuracy,
+            speedKmh,
+            altitudeMetres: altitude,
+            recordedAt: new Date().toISOString(),
+            provider: 'GPS',
+            isMocked: position.mocked ?? false,
+            batteryLevel: undefined as number | undefined,
+          };
 
-    if (isOnline) {
-      try {
-        const res = await trackingApi.sendPing(pingData);
-        const data = res.data;
-        // Update session with latest cumulative data
-        if (session && data) {
-          setSession(prev => prev ? {
-            ...prev,
-            totalDistanceKm: data.cumulativeDistanceKm ?? prev.totalDistanceKm,
-            allowanceAmount: data.allowanceAmount ?? prev.allowanceAmount,
-          } : prev);
+          lastPingRef.current = { lat: latitude, lon: longitude, time: Date.now() };
+
+          // Adaptive tracking: detect if moving or stationary
+          isMovingRef.current = (speedKmh ?? 0) > SPEED_THRESHOLD_KMH;
+
+          // Try to send ping or queue it
+          let sent = false;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            await fetch('https://clients3.google.com/generate_204', { signal: controller.signal });
+            clearTimeout(timeout);
+            // Online — send ping
+            try {
+              const res = await trackingApi.sendPing(pingData);
+              const data = res.data;
+              if (data) {
+                setSession(prev => prev ? {
+                  ...prev,
+                  totalDistanceKm: data.cumulativeDistanceKm ?? prev.totalDistanceKm,
+                  allowanceAmount: data.allowanceAmount ?? prev.allowanceAmount,
+                } : prev);
+              }
+              sent = true;
+            } catch {
+              // API error — queue it
+            }
+          } catch {
+            // Offline
+          }
+
+          if (!sent) {
+            // Queue for later sync
+            try {
+              const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
+              const queue = stored ? JSON.parse(stored) : [];
+              queue.push(pingData);
+              await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
+              setQueuedPings(queue.length);
+            } catch {}
+          }
+        } catch {
+          // Geolocation error — wait and retry
         }
-      } catch {
-        await addToQueue(pingData);
+
+        // Adaptive sleep: shorter when moving, longer when stationary
+        const interval = isMovingRef.current ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS;
+        await sleep(interval);
       }
-    } else {
-      await addToQueue(pingData);
+      resolve();
+    });
+  };
+
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+  const backgroundOptions = {
+    taskName: 'SingularityCRM Tracking',
+    taskTitle: 'Location Tracking Active',
+    taskDesc: 'Tracking your travel for attendance and allowance.',
+    taskIcon: { name: 'ic_launcher', type: 'mipmap' },
+    color: '#0d9488',
+    linkingURI: 'singularitycrm://tracking',
+    parameters: { delay: MOVING_INTERVAL_MS },
+  };
+
+  const startTracking = async () => {
+    if (BackgroundService.isRunning()) return;
+    try {
+      await BackgroundService.start(backgroundTrackingTask, backgroundOptions);
+    } catch (e) {
+      console.warn('Background service failed to start, falling back to foreground tracking', e);
+      // Fallback: foreground-only interval tracking
+      startForegroundTracking();
     }
   };
 
-  const startTracking = () => {
-    const interval = isMovingRef.current ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS;
-
-    Geolocation.getCurrentPosition(
-      pos => {
-        lastPositionRef.current = pos;
-        sendPing(pos);
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
-
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      Geolocation.getCurrentPosition(
-        pos => {
-          lastPositionRef.current = pos;
-          sendPing(pos);
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
-      );
-    }, interval);
-  };
-
-  const stopTracking = () => {
+  const stopTracking = async () => {
+    if (BackgroundService.isRunning()) {
+      await BackgroundService.stop();
+    }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (watchIdRef.current != null) {
-      Geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
   };
 
-  const restartTracking = () => {
-    stopTracking();
-    if (session?.status === 'active') startTracking();
+  // Fallback foreground-only tracking (if background service fails)
+  const startForegroundTracking = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    const tick = () => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy, speed, altitude } = position.coords;
+          const speedKmh = speed != null ? speed * 3.6 : undefined;
+          if (lastPingRef.current) {
+            const dist = haversineMeters(lastPingRef.current.lat, lastPingRef.current.lon, latitude, longitude);
+            if (dist < MIN_MOVEMENT_M) return;
+          }
+          const pingData = {
+            latitude, longitude,
+            accuracyMetres: accuracy, speedKmh, altitudeMetres: altitude,
+            recordedAt: new Date().toISOString(),
+            provider: 'GPS', isMocked: position.mocked ?? false,
+            batteryLevel: undefined as number | undefined,
+          };
+          lastPingRef.current = { lat: latitude, lon: longitude, time: Date.now() };
+          isMovingRef.current = (speedKmh ?? 0) > SPEED_THRESHOLD_KMH;
+          try {
+            const res = await trackingApi.sendPing(pingData);
+            const data = res.data;
+            if (data) {
+              setSession(prev => prev ? {
+                ...prev,
+                totalDistanceKm: data.cumulativeDistanceKm ?? prev.totalDistanceKm,
+                allowanceAmount: data.allowanceAmount ?? prev.allowanceAmount,
+              } : prev);
+            }
+          } catch {
+            await addToQueue(pingData);
+          }
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      );
+    };
+    tick();
+    const interval = isMovingRef.current ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS;
+    intervalRef.current = setInterval(tick, interval);
   };
 
-  // Auto-start/stop tracking based on session status
+  // Auto-start/stop tracking based on session status and location permission
   useEffect(() => {
-    if (session?.status === 'active') {
+    if (session?.status === 'active' && locationGranted) {
       startTracking();
     } else {
       stopTracking();
     }
-    return () => stopTracking();
-  }, [session?.status]);
+    return () => { stopTracking(); };
+  }, [session?.status, locationGranted]);
 
-  // Handle app state changes
+  // Handle app state changes — sync queue when coming back to foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active' && session?.status === 'active') {
         syncOfflineQueue();
-        startTracking();
       }
     });
     return () => sub.remove();
@@ -291,7 +549,8 @@ export const MyDayTrackingScreen = () => {
       const from = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
       const to = toISODate(now);
       const res = await trackingApi.getAllowances(from, to);
-      setAllowances(res.data as AllowanceDto[]);
+      const inner = res.data as { allowances: AllowanceDto[] };
+      setAllowances(inner.allowances || []);
     } catch {
       setAllowances([]);
     } finally {
@@ -313,6 +572,33 @@ export const MyDayTrackingScreen = () => {
   const onRefresh = () => { setRefreshing(true); fetchAll(); };
 
   const handleStartDay = async () => {
+    // Verify location permission before starting
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      Alert.alert(
+        'Cannot Start Day',
+        'Location permission is required to start tracking. Please grant location access and try again.',
+      );
+      return;
+    }
+
+    // Verify we can actually get a position (location services enabled)
+    const locationAvailable = await new Promise<boolean>(resolve => {
+      navigator.geolocation.getCurrentPosition(
+        () => resolve(true),
+        (err) => {
+          if (err.code === 2) {
+            showLocationDisabledAlert();
+            resolve(false);
+          } else {
+            resolve(true); // timeout is ok, GPS might be slow
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
+    });
+    if (!locationAvailable) return;
+
     setActionLoading(true);
     try {
       const res = await trackingApi.startDay();
@@ -335,6 +621,8 @@ export const MyDayTrackingScreen = () => {
         onPress: async () => {
           setActionLoading(true);
           try {
+            // Stop background tracking first
+            await stopTracking();
             // Sync any queued pings before ending
             await syncOfflineQueue();
             const res = await trackingApi.endDay();
@@ -358,9 +646,9 @@ export const MyDayTrackingScreen = () => {
     setHistoryLoading(true);
     try {
       const res = await trackingApi.getRoute(user.id, date);
-      const data = res.data as { session: TrackingSessionDto; points: RoutePointDto[] };
+      const data = res.data as { session: TrackingSessionDto; route: RoutePointDto[]; reconstructedRoute: RoutePointDto[] };
       setHistorySession(data.session);
-      setRoutePoints(data.points);
+      setRoutePoints(data.route || []);
     } catch {
       setHistorySession(null);
       setRoutePoints([]);
@@ -417,6 +705,24 @@ export const MyDayTrackingScreen = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLOR.primary]} />}
       >
+        {/* ─── Location Permission Warning ────────────────────────────────── */}
+        {locationChecked && !locationGranted && (
+          <TouchableOpacity
+            style={styles.locationBanner}
+            onPress={requestLocationPermission}
+            activeOpacity={0.7}
+          >
+            <MapPin size={16} color="#DC2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationBannerTitle}>Location Access Required</Text>
+              <Text style={styles.locationBannerSubtitle}>
+                Tap here to enable location for tracking
+              </Text>
+            </View>
+            <Text style={styles.locationBannerAction}>Enable</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ─── Connectivity + Queue Status ─────────────────────────────────── */}
         {(!isOnline || queuedPings > 0) && (
           <View style={[styles.statusBanner, !isOnline ? styles.offlineBanner : styles.queueBanner]}>
@@ -610,6 +916,17 @@ const styles = StyleSheet.create({
   statusBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderRadius: 8, padding: 10, marginBottom: 4,
+  },
+  locationBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FEF2F2', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#FECACA', marginBottom: 4,
+  },
+  locationBannerTitle: { fontSize: rf(13), fontWeight: '700', color: '#DC2626' },
+  locationBannerSubtitle: { fontSize: rf(11), color: '#991B1B', marginTop: 2 },
+  locationBannerAction: {
+    fontSize: rf(12), fontWeight: '700', color: '#DC2626',
+    backgroundColor: '#FEE2E2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
   },
   offlineBanner: { backgroundColor: '#FEF2F2' },
   queueBanner: { backgroundColor: '#FFFBEB' },

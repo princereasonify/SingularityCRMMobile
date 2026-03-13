@@ -1,10 +1,19 @@
 import { apiClient } from './client';
 
 export const trackingApi = {
-  startDay: () => apiClient.post('/tracking/start-day'),
-  endDay: () => apiClient.post('/tracking/end-day'),
-  getTodaySession: () => apiClient.get('/tracking/session/today'),
-  sendPing: (data: {
+  startDay: async () => {
+    const { data } = await apiClient.post('/tracking/start-day');
+    return data;
+  },
+  endDay: async () => {
+    const { data } = await apiClient.post('/tracking/end-day');
+    return data;
+  },
+  getTodaySession: async () => {
+    const { data } = await apiClient.get('/tracking/session/today');
+    return data;
+  },
+  sendPing: async (pingData: {
     latitude: number;
     longitude: number;
     accuracyMetres?: number;
@@ -14,8 +23,11 @@ export const trackingApi = {
     provider?: string;
     isMocked?: boolean;
     batteryLevel?: number;
-  }) => apiClient.post('/tracking/ping', data),
-  sendBatchPings: (pings: Array<{
+  }) => {
+    const { data } = await apiClient.post('/tracking/ping', pingData);
+    return data;
+  },
+  sendBatchPings: async (pings: Array<{
     latitude: number;
     longitude: number;
     accuracyMetres?: number;
@@ -25,10 +37,28 @@ export const trackingApi = {
     provider?: string;
     isMocked?: boolean;
     batteryLevel?: number;
-  }>) => apiClient.post('/tracking/ping/batch', { pings }),
-  getLiveLocations: () => apiClient.get('/tracking/live-locations'),
-  getRoute: (userId: number, date: string) => apiClient.get(`/tracking/route/${userId}/${date}`),
-  getAllowances: (from: string, to: string) => apiClient.get('/tracking/allowances', { params: { from, to } }),
-  approveAllowance: (id: number, data: { approved: boolean; remarks?: string }) => apiClient.patch(`/tracking/allowances/${id}`, data),
-  getFraudReports: (from: string, to: string) => apiClient.get('/tracking/fraud-reports', { params: { from, to } }),
+  }>) => {
+    const { data } = await apiClient.post('/tracking/ping/batch', { pings });
+    return data;
+  },
+  getLiveLocations: async () => {
+    const { data } = await apiClient.get('/tracking/live-locations');
+    return data;
+  },
+  getRoute: async (userId: number, date: string) => {
+    const { data } = await apiClient.get(`/tracking/route/${userId}/${date}`);
+    return data;
+  },
+  getAllowances: async (from: string, to: string) => {
+    const { data } = await apiClient.get('/tracking/allowances', { params: { from, to } });
+    return data;
+  },
+  approveAllowance: async (id: number, payload: { approved: boolean; remarks?: string }) => {
+    const { data } = await apiClient.patch(`/tracking/allowances/${id}`, payload);
+    return data;
+  },
+  getFraudReports: async (from: string, to: string) => {
+    const { data } = await apiClient.get('/tracking/fraud-reports', { params: { from, to } });
+    return data;
+  },
 };

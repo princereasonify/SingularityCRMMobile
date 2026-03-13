@@ -71,7 +71,8 @@ export const LiveTrackingScreen = () => {
     setAllowancesLoading(true);
     try {
       const res = await trackingApi.getAllowances(dateFrom, dateTo);
-      setAllowances(res.data as AllowanceDto[]);
+      const inner = res.data as { allowances: AllowanceDto[] };
+      setAllowances(inner.allowances || []);
     } catch {
       setAllowances([]);
     } finally {
