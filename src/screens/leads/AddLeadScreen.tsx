@@ -49,7 +49,7 @@ export const AddLeadScreen = ({ route, navigation }: any) => {
 
   useEffect(() => {
     if (role !== 'FO') {
-      leadsApi.getAssignableFOs().then((r) => setFoList(r.data)).catch(() => {});
+      leadsApi.getAssignableFOs().then((r) => setFoList(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
     }
   }, [role]);
 

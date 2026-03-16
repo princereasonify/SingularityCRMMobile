@@ -135,7 +135,7 @@ export const SHDashboard = ({ navigation }: any) => {
                     <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]}>{h}</Text>
                   ))}
                 </View>
-                {data!.regions.map((reg) => (
+                {(data?.regions || []).map((reg) => (
                   <View key={reg.id} style={[styles.tableRow, { width: tablet ? '100%' : 560 }]}>
                     <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{reg.name}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{formatCurrency(reg.revenue)}</Text>
@@ -157,8 +157,8 @@ export const SHDashboard = ({ navigation }: any) => {
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>📈 Revenue Trend</Text>
             <View style={styles.chartArea}>
-              {data!.revenueChart.map((point) => {
-                const maxVal = Math.max(...data!.revenueChart.map((p) => p.value));
+              {(data?.revenueChart || []).map((point) => {
+                const maxVal = Math.max(...(data?.revenueChart || []).map((p) => p.value));
                 const pct = maxVal > 0 ? (point.value / maxVal) * 100 : 0;
                 return (
                   <View key={point.label} style={styles.barWrap}>
@@ -178,8 +178,8 @@ export const SHDashboard = ({ navigation }: any) => {
         {(data?.lossReasons?.length || 0) > 0 && (
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>📉 Loss Reasons</Text>
-            {data!.lossReasons.map((lr) => {
-              const total = data!.lossReasons.reduce((s, r) => s + r.count, 0);
+            {(data?.lossReasons || []).map((lr) => {
+              const total = (data?.lossReasons || []).reduce((s, r) => s + r.count, 0);
               const pct = total > 0 ? (lr.count / total) * 100 : 0;
               return (
                 <View key={lr.reason} style={styles.lossRow}>

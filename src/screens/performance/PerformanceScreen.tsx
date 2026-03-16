@@ -39,7 +39,7 @@ export const PerformanceScreen = ({ navigation }: any) => {
   const fetch = useCallback(async () => {
     try {
       const res = await dashboardApi.getPerformanceTracking();
-      setData(res.data);
+      setData(Array.isArray(res.data) ? res.data : (res.data as any)?.items ?? []);
     } catch {
       setData([]);
     } finally {

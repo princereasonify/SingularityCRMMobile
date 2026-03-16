@@ -154,7 +154,7 @@ export const FODashboard = ({ navigation }: any) => {
                 <Text style={[styles.seeAll, { color: COLOR.primary }]}>See All</Text>
               </TouchableOpacity>
             </View>
-            {data!.hotLeads.slice(0, 5).map((lead) => (
+            {(data?.hotLeads || []).slice(0, 5).map((lead) => (
               <TouchableOpacity
                 key={lead.id}
                 style={styles.leadRow}
@@ -181,7 +181,7 @@ export const FODashboard = ({ navigation }: any) => {
         {(data?.todaysTasks?.length || 0) > 0 && (
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>📋 Today's Tasks</Text>
-            {data!.todaysTasks.map((task) => (
+            {(data?.todaysTasks || []).map((task) => (
               <View key={task.id} style={styles.taskRow}>
                 <View
                   style={[
@@ -212,7 +212,7 @@ export const FODashboard = ({ navigation }: any) => {
                 <Text style={[styles.seeAll, { color: COLOR.primary }]}>See All</Text>
               </TouchableOpacity>
             </View>
-            {data!.recentActivities.slice(0, 5).map((act) => (
+            {(data?.recentActivities || []).slice(0, 5).map((act) => (
               <View key={act.id} style={styles.activityRow}>
                 <View style={[styles.actDot, { backgroundColor: ACTIVITY_COLORS[act.type] || '#6B7280' }]} />
                 <View style={styles.actInfo}>

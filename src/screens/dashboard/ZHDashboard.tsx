@@ -148,7 +148,7 @@ export const ZHDashboard = ({ navigation }: any) => {
         {(data?.pendingDeals?.length || 0) > 0 && (
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>⚠️ Pending Deal Approvals</Text>
-            {data!.pendingDeals.map((deal) => (
+            {(data?.pendingDeals || []).map((deal) => (
               <View key={deal.id} style={styles.dealCard}>
                 <View style={styles.dealHeader}>
                   <View style={styles.dealInfo}>
@@ -188,7 +188,7 @@ export const ZHDashboard = ({ navigation }: any) => {
         {(data?.foPerformance?.length || 0) > 0 && (
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>🏆 FO Leaderboard</Text>
-            {data!.foPerformance.map((fo, idx) => (
+            {(data?.foPerformance || []).map((fo, idx) => (
               <View key={fo.foId} style={styles.foRow}>
                 <Text style={styles.foRank}>{idx + 1 <= 3 ? ['🥇', '🥈', '🥉'][idx] : `${idx + 1}`}</Text>
                 <Avatar initials={fo.avatar} color={COLOR.primary} size={36} />

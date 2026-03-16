@@ -38,14 +38,14 @@ export const LeadsListScreen = ({ navigation }: any) => {
     try {
       const stage = filter === 'Won' ? 'Won' : undefined;
       const res = await leadsApi.getLeads({ page: pg, pageSize: 20, search: search || undefined, stage });
-      const items = res.data.items;
+      const items = res.data?.items ?? [];
       let filtered = items;
       if (filter === 'Active') filtered = items.filter(l => !['Won', 'Lost'].includes(l.stage));
       if (filter === 'Hot') filtered = items.filter(l => l.score >= 70);
       if (filter === 'Unassigned') filtered = items.filter(l => !l.foId);
       if (reset) setLeads(filtered);
       else setLeads((prev) => [...prev, ...filtered]);
-      setTotalPages(res.data.totalPages);
+      setTotalPages(res.data?.totalPages ?? 1);
     } catch {
       if (reset) setLeads([]);
     } finally {

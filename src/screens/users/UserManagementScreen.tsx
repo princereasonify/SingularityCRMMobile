@@ -52,9 +52,9 @@ export const UserManagementScreen = ({ navigation }: any) => {
         authApi.getRegions(),
         authApi.getZones(),
       ]);
-      setUsers(usersRes.data);
-      setRegions(regRes.data);
-      setZones(zoneRes.data);
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data as any)?.items ?? []);
+      setRegions(Array.isArray(regRes.data) ? regRes.data : (regRes.data as any)?.items ?? []);
+      setZones(Array.isArray(zoneRes.data) ? zoneRes.data : (zoneRes.data as any)?.items ?? []);
     } catch {
       setUsers([]);
     } finally {

@@ -37,7 +37,7 @@ export const NotificationsScreen = ({ navigation }: any) => {
   const fetch = useCallback(async () => {
     try {
       const res = await notificationsApi.getNotifications();
-      setNotifs(res.data);
+      setNotifs(Array.isArray(res.data) ? res.data : (res.data as any)?.items ?? []);
     } catch {
       setNotifs([]);
     } finally {

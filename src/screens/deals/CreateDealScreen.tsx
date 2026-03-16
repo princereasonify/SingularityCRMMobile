@@ -47,7 +47,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   });
 
   useEffect(() => {
-    leadsApi.getPipeline().then((r) => setLeads(r.data)).catch(() => {});
+    leadsApi.getPipeline().then((r) => setLeads(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
   }, []);
 
   const set = (key: string, val: any) => setForm((f) => ({ ...f, [key]: val }));

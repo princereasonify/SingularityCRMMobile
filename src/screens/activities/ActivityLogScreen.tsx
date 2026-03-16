@@ -48,7 +48,7 @@ export const ActivityLogScreen = ({ route, navigation }: any) => {
     try {
       const type = typeFilter !== 'All' ? typeFilter : undefined;
       const res = await activitiesApi.getActivities({ pageSize: 50, type });
-      let items = res.data.items;
+      let items = res.data?.items ?? [];
       if (outcomeFilter !== 'All') items = items.filter((a) => a.outcome === outcomeFilter);
       setActivities(items);
     } catch {
@@ -62,7 +62,7 @@ export const ActivityLogScreen = ({ route, navigation }: any) => {
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
   useEffect(() => {
-    leadsApi.getPipeline().then((r) => setLeads(r.data)).catch(() => {});
+    leadsApi.getPipeline().then((r) => setLeads(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
     if (route?.params?.leadId) setForm((f) => ({ ...f, leadId: route.params.leadId }));
     if (route?.params?.openModal) setShowModal(true);
   }, [route?.params]);

@@ -53,8 +53,8 @@ export const TargetsScreen = ({ navigation }: any) => {
         targetsApi.getMyTargets(),
         role !== 'FO' ? targetsApi.getAssignedTargets() : Promise.resolve({ data: [] }),
       ]);
-      setMyTargets(myRes.data);
-      setAssignedTargets(assignedRes.data);
+      setMyTargets(Array.isArray(myRes.data) ? myRes.data : (myRes.data as any)?.items ?? []);
+      setAssignedTargets(Array.isArray(assignedRes.data) ? assignedRes.data : (assignedRes.data as any)?.items ?? []);
     } catch {
       setMyTargets([]);
       setAssignedTargets([]);
@@ -67,7 +67,7 @@ export const TargetsScreen = ({ navigation }: any) => {
   useEffect(() => { fetch(); }, [fetch]);
   useEffect(() => {
     if (role !== 'FO') {
-      targetsApi.getAssignableUsers().then((r) => setUsers(r.data)).catch(() => {});
+      targetsApi.getAssignableUsers().then((r) => setUsers(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
     }
   }, [role]);
 

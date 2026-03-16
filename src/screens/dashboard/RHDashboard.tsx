@@ -122,7 +122,7 @@ export const RHDashboard = ({ navigation }: any) => {
               <Text style={[styles.thCell, { flex: 1 }]}>Target %</Text>
               <Text style={[styles.thCell, { flex: 1 }]}>Health</Text>
             </View>
-            {data!.zones.map((zone) => (
+            {(data?.zones || []).map((zone) => (
               <View key={zone.id} style={styles.tableRow}>
                 <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{zone.name}</Text>
                 <Text style={[styles.tdCell, { flex: 1.5 }]}>{formatCurrency(zone.revenue)}</Text>
@@ -144,8 +144,8 @@ export const RHDashboard = ({ navigation }: any) => {
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>📈 Revenue Trend</Text>
             <View style={styles.chartArea}>
-              {data!.revenueChart.map((point) => {
-                const maxVal = Math.max(...data!.revenueChart.map((p) => p.value));
+              {(data?.revenueChart || []).map((point) => {
+                const maxVal = Math.max(...(data?.revenueChart || []).map((p) => p.value));
                 const pct = maxVal > 0 ? (point.value / maxVal) * 100 : 0;
                 return (
                   <View key={point.label} style={styles.barWrap}>

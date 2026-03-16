@@ -25,7 +25,8 @@ export const PipelineScreen = ({ navigation }: any) => {
   const fetch = useCallback(async () => {
     try {
       const res = await leadsApi.getPipeline();
-      setLeads(res.data);
+      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.items ?? [];
+      setLeads(data);
     } catch {
       setLeads([]);
     } finally {
