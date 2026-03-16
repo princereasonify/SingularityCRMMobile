@@ -1,18 +1,36 @@
 import { apiClient } from './client';
 
+const log = (label: string, payload?: any, response?: any) => {
+  if (payload !== undefined) {
+    console.log(`[Tracking] ${label} payload:`, JSON.stringify(payload, null, 2));
+  }
+  if (response !== undefined) {
+    console.log(`[Tracking] ${label} response:`, JSON.stringify(response, null, 2));
+  }
+};
+
 export const trackingApi = {
   startDay: async () => {
-    const { data } = await apiClient.post('/tracking/start-day');
-    return data;
+    log('startDay');
+    const res = await apiClient.post('/tracking/start-day');
+    log('startDay', undefined, res.data);
+    return res;
   },
+
   endDay: async () => {
-    const { data } = await apiClient.post('/tracking/end-day');
-    return data;
+    log('endDay');
+    const res = await apiClient.post('/tracking/end-day');
+    log('endDay', undefined, res.data);
+    return res;
   },
+
   getTodaySession: async () => {
-    const { data } = await apiClient.get('/tracking/session/today');
-    return data;
+    log('getTodaySession');
+    const res = await apiClient.get('/tracking/session/today');
+    log('getTodaySession', undefined, res.data);
+    return res;
   },
+
   sendPing: async (pingData: {
     latitude: number;
     longitude: number;
@@ -24,9 +42,12 @@ export const trackingApi = {
     isMocked?: boolean;
     batteryLevel?: number;
   }) => {
-    const { data } = await apiClient.post('/tracking/ping', pingData);
-    return data;
+    log('sendPing', pingData);
+    const res = await apiClient.post('/tracking/ping', pingData);
+    log('sendPing', undefined, res.data);
+    return res;
   },
+
   sendBatchPings: async (pings: Array<{
     latitude: number;
     longitude: number;
@@ -38,27 +59,48 @@ export const trackingApi = {
     isMocked?: boolean;
     batteryLevel?: number;
   }>) => {
-    const { data } = await apiClient.post('/tracking/ping/batch', { pings });
-    return data;
+    const payload = { pings };
+    log('sendBatchPings', payload);
+    const res = await apiClient.post('/tracking/ping/batch', payload);
+    log('sendBatchPings', undefined, res.data);
+    return res;
   },
+
   getLiveLocations: async () => {
-    const { data } = await apiClient.get('/tracking/live-locations');
-    return data;
+    log('getLiveLocations');
+    const res = await apiClient.get('/tracking/live-locations');
+    log('getLiveLocations', undefined, res.data);
+    return res;
   },
+
   getRoute: async (userId: number, date: string) => {
-    const { data } = await apiClient.get(`/tracking/route/${userId}/${date}`);
-    return data;
+    const payload = { userId, date };
+    log('getRoute', payload);
+    const res = await apiClient.get(`/tracking/route/${userId}/${date}`);
+    log('getRoute', undefined, res.data);
+    return res;
   },
+
   getAllowances: async (from: string, to: string) => {
-    const { data } = await apiClient.get('/tracking/allowances', { params: { from, to } });
-    return data;
+    const payload = { from, to };
+    log('getAllowances', payload);
+    const res = await apiClient.get('/tracking/allowances', { params: { from, to } });
+    log('getAllowances', undefined, res.data);
+    return res;
   },
+
   approveAllowance: async (id: number, payload: { approved: boolean; remarks?: string }) => {
-    const { data } = await apiClient.patch(`/tracking/allowances/${id}`, payload);
-    return data;
+    log('approveAllowance', { id, ...payload });
+    const res = await apiClient.patch(`/tracking/allowances/${id}`, payload);
+    log('approveAllowance', undefined, res.data);
+    return res;
   },
+
   getFraudReports: async (from: string, to: string) => {
-    const { data } = await apiClient.get('/tracking/fraud-reports', { params: { from, to } });
-    return data;
+    const payload = { from, to };
+    log('getFraudReports', payload);
+    const res = await apiClient.get('/tracking/fraud-reports', { params: { from, to } });
+    log('getFraudReports', undefined, res.data);
+    return res;
   },
 };
