@@ -30,7 +30,14 @@ export const setUnauthorizedHandler = (handler: () => void) => {
 };
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Unwrap ApiResponse<T> — backend always returns { success, data, message }
+    // so callers can access res.data directly as the typed payload
+    if (response.data && typeof response.data === 'object' && 'success' in response.data) {
+      response.data = response.data.data;
+    }
+    return response;
+  },
   (error: AxiosError) => {
     if (error.response?.status === 401 && onUnauthorized) {
       onUnauthorized();

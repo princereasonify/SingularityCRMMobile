@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -18,7 +19,7 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <service
-        android:name="com.asterinet.reaction.bgTask.RNBackgroundActionsTask"
+        android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="location" />

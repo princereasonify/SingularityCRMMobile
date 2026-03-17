@@ -82,3 +82,11 @@ export const getDaysRemaining = (endDate: string): number => {
 export const toISODate = (date: Date): string => {
   return date.toISOString().split('T')[0];
 };
+
+// Returns ISO 8601 timestamp in India Standard Time (IST, UTC+05:30)
+// e.g. "2026-03-17T17:20:33.279+05:30"
+export const toISTISOString = (date: Date = new Date()): string => {
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +05:30 in milliseconds
+  const istDate = new Date(date.getTime() + IST_OFFSET_MS);
+  return istDate.toISOString().replace('Z', '+05:30');
+};

@@ -40,16 +40,9 @@ import { Button } from '../../components/common/Button';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { ROLE_COLORS } from '../../utils/constants';
-import { formatCurrency, formatDate, formatTime, toISODate } from '../../utils/formatting';
+import { formatCurrency, formatDate, formatTime, toISODate, toISTISOString } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 
-// Configure geolocation for community package
-Geolocation.setRNConfiguration({
-  skipPermissionRequests: false,
-  authorizationLevel: 'always',
-  enableBackgroundLocationUpdates: true,
-  locationProvider: 'auto',
-});
 
 const COLOR = ROLE_COLORS.FO;
 const PING_QUEUE_KEY = 'tracking_ping_queue';
@@ -223,40 +216,63 @@ export const MyDayTrackingScreen = () => {
     }
   };
 
+  // Configure geolocation on mount — must be inside component so errors don't crash at module level
+  useEffect(() => {
+    try {
+      Geolocation.setRNConfiguration({
+        skipPermissionRequests: false,
+        authorizationLevel: 'always',
+        enableBackgroundLocationUpdates: false,
+        ...(Platform.OS === 'android' ? { locationProvider: 'auto' } : {}),
+      });
+    } catch (e) {
+      console.warn('[Tracking] Geolocation config failed:', e);
+    }
+  }, []);
+
   // Check permission on mount + when app returns to foreground
   useEffect(() => {
     const checkPermission = async () => {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        );
-        setLocationGranted(granted);
-        setLocationChecked(true);
-        if (!granted) await requestLocationPermission();
-      } else {
-        // iOS: probe for location to check permission status
-        Geolocation.getCurrentPosition(
-          () => { setLocationGranted(true); setLocationChecked(true); },
-          () => { setLocationGranted(false); setLocationChecked(true); },
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
-        );
-      }
-    };
-    checkPermission();
-
-    const sub = AppState.addEventListener('change', async (state) => {
-      if (state === 'active') {
+      try {
         if (Platform.OS === 'android') {
           const granted = await PermissionsAndroid.check(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           );
           setLocationGranted(granted);
+          setLocationChecked(true);
+          if (!granted) await requestLocationPermission();
         } else {
+          // iOS: probe for location to check permission status
           Geolocation.getCurrentPosition(
-            () => setLocationGranted(true),
-            () => setLocationGranted(false),
+            () => { setLocationGranted(true); setLocationChecked(true); },
+            () => { setLocationGranted(false); setLocationChecked(true); },
             { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
           );
+        }
+      } catch {
+        setLocationGranted(false);
+        setLocationChecked(true);
+      }
+    };
+    checkPermission().catch(() => {
+      setLocationGranted(false);
+      setLocationChecked(true);
+    });
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        if (Platform.OS === 'android') {
+          PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
+            .then(granted => setLocationGranted(granted))
+            .catch(() => {});
+        } else {
+          try {
+            Geolocation.getCurrentPosition(
+              () => setLocationGranted(true),
+              () => setLocationGranted(false),
+              { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
+            );
+          } catch {}
         }
       }
     });
@@ -323,73 +339,70 @@ export const MyDayTrackingScreen = () => {
 
   // Background task — runs inside foreground service on Android
   const backgroundTrackingTask = async (_taskData: any) => {
-    await new Promise<void>(async (resolve) => {
-      while (BackgroundService.isRunning()) {
-        try {
-          const position = await getPosition();
-          const { latitude, longitude, accuracy, speed, altitude } = position.coords;
-          const speedKmh = speed != null ? speed * 3.6 : undefined;
+    while (BackgroundService.isRunning()) {
+      try {
+        const position = await getPosition();
+        const { latitude, longitude, accuracy, speed, altitude } = position.coords;
+        const speedKmh = speed != null ? speed * 3.6 : undefined;
 
-          // Noise filter
-          if (lastPingState.hasValue) {
-            const dist = haversineMeters(lastPingState.lat, lastPingState.lon, latitude, longitude);
-            if (dist < MIN_MOVEMENT_M) {
-              await sleep(isMovingState ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS);
-              continue;
-            }
+        // Noise filter
+        if (lastPingState.hasValue) {
+          const dist = haversineMeters(lastPingState.lat, lastPingState.lon, latitude, longitude);
+          if (dist < MIN_MOVEMENT_M) {
+            await sleep(isMovingState ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS);
+            continue;
           }
-
-          const pingData = {
-            latitude,
-            longitude,
-            accuracyMetres: accuracy ?? undefined,
-            speedKmh,
-            altitudeMetres: altitude ?? undefined,
-            recordedAt: new Date().toISOString(),
-            provider: 'GPS',
-            isMocked: (position as any).mocked ?? false,
-            batteryLevel: undefined as number | undefined,
-          };
-
-          lastPingState.lat = latitude;
-          lastPingState.lon = longitude;
-          lastPingState.time = Date.now();
-          lastPingState.hasValue = true;
-          isMovingState = (speedKmh ?? 0) > SPEED_THRESHOLD_KMH;
-
-          // Send or queue — if API throws with no response it's a network error
-          let sent = false;
-          try {
-            const res = await trackingApi.sendPing(pingData);
-            const respData = res.data;
-            if (respData) {
-              setSession(prev => prev ? {
-                ...prev,
-                totalDistanceKm: respData.cumulativeDistanceKm ?? prev.totalDistanceKm,
-                allowanceAmount: respData.allowanceAmount ?? prev.allowanceAmount,
-              } : prev);
-            }
-            sent = true;
-          } catch {}
-
-          if (!sent) {
-            try {
-              const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-              let queue: any[];
-              try { queue = stored ? JSON.parse(stored) : []; if (!Array.isArray(queue)) queue = []; } catch { queue = []; }
-              queue.push(pingData);
-              await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
-              setQueuedPings(queue.length);
-            } catch {}
-          }
-        } catch {
-          // Geolocation error — wait and retry
         }
 
-        await sleep(isMovingState ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS);
+        const pingData = {
+          latitude,
+          longitude,
+          accuracyMetres: accuracy ?? undefined,
+          speedKmh,
+          altitudeMetres: altitude ?? undefined,
+          recordedAt: toISTISOString(),
+          provider: 'GPS',
+          isMocked: (position as any).mocked ?? false,
+          batteryLevel: undefined as number | undefined,
+        };
+
+        lastPingState.lat = latitude;
+        lastPingState.lon = longitude;
+        lastPingState.time = Date.now();
+        lastPingState.hasValue = true;
+        isMovingState = (speedKmh ?? 0) > SPEED_THRESHOLD_KMH;
+
+        // Send or queue — if API throws with no response it's a network error
+        let sent = false;
+        try {
+          const res = await trackingApi.sendPing(pingData);
+          const respData = res.data;
+          if (respData) {
+            setSession(prev => prev ? {
+              ...prev,
+              totalDistanceKm: respData.cumulativeDistanceKm ?? prev.totalDistanceKm,
+              allowanceAmount: respData.allowanceAmount ?? prev.allowanceAmount,
+            } : prev);
+          }
+          sent = true;
+        } catch {}
+
+        if (!sent) {
+          try {
+            const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
+            let queue: any[];
+            try { queue = stored ? JSON.parse(stored) : []; if (!Array.isArray(queue)) queue = []; } catch { queue = []; }
+            queue.push(pingData);
+            await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
+            setQueuedPings(queue.length);
+          } catch {}
+        }
+      } catch {
+        // Geolocation error — wait and retry
       }
-      resolve();
-    });
+
+      await sleep(isMovingState ? MOVING_INTERVAL_MS : STATIONARY_INTERVAL_MS);
+    }
   };
 
   const backgroundOptions = {
@@ -419,7 +432,7 @@ export const MyDayTrackingScreen = () => {
             accuracyMetres: accuracy ?? undefined,
             speedKmh,
             altitudeMetres: altitude ?? undefined,
-            recordedAt: new Date().toISOString(),
+            recordedAt: toISTISOString(),
             provider: 'GPS',
             isMocked: (position as any).mocked ?? false,
             batteryLevel: undefined as number | undefined,
@@ -476,11 +489,11 @@ export const MyDayTrackingScreen = () => {
   // Auto-start/stop based on session + permission
   useEffect(() => {
     if (session?.status === 'active' && locationGranted) {
-      startTracking();
+      startTracking().catch(() => {});
     } else {
-      stopTracking();
+      stopTracking().catch(() => {});
     }
-    return () => { stopTracking(); };
+    return () => { stopTracking().catch(() => {}); };
   }, [session?.status, locationGranted]);
 
   // Sync queue when coming to foreground
@@ -534,9 +547,9 @@ export const MyDayTrackingScreen = () => {
     }
   }, [fetchSession, fetchAllowances]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchAll().catch(() => {}); }, [fetchAll]);
 
-  const onRefresh = () => { setRefreshing(true); fetchAll(); };
+  const onRefresh = () => { setRefreshing(true); fetchAll().catch(() => {}); };
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
