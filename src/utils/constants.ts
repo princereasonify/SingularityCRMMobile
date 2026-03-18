@@ -1,8 +1,9 @@
 import { LeadStage } from '../types';
 import { Colors } from '../theme';
+import { API_BASE_URL as ENV_API_BASE_URL } from '@env';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-export const API_BASE_URL = 'https://singularity-learn.com/sales-crm/api';
+export const API_BASE_URL = ENV_API_BASE_URL;
 
 // ─── Color aliases (theme is the single source of truth) ─────────────────────
 export { Colors, getScoreColor, getProgressColor, getStatusColor, getTargetStatusColor } from '../theme';

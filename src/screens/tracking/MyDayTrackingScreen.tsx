@@ -216,6 +216,17 @@ export const MyDayTrackingScreen = () => {
     }
   };
 
+  // Restore queued ping count from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.getItem(PING_QUEUE_KEY).then(stored => {
+      if (!stored) return;
+      try {
+        const q = JSON.parse(stored);
+        if (Array.isArray(q) && q.length > 0) setQueuedPings(q.length);
+      } catch {}
+    }).catch(() => {});
+  }, []);
+
   // Configure geolocation on mount — must be inside component so errors don't crash at module level
   useEffect(() => {
     try {
@@ -287,11 +298,31 @@ export const MyDayTrackingScreen = () => {
       let queue: any[];
       try { queue = JSON.parse(stored); if (!Array.isArray(queue)) queue = []; } catch { return; }
       if (queue.length === 0) return;
-      await trackingApi.sendBatchPings(queue);
-      await AsyncStorage.removeItem(PING_QUEUE_KEY);
-      setQueuedPings(0);
+
+      // Drop pings older than 24 hours — server will reject stale session data anyway
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      queue = queue.filter((p: any) => !p.recordedAt || new Date(p.recordedAt).getTime() > cutoff);
+      if (queue.length === 0) {
+        await AsyncStorage.removeItem(PING_QUEUE_KEY);
+        setQueuedPings(0);
+        return;
+      }
+
+      try {
+        await trackingApi.sendBatchPings(queue);
+        await AsyncStorage.removeItem(PING_QUEUE_KEY);
+        setQueuedPings(0);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status && status >= 400 && status < 500) {
+          // Server rejected (session ended, auth error, etc.) — clear queue, no point retrying
+          await AsyncStorage.removeItem(PING_QUEUE_KEY);
+          setQueuedPings(0);
+        }
+        // Network error (no response) — keep in queue and retry on next cycle
+      }
     } catch {
-      // Retry on next connectivity change
+      // AsyncStorage read error — ignore
     }
   }, []);
 
@@ -512,9 +543,13 @@ export const MyDayTrackingScreen = () => {
     try {
       const res = await trackingApi.getTodaySession();
       const data = res.data as SessionResponseDto;
-      setSession(data?.session ?? null);
-      setStartEnabled(data?.buttonState?.startDayEnabled ?? true);
-      setEndEnabled(data?.buttonState?.endDayEnabled ?? false);
+      const s = data?.session ?? null;
+      setSession(s);
+      // Always derive button state from session status — not server buttonState,
+      // so users can start/end multiple times in a day.
+      const isActive = s?.status === 'active';
+      setStartEnabled(!isActive);
+      setEndEnabled(isActive);
     } catch {
       setSession(null);
       setStartEnabled(true);
@@ -576,10 +611,17 @@ export const MyDayTrackingScreen = () => {
       const res = await trackingApi.startDay();
       const data = res.data as SessionResponseDto;
       setSession(data?.session ?? null);
-      setStartEnabled(data?.buttonState?.startDayEnabled ?? false);
-      setEndEnabled(data?.buttonState?.endDayEnabled ?? true);
+      setStartEnabled(false);
+      setEndEnabled(true);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to start day. Please try again.');
+      const serverMsg: string = err?.response?.data?.message ?? '';
+      if (err?.response?.status === 400 && serverMsg.toLowerCase().includes('already')) {
+        // Server doesn't support multiple sessions per day yet —
+        // refresh state silently so UI stays consistent
+        await fetchSession();
+      } else {
+        Alert.alert('Error', serverMsg || 'Failed to start day. Please try again.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -598,8 +640,12 @@ export const MyDayTrackingScreen = () => {
             const res = await trackingApi.endDay();
             const data = res.data as SessionResponseDto;
             setSession(data?.session ?? null);
-            setStartEnabled(data?.buttonState?.startDayEnabled ?? false);
-            setEndEnabled(data?.buttonState?.endDayEnabled ?? false);
+            // Allow starting again immediately after ending
+            setStartEnabled(true);
+            setEndEnabled(false);
+            // Clear any remaining queued pings — session is now closed
+            await AsyncStorage.removeItem(PING_QUEUE_KEY);
+            setQueuedPings(0);
           } catch (err: any) {
             Alert.alert('Error', err?.response?.data?.message || 'Failed to end day. Please try again.');
           } finally {
@@ -730,7 +776,7 @@ export const MyDayTrackingScreen = () => {
           {session?.status === 'ended' && (
             <View style={styles.endedBanner}>
               <Check size={16} color="#22C55E" />
-              <Text style={styles.endedText}>Day completed! Great work today.</Text>
+              <Text style={styles.endedText}>Session ended. You can start again anytime.</Text>
             </View>
           )}
 
