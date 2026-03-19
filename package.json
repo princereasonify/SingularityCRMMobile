@@ -22,6 +22,7 @@
     "react": "19.2.3",
     "react-native": "0.84.1",
     "react-native-background-actions": "^4.0.1",
+    "react-native-background-fetch": "^4.3.0",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.24.0",

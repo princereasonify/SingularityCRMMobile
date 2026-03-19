@@ -26,8 +26,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import BackgroundService from 'react-native-background-actions';
+import BackgroundFetch from 'react-native-background-fetch';
 import { trackingApi } from '../../api/tracking';
-import { API_BASE_URL } from '../../utils/constants';
+import { sendLocationPing } from '../../services/locationPingService';
+import { startNativeTracking, stopNativeTracking } from '../../services/nativeLocationTracking';
 import {
   SessionResponseDto,
   TrackingSessionDto,
@@ -49,96 +51,19 @@ const COLOR = ROLE_COLORS.FO;
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000; // 30 seconds
 
-// ─── Module-level background task ────────────────────────────────────────────
-// Runs inside Android Foreground Service via react-native-background-actions.
-// Uses watchPosition (not getCurrentPosition) so location stays active and
-// never times out. Sends cached position every 30s via direct fetch.
+// ─── Module-level background task (app alive: foreground + background) ────────
+// Uses sendLocationPing from locationPingService — same logic as headless task.
 const bgSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 const backgroundPingTask = async (_taskData: any) => {
   console.log('[BG Tracking] Task started');
-  let latestPosition: any = null;
-
-  // Get an immediate fix using network/WiFi (fast, works indoors)
-  Geolocation.getCurrentPosition(
-    (pos) => {
-      latestPosition = pos;
-      console.log('[BG Tracking] Initial fix:', pos.coords.latitude, pos.coords.longitude);
-    },
-    (err) => console.warn('[BG Tracking] Initial fix error:', err.code, err.message),
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 },
-  );
-
-  // watchPosition keeps updating location continuously
-  const watchId = Geolocation.watchPosition(
-    (pos) => {
-      latestPosition = pos;
-      console.log('[BG Tracking] Position updated:', pos.coords.latitude, pos.coords.longitude);
-    },
-    (err) => console.warn('[BG Tracking] Watch error:', err.code, err.message),
-    {
-      enableHighAccuracy: false, // network/WiFi — fast and reliable indoors
-      distanceFilter: 0,
-      interval: 10000,
-      fastestInterval: 5000,
-    },
-  );
-
-  // Wait up to 15s for first fix
-  let waited = 0;
-  while (!latestPosition && waited < 15000) {
-    await bgSleep(1000);
-    waited += 1000;
-  }
-
+  // Send immediately, then every 30s while service is alive
+  await sendLocationPing();
   while (BackgroundService.isRunning()) {
-    if (latestPosition) {
-      try {
-        const token = await AsyncStorage.getItem('auth_token');
-        if (token) {
-          const { latitude, longitude, accuracy, speed, altitude } = latestPosition.coords;
-          const pingBody = JSON.stringify({
-            latitude,
-            longitude,
-            accuracyMetres: accuracy ?? undefined,
-            speedKmh: speed != null ? speed * 3.6 : undefined,
-            altitudeMetres: altitude ?? undefined,
-            recordedAt: new Date().toISOString(),
-            provider: 'GPS',
-            isMocked: (latestPosition as any).mocked ?? false,
-          });
-
-          console.log('[BG Tracking] Sending ping', latitude, longitude);
-          const res = await fetch(`${API_BASE_URL}/tracking/ping`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: pingBody,
-          });
-
-          if (!res.ok) {
-            const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-            let queue: any[] = [];
-            try { queue = stored ? JSON.parse(stored) : []; } catch {}
-            queue.push(JSON.parse(pingBody));
-            await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
-            console.warn('[BG Tracking] Ping queued. Status:', res.status);
-          } else {
-            console.log('[BG Tracking] Ping sent successfully');
-          }
-        }
-      } catch (err: any) {
-        console.warn('[BG Tracking] Send error:', err?.message ?? err);
-      }
-    } else {
-      console.warn('[BG Tracking] No position yet, skipping ping');
-    }
     await bgSleep(PING_INTERVAL_MS);
+    if (!BackgroundService.isRunning()) break;
+    await sendLocationPing();
   }
-
-  Geolocation.clearWatch(watchId);
   console.log('[BG Tracking] Task stopped');
 };
 
@@ -164,6 +89,7 @@ export const MyDayTrackingScreen = () => {
   const [queuedPings, setQueuedPings] = useState(0);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [routePoints, setRoutePoints] = useState<RoutePointDto[]>([]);
   const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -448,27 +374,54 @@ export const MyDayTrackingScreen = () => {
   // The background task owns watchPosition + 30s send interval internally.
 
   const startTracking = useCallback(async () => {
-    if (BackgroundService.isRunning()) {
-      console.log('[Tracking] Already running');
-      return;
+    if (Platform.OS === 'android') {
+      // Native Kotlin service — true 30s interval, survives app kill via START_STICKY
+      await startNativeTracking();
+    } else {
+      // iOS: JS foreground service (no native service built for iOS)
+      if (!BackgroundService.isRunning()) {
+        try {
+          await BackgroundService.start(backgroundPingTask, bgOptions);
+          console.log('[Tracking] iOS foreground service started');
+        } catch (e) {
+          console.warn('[Tracking] Failed to start BackgroundService:', e);
+        }
+      }
     }
-    try {
-      await BackgroundService.start(backgroundPingTask, bgOptions);
-      console.log('[Tracking] Service started');
-    } catch (e) {
-      console.warn('[Tracking] Failed to start BackgroundService:', e);
-    }
+
+    // BackgroundFetch: 15min WorkManager fallback (Android) / system fetch (iOS)
+    BackgroundFetch.configure(
+      {
+        minimumFetchInterval: 15,
+        stopOnTerminate: false,
+        startOnBoot: true,
+        enableHeadless: true,
+        requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
+      },
+      async (taskId) => {
+        await sendLocationPing();
+        BackgroundFetch.finish(taskId);
+      },
+      (taskId) => {
+        BackgroundFetch.finish(taskId);
+      },
+    ).then(status => console.log('[BackgroundFetch] Configured, status:', status));
   }, []);
 
   const stopTracking = useCallback(async () => {
-    if (!BackgroundService.isRunning()) return;
-    try {
-      await BackgroundService.stop();
-      console.log('[Tracking] Service stopped');
-    } catch {}
+    if (Platform.OS === 'android') {
+      await stopNativeTracking();
+    } else {
+      if (BackgroundService.isRunning()) {
+        try { await BackgroundService.stop(); } catch {}
+      }
+    }
+    BackgroundFetch.stop();
   }, []);
 
-  // Start when session active, stop when session ends or permission revoked
+  // Start when session active, stop when session ends or permission revoked.
+  // NO cleanup return — cleanup would call stopTracking() when app is killed,
+  // which sends an explicit stopService() and prevents START_STICKY from restarting.
   useEffect(() => {
     console.log('[Tracking] session:', session?.status, '| locationGranted:', locationGranted);
     if (session?.status === 'active' && locationGranted) {
@@ -476,7 +429,6 @@ export const MyDayTrackingScreen = () => {
     } else {
       stopTracking();
     }
-    return () => { stopTracking(); };
   }, [session?.status, locationGranted, startTracking, stopTracking]);
 
   // Sync queue when coming to foreground
