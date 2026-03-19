@@ -50,64 +50,96 @@ const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000; // 30 seconds
 
 // ─── Module-level background task ────────────────────────────────────────────
-// Must be outside component — background tasks cannot use React state or hooks.
-// Communicates via AsyncStorage and direct fetch (not axios interceptors).
+// Runs inside Android Foreground Service via react-native-background-actions.
+// Uses watchPosition (not getCurrentPosition) so location stays active and
+// never times out. Sends cached position every 30s via direct fetch.
 const bgSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 const backgroundPingTask = async (_taskData: any) => {
-  console.log('[BG Tracking] Background task started');
+  console.log('[BG Tracking] Task started');
+  let latestPosition: any = null;
+
+  // Get an immediate fix using network/WiFi (fast, works indoors)
+  Geolocation.getCurrentPosition(
+    (pos) => {
+      latestPosition = pos;
+      console.log('[BG Tracking] Initial fix:', pos.coords.latitude, pos.coords.longitude);
+    },
+    (err) => console.warn('[BG Tracking] Initial fix error:', err.code, err.message),
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 },
+  );
+
+  // watchPosition keeps updating location continuously
+  const watchId = Geolocation.watchPosition(
+    (pos) => {
+      latestPosition = pos;
+      console.log('[BG Tracking] Position updated:', pos.coords.latitude, pos.coords.longitude);
+    },
+    (err) => console.warn('[BG Tracking] Watch error:', err.code, err.message),
+    {
+      enableHighAccuracy: false, // network/WiFi — fast and reliable indoors
+      distanceFilter: 0,
+      interval: 10000,
+      fastestInterval: 5000,
+    },
+  );
+
+  // Wait up to 15s for first fix
+  let waited = 0;
+  while (!latestPosition && waited < 15000) {
+    await bgSleep(1000);
+    waited += 1000;
+  }
+
   while (BackgroundService.isRunning()) {
-    try {
-      const token = await AsyncStorage.getItem('auth_token');
-      if (!token) { await bgSleep(PING_INTERVAL_MS); continue; }
+    if (latestPosition) {
+      try {
+        const token = await AsyncStorage.getItem('auth_token');
+        if (token) {
+          const { latitude, longitude, accuracy, speed, altitude } = latestPosition.coords;
+          const pingBody = JSON.stringify({
+            latitude,
+            longitude,
+            accuracyMetres: accuracy ?? undefined,
+            speedKmh: speed != null ? speed * 3.6 : undefined,
+            altitudeMetres: altitude ?? undefined,
+            recordedAt: new Date().toISOString(),
+            provider: 'GPS',
+            isMocked: (latestPosition as any).mocked ?? false,
+          });
 
-      const position = await new Promise<any>((resolve, reject) => {
-        Geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: false,
-          timeout: 30000,
-          maximumAge: 60000,
-        });
-      });
+          console.log('[BG Tracking] Sending ping', latitude, longitude);
+          const res = await fetch(`${API_BASE_URL}/tracking/ping`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: pingBody,
+          });
 
-      const { latitude, longitude, accuracy, speed, altitude } = position.coords;
-      const pingBody = JSON.stringify({
-        latitude,
-        longitude,
-        accuracyMetres: accuracy ?? undefined,
-        speedKmh: speed != null ? speed * 3.6 : undefined,
-        altitudeMetres: altitude ?? undefined,
-        recordedAt: new Date().toISOString(),
-        provider: 'GPS',
-        isMocked: (position as any).mocked ?? false,
-      });
-
-      console.log('[BG Tracking] Sending ping', latitude, longitude);
-      const res = await fetch(`${API_BASE_URL}/tracking/ping`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: pingBody,
-      });
-
-      if (!res.ok) {
-        // Queue for later sync
-        const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-        let queue: any[] = [];
-        try { queue = stored ? JSON.parse(stored) : []; } catch {}
-        queue.push(JSON.parse(pingBody));
-        await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
-        console.warn('[BG Tracking] Ping failed, queued. Status:', res.status);
-      } else {
-        console.log('[BG Tracking] Ping sent successfully');
+          if (!res.ok) {
+            const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
+            let queue: any[] = [];
+            try { queue = stored ? JSON.parse(stored) : []; } catch {}
+            queue.push(JSON.parse(pingBody));
+            await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
+            console.warn('[BG Tracking] Ping queued. Status:', res.status);
+          } else {
+            console.log('[BG Tracking] Ping sent successfully');
+          }
+        }
+      } catch (err: any) {
+        console.warn('[BG Tracking] Send error:', err?.message ?? err);
       }
-    } catch (err: any) {
-      console.warn('[BG Tracking] Error:', err?.message ?? err);
+    } else {
+      console.warn('[BG Tracking] No position yet, skipping ping');
     }
     await bgSleep(PING_INTERVAL_MS);
   }
-  console.log('[BG Tracking] Background task stopped');
+
+  Geolocation.clearWatch(watchId);
+  console.log('[BG Tracking] Task stopped');
 };
 
 const bgOptions = {
@@ -131,10 +163,7 @@ export const MyDayTrackingScreen = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [queuedPings, setQueuedPings] = useState(0);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [routePoints, setRoutePoints] = useState<RoutePointDto[]>([]);
   const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -145,6 +174,22 @@ export const MyDayTrackingScreen = () => {
   const [locationChecked, setLocationChecked] = useState(false);
 
   // ─── Permission Handling ─────────────────────────────────────────────────
+
+  // Request notification permission on mount (Android 13+ / API 33+)
+  useEffect(() => {
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).then(granted => {
+        if (!granted) {
+          PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS, {
+            title: 'Allow Notifications',
+            message: 'SingularityCRM needs notification permission to show location tracking status while the app is in the background.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Deny',
+          });
+        }
+      });
+    }
+  }, []);
 
   const showPermissionDeniedAlert = () => {
     Alert.alert(
@@ -396,143 +441,43 @@ export const MyDayTrackingScreen = () => {
   }, [syncOfflineQueue]);
 
   // ─── Offline Queue ───────────────────────────────────────────────────────
-  const addToQueue = async (pingData: any) => {
-    try {
-      const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-      let queue: any[];
-      try { queue = stored ? JSON.parse(stored) : []; if (!Array.isArray(queue)) queue = []; } catch { queue = []; }
-      queue.push(pingData);
-      await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
-      setQueuedPings(queue.length);
-    } catch {}
-  };
 
   // ─── GPS Tracking Engine ─────────────────────────────────────────────────
+  // Strategy: always use BackgroundService (Android Foreground Service).
+  // It works in foreground AND background — no switching logic needed.
+  // The background task owns watchPosition + 30s send interval internally.
 
-  // Foreground ping — uses axios (has auth interceptor + response handling)
-  const sendPingTick = useCallback(() => {
-    Geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, accuracy, speed, altitude } = position.coords;
-        const pingData = {
-          latitude,
-          longitude,
-          accuracyMetres: accuracy ?? undefined,
-          speedKmh: speed != null ? speed * 3.6 : undefined,
-          altitudeMetres: altitude ?? undefined,
-          recordedAt: toISTISOString(),
-          provider: 'GPS',
-          isMocked: (position as any).mocked ?? false,
-        };
-        console.log('[FG Tracking] Sending ping:', latitude, longitude);
-        try {
-          const res = await trackingApi.sendPing(pingData);
-          const respData = res.data;
-          if (respData) {
-            setSession(prev => prev ? {
-              ...prev,
-              totalDistanceKm: respData.cumulativeDistanceKm ?? prev.totalDistanceKm,
-              allowanceAmount: respData.allowanceAmount ?? prev.allowanceAmount,
-            } : prev);
-          }
-          console.log('[FG Tracking] Ping sent successfully');
-        } catch (err: any) {
-          console.warn('[FG Tracking] Ping failed, queuing:', err?.message);
-          await addToQueue(pingData);
-        }
-      },
-      (err) => console.warn('[FG Tracking] GPS error:', err.code, err.message),
-      { enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 },
-    );
-  }, []);
-
-  // Start foreground interval
-  const startForegroundTracking = useCallback(() => {
-    if (intervalRef.current) return;
-    console.log('[FG Tracking] Starting 30s interval');
-    sendPingTick();
-    intervalRef.current = setInterval(sendPingTick, PING_INTERVAL_MS);
-  }, [sendPingTick]);
-
-  // Stop foreground interval
-  const stopForegroundTracking = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      console.log('[FG Tracking] Stopped');
+  const startTracking = useCallback(async () => {
+    if (BackgroundService.isRunning()) {
+      console.log('[Tracking] Already running');
+      return;
     }
-  }, []);
-
-  // Start background service (Android foreground service)
-  const startBackgroundTracking = useCallback(async () => {
-    if (BackgroundService.isRunning()) return;
     try {
       await BackgroundService.start(backgroundPingTask, bgOptions);
-      console.log('[BG Tracking] Service started');
+      console.log('[Tracking] Service started');
     } catch (e) {
-      console.warn('[BG Tracking] Failed to start service:', e);
+      console.warn('[Tracking] Failed to start BackgroundService:', e);
     }
   }, []);
 
-  // Stop background service
-  const stopBackgroundTracking = useCallback(async () => {
+  const stopTracking = useCallback(async () => {
     if (!BackgroundService.isRunning()) return;
     try {
       await BackgroundService.stop();
-      console.log('[BG Tracking] Service stopped');
+      console.log('[Tracking] Service stopped');
     } catch {}
   }, []);
 
-  // Unified start: foreground interval now, background service if app goes behind
-  const startTracking = useCallback(() => {
-    startForegroundTracking();
-  }, [startForegroundTracking]);
-
-  // Unified stop: stop both
-  const stopTracking = useCallback(() => {
-    stopForegroundTracking();
-    stopBackgroundTracking();
-  }, [stopForegroundTracking, stopBackgroundTracking]);
-
-  // Switch between FG interval and BG service on AppState change.
-  // 2-second debounce prevents rapid flickers (e.g. notification appearing briefly
-  // causing 'inactive' → 'active' within milliseconds) from creating a loop.
-  const appStateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (session?.status !== 'active' || !locationGranted) return;
-    const sub = AppState.addEventListener('change', (nextState) => {
-      if (appStateDebounceRef.current) clearTimeout(appStateDebounceRef.current);
-      appStateDebounceRef.current = setTimeout(async () => {
-        if (nextState === 'background') {
-          stopForegroundTracking();
-          await startBackgroundTracking();
-        } else if (nextState === 'active') {
-          await stopBackgroundTracking();
-          startForegroundTracking();
-        }
-        // 'inactive' is ignored — it's a transient state during notifications/calls
-      }, 2000);
-    });
-    return () => {
-      sub.remove();
-      if (appStateDebounceRef.current) clearTimeout(appStateDebounceRef.current);
-    };
-  }, [session?.status, locationGranted, startForegroundTracking, stopForegroundTracking, startBackgroundTracking, stopBackgroundTracking]);
-
-  // Auto-start/stop based on session + permission
+  // Start when session active, stop when session ends or permission revoked
   useEffect(() => {
     console.log('[Tracking] session:', session?.status, '| locationGranted:', locationGranted);
     if (session?.status === 'active' && locationGranted) {
       startTracking();
     } else {
-      stopForegroundTracking();
-      stopBackgroundTracking();
+      stopTracking();
     }
-    return () => {
-      stopForegroundTracking();
-      stopBackgroundTracking();
-    };
-  }, [session?.status, locationGranted, startTracking, stopForegroundTracking, stopBackgroundTracking]);
+    return () => { stopTracking(); };
+  }, [session?.status, locationGranted, startTracking, stopTracking]);
 
   // Sync queue when coming to foreground
   useEffect(() => {
@@ -642,7 +587,7 @@ export const MyDayTrackingScreen = () => {
         onPress: async () => {
           setActionLoading(true);
           try {
-            stopTracking();
+            await stopTracking();
             await syncOfflineQueue();
             const res = await trackingApi.endDay();
             const data = res.data as SessionResponseDto;
