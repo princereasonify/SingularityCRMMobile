@@ -25,11 +25,11 @@ import {
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
-import BackgroundService from 'react-native-background-actions';
+import BackgroundService from '../../services/backgroundServiceShim';
 import BackgroundFetch from 'react-native-background-fetch';
 import { trackingApi } from '../../api/tracking';
 import { sendLocationPing } from '../../services/locationPingService';
-import { startNativeTracking, stopNativeTracking } from '../../services/nativeLocationTracking';
+import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission } from '../../services/nativeLocationTracking';
 import {
   SessionResponseDto,
   TrackingSessionDto,
@@ -52,29 +52,8 @@ const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000; // 30 seconds
 
 // ─── Module-level background task (app alive: foreground + background) ────────
-// Uses sendLocationPing from locationPingService — same logic as headless task.
-const bgSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-
-const backgroundPingTask = async (_taskData: any) => {
-  console.log('[BG Tracking] Task started');
-  // Send immediately, then every 30s while service is alive
-  await sendLocationPing();
-  while (BackgroundService.isRunning()) {
-    await bgSleep(PING_INTERVAL_MS);
-    if (!BackgroundService.isRunning()) break;
-    await sendLocationPing();
-  }
-  console.log('[BG Tracking] Task stopped');
-};
-
-const bgOptions = {
-  taskName: 'SingularityCRM Tracking',
-  taskTitle: 'Location Tracking Active',
-  taskDesc: 'Tracking your travel for attendance and allowance.',
-  taskIcon: { name: 'ic_launcher', type: 'mipmap' },
-  color: '#0d9488',
-  parameters: {},
-};
+// BackgroundService is no longer used for active tracking (native modules handle both platforms).
+// Kept imported via shim for the headless-task infrastructure on Android.
 
 export const MyDayTrackingScreen = () => {
   const { user } = useAuth();
@@ -98,6 +77,9 @@ export const MyDayTrackingScreen = () => {
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [locationChecked, setLocationChecked] = useState(false);
+
+  // iOS: JS-level ping interval ref (Android uses native Kotlin service instead)
+  const iosPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Permission Handling ─────────────────────────────────────────────────
 
@@ -201,37 +183,40 @@ export const MyDayTrackingScreen = () => {
         return false;
       }
     } else {
-      // iOS — request 'always' authorization then verify with a position check
-      return new Promise(resolve => {
-        Geolocation.requestAuthorization(
-          () => {
-            // Authorization granted
-            Geolocation.getCurrentPosition(
-              () => { setLocationGranted(true); resolve(true); },
-              (err) => {
-                if (err.code === 1) {
-                  setLocationGranted(false);
-                  showPermissionDeniedAlert();
-                  resolve(false);
-                } else if (err.code === 2) {
-                  setLocationGranted(false);
-                  showLocationDisabledAlert();
-                  resolve(false);
-                } else {
-                  setLocationGranted(true);
-                  resolve(true);
-                }
-              },
-              { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-            );
-          },
-          () => {
-            setLocationGranted(false);
-            showPermissionDeniedAlert();
-            resolve(false);
-          },
+      // iOS — use the native Swift module for permission.
+      // Skip the native call entirely if already granted (avoids re-prompting).
+      if (locationGranted) return true;
+
+      const status = await requestIOSLocationPermission();
+
+      if (status === 'granted' || status === 'whenInUse') {
+        setLocationGranted(true);
+        if (status === 'whenInUse') {
+          // Inform user that "Always Allow" gives better background tracking
+          Alert.alert(
+            'Better Tracking Available',
+            'For tracking to work in the background, please select "Always" in location settings.',
+            [
+              { text: 'Later', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openURL('app-settings:') },
+            ],
+          );
+        }
+        return true;
+      } else if (status === 'restricted') {
+        setLocationGranted(false);
+        Alert.alert(
+          'Location Restricted',
+          'Location access is restricted on this device (e.g. parental controls). Tracking cannot be enabled.',
+          [{ text: 'OK' }],
         );
-      });
+        return false;
+      } else {
+        // denied
+        setLocationGranted(false);
+        showPermissionDeniedAlert();
+        return false;
+      }
     }
   };
 
@@ -272,12 +257,13 @@ export const MyDayTrackingScreen = () => {
           setLocationChecked(true);
           if (!granted) await requestLocationPermission();
         } else {
-          // iOS: probe for location to check permission status
-          Geolocation.getCurrentPosition(
-            () => { setLocationGranted(true); setLocationChecked(true); },
-            () => { setLocationGranted(false); setLocationChecked(true); },
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
-          );
+          // iOS: use native module to check status — no dialog, no Geolocation call.
+          // Geolocation.getCurrentPosition() is unreliable for status checks with
+          // New Architecture (callbacks may drop silently).
+          const status = await checkIOSPermission();
+          const isGranted = status === 'granted' || status === 'whenInUse';
+          setLocationGranted(isGranted);
+          setLocationChecked(true);
         }
       } catch {
         setLocationGranted(false);
@@ -296,13 +282,11 @@ export const MyDayTrackingScreen = () => {
             .then(granted => setLocationGranted(granted))
             .catch(() => {});
         } else {
-          try {
-            Geolocation.getCurrentPosition(
-              () => setLocationGranted(true),
-              () => setLocationGranted(false),
-              { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
-            );
-          } catch {}
+          // Re-check iOS permission when returning to foreground (user may have
+          // changed it in Settings while the app was backgrounded)
+          checkIOSPermission()
+            .then(status => setLocationGranted(status === 'granted' || status === 'whenInUse'))
+            .catch(() => {});
         }
       }
     });
@@ -375,48 +359,70 @@ export const MyDayTrackingScreen = () => {
 
   const startTracking = useCallback(async () => {
     if (Platform.OS === 'android') {
-      // Native Kotlin service — true 30s interval, survives app kill via START_STICKY
+      // ── Android ──────────────────────────────────────────────────────────
+      // Native Kotlin foreground service — runs independently of JS thread,
+      // survives app kill via START_STICKY, sends 30 s pings natively.
       await startNativeTracking();
-    } else {
-      // iOS: JS foreground service (no native service built for iOS)
-      if (!BackgroundService.isRunning()) {
-        try {
-          await BackgroundService.start(backgroundPingTask, bgOptions);
-          console.log('[Tracking] iOS foreground service started');
-        } catch (e) {
-          console.warn('[Tracking] Failed to start BackgroundService:', e);
-        }
-      }
-    }
 
-    // BackgroundFetch: 15min WorkManager fallback (Android) / system fetch (iOS)
-    BackgroundFetch.configure(
-      {
-        minimumFetchInterval: 15,
-        stopOnTerminate: false,
-        startOnBoot: true,
-        enableHeadless: true,
-        requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
-      },
-      async (taskId) => {
-        await sendLocationPing();
-        BackgroundFetch.finish(taskId);
-      },
-      (taskId) => {
-        BackgroundFetch.finish(taskId);
-      },
-    ).then(status => console.log('[BackgroundFetch] Configured, status:', status));
+      // WorkManager fallback: fires every 15 min even after kill (OS minimum)
+      try {
+        BackgroundFetch.configure(
+          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+          (taskId) => { BackgroundFetch.finish(taskId); },
+        ).then(status => console.log('[BackgroundFetch] Android status:', status))
+          .catch(e => console.warn('[BackgroundFetch] Android error:', e));
+      } catch (e) { console.warn('[BackgroundFetch] Android threw:', e); }
+
+    } else {
+      // ── iOS ──────────────────────────────────────────────────────────────
+      // JS setInterval drives the 30 s pings — proven working (same mechanism
+      // as the session-polling timer that fires every 30 s).
+      // sendLocationPing() gets location via Geolocation + sends fetch() to server.
+      // App stays alive in background because UIBackgroundModes:location is set
+      // in Info.plist and CLLocationManager is active inside the native module.
+      if (!iosPingRef.current) {
+        console.log('[iOS Tracking] Starting 30 s ping interval');
+        sendLocationPing(); // immediate first ping
+        iosPingRef.current = setInterval(() => {
+          console.log('[iOS Tracking] Interval fired — sending ping');
+          sendLocationPing();
+        }, PING_INTERVAL_MS);
+      }
+
+      // Native module: starts CLLocationManager so iOS keeps the app alive
+      // in background. Pings come from JS above; native only provides keepalive.
+      startNativeTracking().catch(e =>
+        console.warn('[iOS Tracking] Native module unavailable (OK):', e?.message),
+      );
+
+      // BGAppRefresh fallback for periodic background wakeup
+      try {
+        BackgroundFetch.configure(
+          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+          (taskId) => { BackgroundFetch.finish(taskId); },
+        ).then(status => console.log('[BackgroundFetch] iOS status:', status))
+          .catch(e => console.warn('[BackgroundFetch] iOS error:', e));
+      } catch (e) { console.warn('[BackgroundFetch] iOS threw:', e); }
+    }
   }, []);
 
   const stopTracking = useCallback(async () => {
     if (Platform.OS === 'android') {
+      // Android: stop the native Kotlin service
       await stopNativeTracking();
     } else {
-      if (BackgroundService.isRunning()) {
-        try { await BackgroundService.stop(); } catch {}
+      // iOS: clear JS ping interval
+      if (iosPingRef.current) {
+        clearInterval(iosPingRef.current);
+        iosPingRef.current = null;
+        console.log('[iOS Tracking] Ping interval cleared');
       }
+      // Also stop the native location manager (keepalive)
+      stopNativeTracking().catch(() => {});
     }
-    BackgroundFetch.stop();
+    try { BackgroundFetch.stop(); } catch {}
   }, []);
 
   // Start when session active, stop when session ends or permission revoked.
@@ -499,15 +505,15 @@ export const MyDayTrackingScreen = () => {
     const hasPermission = await requestLocationPermission();
     if (!hasPermission) { setActionLoading(false); return; }
 
-    // Verify GPS is accessible
+    // Verify GPS is accessible (low accuracy / allow cache — fast on all platforms)
     const locationAvailable = await new Promise<boolean>(resolve => {
       Geolocation.getCurrentPosition(
         () => resolve(true),
         (err) => {
           if (err.code === 2) { showLocationDisabledAlert(); resolve(false); }
-          else resolve(true);
+          else resolve(true); // timeout or other — permission is OK, proceed
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 },
       );
     });
     if (!locationAvailable) { setActionLoading(false); return; }

@@ -1,46 +1,70 @@
 /**
  * nativeLocationTracking.ts
  *
- * JS bridge to the native Kotlin LocationTrackingService.
- * The native service runs independently of the JS thread — it survives
- * app kill and uses START_STICKY to restart automatically.
+ * Unified JS bridge to the platform native location tracking service:
+ *   Android → Kotlin LocationTrackingService (START_STICKY foreground service)
+ *   iOS     → Swift LocationTrackingModule   (CLLocationManager + Timer)
  *
- * Only works on Android. On iOS this is a no-op (iOS has different
- * background modes handled separately).
+ * Both expose the same NativeModule name: "LocationTrackingModule"
  */
 
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../utils/constants';
 
 const { LocationTrackingModule } = NativeModules;
 
-const isAndroid = Platform.OS === 'android';
+/** iOS only — returns current permission status WITHOUT showing any dialog.
+ *  Returns: "granted" | "whenInUse" | "denied" | "restricted" | "notDetermined"
+ */
+export const checkIOSPermission = async (): Promise<string> => {
+  if (!LocationTrackingModule?.checkPermission) return 'notDetermined';
+  try {
+    return await LocationTrackingModule.checkPermission();
+  } catch (e: any) {
+    console.warn('[NativeTracking] checkPermission error:', e?.message);
+    return 'notDetermined';
+  }
+};
+
+/** iOS only — shows the native location permission dialog (only if notDetermined).
+ *  Returns: "granted" | "whenInUse" | "denied" | "restricted"
+ */
+export const requestIOSLocationPermission = async (): Promise<string> => {
+  if (!LocationTrackingModule?.requestPermission) return 'denied';
+  try {
+    const result: string = await LocationTrackingModule.requestPermission();
+    return result;
+  } catch (e: any) {
+    console.warn('[NativeTracking] requestPermission error:', e?.message);
+    return 'denied';
+  }
+};
 
 export const startNativeTracking = async (): Promise<void> => {
-  if (!isAndroid || !LocationTrackingModule) return;
-
-  const token = await AsyncStorage.getItem('auth_token');
-  if (!token) {
-    console.warn('[NativeTracking] No auth token — cannot start native service');
+  if (!LocationTrackingModule) {
+    console.warn('[NativeTracking] LocationTrackingModule not available');
     return;
   }
-
+  const token = await AsyncStorage.getItem('auth_token');
+  if (!token) {
+    console.warn('[NativeTracking] No auth token — cannot start');
+    return;
+  }
   try {
     await LocationTrackingModule.startTracking(token, API_BASE_URL);
-    console.log('[NativeTracking] Native service started');
+    console.log('[NativeTracking] Started successfully');
   } catch (e: any) {
-    console.warn('[NativeTracking] Failed to start native service:', e?.message);
+    console.warn('[NativeTracking] Failed to start:', e?.message);
   }
 };
 
 export const stopNativeTracking = async (): Promise<void> => {
-  if (!isAndroid || !LocationTrackingModule) return;
-
+  if (!LocationTrackingModule) return;
   try {
     await LocationTrackingModule.stopTracking();
-    console.log('[NativeTracking] Native service stopped');
+    console.log('[NativeTracking] Stopped successfully');
   } catch (e: any) {
-    console.warn('[NativeTracking] Failed to stop native service:', e?.message);
+    console.warn('[NativeTracking] Failed to stop:', e?.message);
   }
 };
