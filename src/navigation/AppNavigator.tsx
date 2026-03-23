@@ -1,12 +1,14 @@
 import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
-  LayoutDashboard, Contact2, GitBranch, FileText,
-  Handshake, Target, TrendingUp, Users, UserPlus, BarChart3, MapPin, Navigation,
-  Calendar, Building2,
+  LayoutDashboard, Contact2, GitBranch,
+  Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
+  Calendar, Building2, Settings,
 } from 'lucide-react-native';
+import { useOffline } from '../context/OfflineContext';
 
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -70,6 +72,12 @@ import { AiInsightsScreen } from '../screens/ai/AiInsightsScreen';
 // Payments
 import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
 
+// Settings
+import { SettingsScreen } from '../screens/settings/SettingsScreen';
+
+// Audit History
+import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -106,6 +114,7 @@ function FOTabs({ navigation }: any) {
       <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(Calendar, C.primary) }} />
       <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
@@ -123,6 +132,7 @@ function ZHTabs({ navigation }: any) {
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
@@ -140,6 +150,7 @@ function RHTabs({ navigation }: any) {
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
@@ -157,6 +168,7 @@ function SHTabs({ navigation }: any) {
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
@@ -170,6 +182,26 @@ const getRoleNavigator = (role: string) => {
   }
 };
 
+// ─── Offline Banner ───────────────────────────────────────────────────────────
+function OfflineBanner() {
+  const { isOnline, pendingCount } = useOffline();
+  if (isOnline) return null;
+  return (
+    <View style={bannerStyles.bar}>
+      <Text style={bannerStyles.text}>
+        No internet — {pendingCount > 0 ? `${pendingCount} actions queued` : 'offline mode'}
+      </Text>
+    </View>
+  );
+}
+const bannerStyles = StyleSheet.create({
+  bar: {
+    backgroundColor: '#DC2626', paddingVertical: 6, paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  text: { color: '#FFF', fontSize: 12, fontWeight: '600' },
+});
+
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export const AppNavigator = () => {
   const { user, isLoading } = useAuth();
@@ -180,6 +212,7 @@ export const AppNavigator = () => {
 
   return (
     <NavigationContainer>
+      <OfflineBanner />
       <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!user ? (
           <Stack.Screen name="Login" component={LoginScreen} />
@@ -223,6 +256,9 @@ export const AppNavigator = () => {
 
             {/* Payments */}
             <Stack.Screen name="Payments" component={PaymentsScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Settings & Audit */}
+            <Stack.Screen name="AuditHistory" component={AuditHistoryScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Misc */}
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ animation: 'slide_from_right' }} />

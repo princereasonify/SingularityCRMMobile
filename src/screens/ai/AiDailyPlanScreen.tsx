@@ -3,9 +3,9 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RefreshCw, Check } from 'lucide-react-native';
+import { RefreshCw, Check, Zap } from 'lucide-react-native';
 import { aiApi } from '../../api/ai';
-import { AiDailyPlan, AiAgendaItem } from '../../types';
+import { AiDailyPlan, AiAgendaItem, AiUsageQuota } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
@@ -25,17 +25,22 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [accepting, setAccepting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [quota, setQuota] = useState<AiUsageQuota | null>(null);
 
   const loadPlan = async () => {
     try {
-      const res = await aiApi.getDailyPlan();
-      const data = res.data;
-      setPlan(data);
-      if (data?.suggestedAgenda) {
-        setSelectedItems(new Set(data.suggestedAgenda.map((_: any, i: number) => i)));
-      }
-    } catch {
-      setPlan(null);
+      const [planRes, quotaRes] = await Promise.allSettled([
+        aiApi.getDailyPlan(),
+        aiApi.getUsageQuota('/ai/daily-plan'),
+      ]);
+      if (planRes.status === 'fulfilled') {
+        const data = planRes.value.data;
+        setPlan(data);
+        if (data?.suggestedAgenda) {
+          setSelectedItems(new Set(data.suggestedAgenda.map((_: any, i: number) => i)));
+        }
+      } else { setPlan(null); }
+      if (quotaRes.status === 'fulfilled') setQuota(quotaRes.value.data);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -64,6 +69,10 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
   };
 
   const handleRegenerate = async () => {
+    if (quota && quota.used >= quota.limit) {
+      Alert.alert('Limit Reached', `Daily AI plan limit reached (${quota.limit}/day). Resets tomorrow.`);
+      return;
+    }
     setRegenerating(true);
     try {
       const res = await aiApi.regeneratePlan();
@@ -71,6 +80,7 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
       if (res.data?.suggestedAgenda) {
         setSelectedItems(new Set(res.data.suggestedAgenda.map((_: any, i: number) => i)));
       }
+      if (quota) setQuota({ ...quota, used: quota.used + 1 });
     } catch { Alert.alert('Error', 'Failed to regenerate plan'); }
     finally { setRegenerating(false); }
   };
@@ -95,10 +105,24 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadPlan(); }} colors={[COLOR.primary]} />}
       >
+        {/* Quota Banner */}
+        {quota && (
+          <View style={[styles.quotaBanner, quota.used >= quota.limit && styles.quotaBannerExhausted]}>
+            <Zap size={14} color={quota.used >= quota.limit ? '#DC2626' : COLOR.primary} />
+            {quota.used >= quota.limit ? (
+              <Text style={[styles.quotaText, { color: '#DC2626' }]}>Limit reached — resets tomorrow</Text>
+            ) : (
+              <Text style={[styles.quotaText, { color: COLOR.primary }]}>
+                {quota.limit - quota.used} of {quota.limit} regenerations left today
+              </Text>
+            )}
+          </View>
+        )}
+
         {!plan ? (
           <View style={styles.emptyWrap}>
             <EmptyState title="No plan available" subtitle="Your AI plan will be ready every morning" icon="🤖" />
-            <Button title={regenerating ? 'Generating...' : 'Generate Plan'} onPress={handleRegenerate} variant="primary" disabled={regenerating} />
+            <Button title={regenerating ? 'Generating...' : 'Generate Plan'} onPress={handleRegenerate} variant="primary" disabled={regenerating || (quota?.used ?? 0) >= (quota?.limit ?? 99)} />
           </View>
         ) : (
           <>
@@ -191,4 +215,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginTop: 2,
   },
+  quotaBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10,
+  },
+  quotaBannerExhausted: { backgroundColor: '#FEF2F2' },
+  quotaText: { fontSize: rf(13), fontWeight: '600' },
 });

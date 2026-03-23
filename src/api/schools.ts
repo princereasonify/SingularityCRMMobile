@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { School, SchoolFilters, CreateSchoolRequest, PaginatedResult } from '../types';
+import { School, SchoolFilters, CreateSchoolRequest, PaginatedResult, DuplicateMatch, SchoolWithPriority } from '../types';
 
 export const schoolsApi = {
   getAll: (filters?: SchoolFilters) =>
@@ -12,4 +12,12 @@ export const schoolsApi = {
     apiClient.get<School[]>('/schools/nearby', { params: { lat, lon, radiusMeters } }),
   getVisitHistory: (id: number) =>
     apiClient.get<any[]>(`/schools/${id}/visit-history`),
+
+  // Duplicate detection
+  checkDuplicates: (name: string, city?: string, lat?: number, lon?: number) =>
+    apiClient.post<DuplicateMatch[]>('/schools/check-duplicates', { name, city, lat, lon }),
+
+  // Visit priority score
+  getPriority: (filters?: SchoolFilters) =>
+    apiClient.get<PaginatedResult<SchoolWithPriority>>('/schools/priority', { params: filters }),
 };

@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Alert, Linking, useWindowDimensions,
+  Alert, Linking, useWindowDimensions, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Phone, Mail, MapPin, User, Edit2, Plus, XCircle } from 'lucide-react-native';
+import { ArrowLeft, Phone, Mail, User, History, X } from 'lucide-react-native';
 import { leadsApi } from '../../api/leads';
-import { LeadDto, LeadStage } from '../../types';
+import { aiApi } from '../../api/ai';
+import { LeadDto, LeadStage, LeadScoreBreakdown } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Badge, StageBadge } from '../../components/common/Badge';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { Button } from '../../components/common/Button';
-import { ROLE_COLORS, STAGE_COLORS, ACTIVITY_COLORS, ALL_STAGES, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
-import { formatCurrency, formatDate, formatRelativeDate, formatDateTime } from '../../utils/formatting';
+import { ROLE_COLORS, ACTIVITY_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
+import { formatCurrency, formatDate, formatRelativeDate } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 
 const STAGE_ORDER: LeadStage[] = [
@@ -31,6 +32,8 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
 
   const [lead, setLead] = useState<LeadDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scoreBreakdown, setScoreBreakdown] = useState<LeadScoreBreakdown | null>(null);
+  const [showScoreModal, setShowScoreModal] = useState(false);
 
   const fetch = useCallback(async () => {
     try {
@@ -45,6 +48,18 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
   }, [leadId]);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  const handleOpenScoreBreakdown = async () => {
+    setShowScoreModal(true);
+    if (!scoreBreakdown) {
+      try {
+        const res = await aiApi.getLeadScoreBreakdown(leadId);
+        setScoreBreakdown(res.data);
+      } catch {
+        // graceful fallback: show total only
+      }
+    }
+  };
 
   const handleMarkLost = () => {
     Alert.prompt?.('Mark as Lost', 'Enter loss reason:', async (reason) => {
@@ -72,14 +87,71 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerSchool} numberOfLines={1}>{lead.school}</Text>
-            <StageBadge stage={lead.stage} />
+            <View style={styles.headerSubRow}>
+              <StageBadge stage={lead.stage} />
+              <TouchableOpacity
+                style={styles.historyBtn}
+                onPress={() => navigation.navigate('AuditHistory', { entityType: 'Lead', entityId: leadId, title: lead.school })}
+              >
+                <History size={14} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.historyBtnText}>History</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={[styles.scoreCircle, { borderColor: getScoreColor(lead.score) }]}>
-            <Text style={[styles.scoreValue, { color: getScoreColor(lead.score) }]}>{lead.score}</Text>
-            <Text style={styles.scoreLabel}>score</Text>
-          </View>
+          <TouchableOpacity onPress={handleOpenScoreBreakdown}>
+            <View style={[styles.scoreCircle, { borderColor: getScoreColor(lead.score) }]}>
+              <Text style={[styles.scoreValue, { color: getScoreColor(lead.score) }]}>{lead.score}</Text>
+              <Text style={styles.scoreLabel}>score</Text>
+            </View>
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Score Breakdown Modal */}
+      <Modal visible={showScoreModal} transparent animationType="slide" onRequestClose={() => setShowScoreModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Score Breakdown</Text>
+              <TouchableOpacity onPress={() => setShowScoreModal(false)}>
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            {scoreBreakdown ? (
+              <>
+                {[
+                  { label: 'Engagement', value: scoreBreakdown.engagement, max: 30, color: '#2563EB' },
+                  { label: 'Visit Quality', value: scoreBreakdown.visitQuality, max: 25, color: '#16A34A' },
+                  { label: 'Contact Quality', value: scoreBreakdown.contactQuality, max: 15, color: '#7C3AED' },
+                  { label: 'Demo Progress', value: scoreBreakdown.demoProgress, max: 20, color: '#EA580C' },
+                  { label: 'Deal Signals', value: scoreBreakdown.dealSignals, max: 10, color: '#F59E0B' },
+                ].map(item => (
+                  <View key={item.label} style={styles.breakdownRow}>
+                    <View style={styles.breakdownLabel}>
+                      <Text style={styles.breakdownLabelText}>{item.label}</Text>
+                      <Text style={[styles.breakdownScore, { color: item.color }]}>{item.value}/{item.max}</Text>
+                    </View>
+                    <View style={styles.breakdownBarBg}>
+                      <View style={[styles.breakdownBarFill, { width: `${(item.value / item.max) * 100}%`, backgroundColor: item.color }]} />
+                    </View>
+                  </View>
+                ))}
+                <View style={styles.breakdownTotal}>
+                  <Text style={styles.breakdownTotalLabel}>Total Score</Text>
+                  <Text style={[styles.breakdownTotalValue, { color: getScoreColor(scoreBreakdown.total) }]}>
+                    {scoreBreakdown.total}/100
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.scoreModalLoading}>
+                <Text style={styles.scoreModalLoadingText}>Score: {lead.score}/100</Text>
+                <Text style={styles.scoreModalSub}>Detailed breakdown not available</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}>
         {/* Stage Progression */}
@@ -336,4 +408,29 @@ const styles = StyleSheet.create({
   actMeta: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
   actions: { gap: 10 },
   actionBtn: {},
+  headerSubRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  historyBtnText: { fontSize: rf(11), color: 'rgba(255,255,255,0.8)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 40,
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
+  breakdownRow: { marginBottom: 14 },
+  breakdownLabel: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  breakdownLabelText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+  breakdownScore: { fontSize: rf(13), fontWeight: '700' },
+  breakdownBarBg: { height: 8, backgroundColor: '#F3F4F6', borderRadius: 4 },
+  breakdownBarFill: { height: 8, borderRadius: 4 },
+  breakdownTotal: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: 16, marginTop: 4, borderTopWidth: 1, borderTopColor: '#F3F4F6',
+  },
+  breakdownTotalLabel: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  breakdownTotalValue: { fontSize: rf(22), fontWeight: '800' },
+  scoreModalLoading: { alignItems: 'center', paddingVertical: 20 },
+  scoreModalLoadingText: { fontSize: rf(28), fontWeight: '800', color: '#111827' },
+  scoreModalSub: { fontSize: rf(13), color: '#9CA3AF', marginTop: 6 },
 });

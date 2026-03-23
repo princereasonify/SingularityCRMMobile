@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Alert, Linking, ActivityIndicator,
+  Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Phone, MapPin, Users, Building2, CheckCircle, Clock } from 'lucide-react-native';
+import { Plus, Phone, CheckCircle, Clock, History } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
 import { contactsApi } from '../../api/contacts';
 import { School, Contact, SchoolVisitLog } from '../../types';
@@ -86,11 +86,9 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
         color={COLOR.primary}
         onBack={() => navigation.goBack()}
         rightAction={
-          (role === 'FO' || role === 'ZH') ? (
-            <TouchableOpacity onPress={() => navigation.navigate('AddContact', { schoolId: school.id, schoolName: school.name })}>
-              <Plus size={22} color="#FFF" />
-            </TouchableOpacity>
-          ) : undefined
+          <TouchableOpacity onPress={() => navigation.navigate('AuditHistory', { entityType: 'School', entityId: school.id, title: school.name })}>
+            <History size={20} color="#FFF" />
+          </TouchableOpacity>
         }
       />
 

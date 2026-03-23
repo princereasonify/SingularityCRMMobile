@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { Contact, ContactFilters, CreateContactRequest, PaginatedResult } from '../types';
+import { Contact, ContactFilters, CreateContactRequest, PaginatedResult, DuplicateMatch } from '../types';
 
 export const contactsApi = {
   getAll: (filters?: ContactFilters) =>
@@ -10,4 +10,8 @@ export const contactsApi = {
     apiClient.put<Contact>(`/contacts/${id}`, data),
   getBySchool: (schoolId: number) =>
     apiClient.get<Contact[]>(`/contacts/school/${schoolId}`),
+
+  // Duplicate detection
+  checkDuplicates: (name?: string, phone?: string, schoolId?: number) =>
+    apiClient.post<DuplicateMatch[]>('/contacts/check-duplicates', { name, phone, schoolId }),
 };

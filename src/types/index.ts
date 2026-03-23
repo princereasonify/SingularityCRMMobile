@@ -830,3 +830,109 @@ export interface CreatePaymentRequest {
   bankName?: string;
   notes?: string;
 }
+
+// ─── Audit Trail ──────────────────────────────────────────────────────────────
+
+export interface AuditLog {
+  id: number;
+  entityType: string;
+  entityId: number;
+  action: 'Created' | 'Updated' | 'Deleted';
+  changedFields?: Record<string, { old: any; new: any }>;
+  performedByName: string;
+  performedAt: string;
+  ipAddress?: string;
+}
+
+export interface AuditFilters {
+  entityType?: string;
+  entityId?: number;
+  userId?: number;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+// ─── Duplicate Detection ──────────────────────────────────────────────────────
+
+export interface DuplicateMatch {
+  matchedEntityId: number;
+  matchedEntityName: string;
+  matchType: 'Definite' | 'Probable' | 'Possible';
+  matchReason: string;
+  similarity: number;
+}
+
+// ─── Visit Priority Score ─────────────────────────────────────────────────────
+
+export interface SchoolWithPriority extends School {
+  visitPriorityScore: number;
+  priorityLevel: 'High' | 'Medium' | 'Low';
+  daysSinceLastVisit?: number;
+}
+
+// ─── Lead Score Breakdown ─────────────────────────────────────────────────────
+
+export interface LeadScoreBreakdown {
+  total: number;
+  engagement: number;
+  visitQuality: number;
+  contactQuality: number;
+  demoProgress: number;
+  dealSignals: number;
+}
+
+// ─── AI Usage Quota ───────────────────────────────────────────────────────────
+
+export interface AiUsageQuota {
+  endpoint: string;
+  used: number;
+  limit: number;
+  resetsAt: string;
+}
+
+// ─── Dashboard Widget ─────────────────────────────────────────────────────────
+
+export interface DashboardWidget {
+  id: string;
+  type: 'kpi' | 'chart' | 'list' | 'map' | 'calendar' | 'leaderboard' | 'ai';
+  title: string;
+  position: number;
+  visible: boolean;
+  size: 'small' | 'medium' | 'large';
+}
+
+export interface DashboardConfig {
+  widgets: DashboardWidget[];
+  updatedAt?: string;
+}
+
+// ─── User Settings ────────────────────────────────────────────────────────────
+
+export interface UserSettings {
+  language: 'en' | 'hi';
+  whatsappNotifications: boolean;
+  pushNotifications: boolean;
+  dashboardWidgets?: DashboardWidget[];
+}
+
+// ─── Offline Queue ────────────────────────────────────────────────────────────
+
+export type OfflineActionType =
+  | 'gps_ping'
+  | 'geofence_event'
+  | 'visit_report'
+  | 'activity'
+  | 'visit_start'
+  | 'visit_end';
+
+export interface OfflineAction {
+  id: string;
+  type: OfflineActionType;
+  endpoint: string;
+  method: 'POST' | 'PUT' | 'PATCH';
+  data: any;
+  timestamp: string;
+  retryCount: number;
+}

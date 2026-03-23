@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput,
+  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AlertTriangle, ExternalLink, X } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
-import { School } from '../../types';
+import { School, DuplicateMatch } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
@@ -36,15 +37,28 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const [longitude, setLongitude] = useState(existing?.longitude?.toString() ?? '');
   const [geofenceRadius, setGeofenceRadius] = useState(existing?.geofenceRadiusMeters?.toString() ?? '200');
   const [submitting, setSubmitting] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [showDupModal, setShowDupModal] = useState(false);
+  const dupCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSubmit = async () => {
-    if (!name.trim()) { Alert.alert('Validation', 'School name is required'); return; }
-    if (!category) { Alert.alert('Validation', 'Category is required'); return; }
+  // Debounced duplicate check when name+city change
+  useEffect(() => {
+    if (isEdit || !name.trim()) { setDuplicates([]); return; }
+    if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current);
+    dupCheckTimer.current = setTimeout(async () => {
+      try {
+        const res = await schoolsApi.checkDuplicates(name.trim(), city || undefined);
+        setDuplicates((res.data as any) ?? []);
+      } catch {
+        setDuplicates([]);
+      }
+    }, 600);
+    return () => { if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current); };
+  }, [name, city, isEdit]);
+
+  const doSave = async () => {
     const lat = parseFloat(latitude);
     const lon = parseFloat(longitude);
-    if (latitude && isNaN(lat)) { Alert.alert('Validation', 'Invalid latitude'); return; }
-    if (longitude && isNaN(lon)) { Alert.alert('Validation', 'Invalid longitude'); return; }
-
     setSubmitting(true);
     try {
       const data = {
@@ -74,8 +88,27 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
       Alert.alert('Error', 'Failed to save school. Please try again.');
     } finally {
       setSubmitting(false);
+      setShowDupModal(false);
     }
   };
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { Alert.alert('Validation', 'School name is required'); return; }
+    if (!category) { Alert.alert('Validation', 'Category is required'); return; }
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
+    if (latitude && isNaN(lat)) { Alert.alert('Validation', 'Invalid latitude'); return; }
+    if (longitude && isNaN(lon)) { Alert.alert('Validation', 'Invalid longitude'); return; }
+
+    // If duplicates exist, show warning modal first
+    if (!isEdit && duplicates.length > 0) {
+      setShowDupModal(true);
+      return;
+    }
+    await doSave();
+  };
+
+  const DUP_COLORS = { Definite: '#DC2626', Probable: '#F59E0B', Possible: '#2563EB' };
 
   const PickerRow = ({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) => (
     <View style={styles.fieldGroup}>
@@ -102,6 +135,17 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         onBack={() => navigation.goBack()}
       />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+
+        {/* Duplicate Warning Banner */}
+        {!isEdit && duplicates.length > 0 && (
+          <View style={styles.dupBanner}>
+            <AlertTriangle size={16} color="#92400E" />
+            <Text style={styles.dupBannerText}>
+              {duplicates.length} possible duplicate{duplicates.length > 1 ? 's' : ''} found — review before saving
+            </Text>
+          </View>
+        )}
+
         <Card label="Basic Information">
           <Field label="School Name *" value={name} onChange={setName} placeholder="Full school name" />
           <PickerRow label="Category *" options={CATEGORIES} value={category} onChange={setCategory} />
@@ -136,6 +180,48 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           style={{ marginTop: 8 }}
         />
       </ScrollView>
+
+      {/* Duplicate Detection Bottom Sheet */}
+      <Modal visible={showDupModal} transparent animationType="slide" onRequestClose={() => setShowDupModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <AlertTriangle size={18} color="#F59E0B" />
+                <Text style={styles.modalTitle}>Possible Duplicate Found</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDupModal(false)}>
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            {duplicates.map(d => (
+              <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] }]}>
+                <View style={styles.dupCardHeader}>
+                  <Text style={styles.dupName}>{d.matchedEntityName}</Text>
+                  <View style={[styles.matchBadge, { backgroundColor: DUP_COLORS[d.matchType] + '20' }]}>
+                    <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] }]}>{d.matchType}</Text>
+                  </View>
+                </View>
+                <Text style={styles.dupReason}>{d.matchReason}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDupModal(false);
+                    navigation.navigate('SchoolDetail', { schoolId: d.matchedEntityId });
+                  }}
+                  style={styles.viewExistingBtn}
+                >
+                  <ExternalLink size={13} color={COLOR.primary} />
+                  <Text style={[styles.viewExistingText, { color: COLOR.primary }]}>View Existing</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.modalActions}>
+              <Button title="Create Anyway" onPress={doSave} disabled={submitting} variant="secondary" style={{ flex: 1 }} />
+              <Button title="Cancel" onPress={() => setShowDupModal(false)} variant="primary" style={{ flex: 1 }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -187,4 +273,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
   },
   chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+  dupBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12,
+  },
+  dupBannerText: { flex: 1, fontSize: rf(13), color: '#92400E', fontWeight: '500' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 40,
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  dupCard: {
+    borderLeftWidth: 4, backgroundColor: '#FAFAFA', borderRadius: 10,
+    padding: 12, marginBottom: 10,
+  },
+  dupCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  dupName: { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
+  matchBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
+  matchBadgeText: { fontSize: rf(11), fontWeight: '700' },
+  dupReason: { fontSize: rf(12), color: '#6B7280', marginBottom: 8 },
+  viewExistingBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewExistingText: { fontSize: rf(13), fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
 });

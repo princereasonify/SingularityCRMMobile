@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Edit2, Phone, Mail, Building2 } from 'lucide-react-native';
+import { Edit2, Phone, Mail, Building2, MessageCircle, History } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
 import { Contact } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -46,6 +46,19 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
 
   const canEdit = role === 'FO' || role === 'ZH';
 
+  const openWhatsApp = () => {
+    if (!contact.phone) return;
+    const phone = contact.phone.replace(/[^0-9]/g, '');
+    const url = `whatsapp://send?phone=${phone}`;
+    Linking.canOpenURL(url).then(supported => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        Alert.alert('WhatsApp Not Installed', 'Please install WhatsApp to use this feature.');
+      }
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
@@ -53,11 +66,20 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
         subtitle={contact.designation}
         color={COLOR.primary}
         onBack={() => navigation.goBack()}
-        rightAction={canEdit ? (
-          <TouchableOpacity onPress={() => navigation.navigate('AddContact', { contact })}>
-            <Edit2 size={20} color="#FFF" />
-          </TouchableOpacity>
-        ) : undefined}
+        rightAction={
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('AuditHistory', { entityType: 'Contact', entityId: contact.id, title: contact.name })}
+            >
+              <History size={18} color="#FFF" />
+            </TouchableOpacity>
+            {canEdit && (
+              <TouchableOpacity onPress={() => navigation.navigate('AddContact', { contact })}>
+                <Edit2 size={18} color="#FFF" />
+              </TouchableOpacity>
+            )}
+          </View>
+        }
       />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         {/* Avatar + Name */}
@@ -81,15 +103,26 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>Contact Details</Text>
           {contact.phone && (
-            <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
-              <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
-                <Phone size={16} color="#16A34A" />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionLabel}>Phone</Text>
-                <Text style={[styles.actionValue, { color: '#16A34A' }]}>{contact.phone}</Text>
-              </View>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
+                <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
+                  <Phone size={16} color="#16A34A" />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionLabel}>Phone</Text>
+                  <Text style={[styles.actionValue, { color: '#16A34A' }]}>{contact.phone}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionRow} onPress={openWhatsApp}>
+                <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
+                  <MessageCircle size={16} color="#25D366" />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionLabel}>WhatsApp</Text>
+                  <Text style={[styles.actionValue, { color: '#25D366' }]}>Open in WhatsApp</Text>
+                </View>
+              </TouchableOpacity>
+            </>
           )}
           {contact.email && (
             <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
@@ -178,4 +211,5 @@ const styles = StyleSheet.create({
   infoValue: { fontSize: rf(13), color: '#111827', fontWeight: '500' },
   notesBox: { paddingTop: 8 },
   notesText: { fontSize: rf(13), color: '#374151', marginTop: 4, lineHeight: 20 },
+  headerActions: { flexDirection: 'row', gap: 14 },
 });

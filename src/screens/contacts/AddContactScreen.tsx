@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity,
-  TextInput, Switch,
+  TextInput, Switch, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AlertTriangle, ExternalLink, X } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
-import { Contact } from '../../types';
+import { Contact, DuplicateMatch } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
@@ -33,12 +34,29 @@ export const AddContactScreen = ({ navigation, route }: any) => {
   const [isDecisionMaker, setIsDecisionMaker] = useState(existing?.isDecisionMaker ?? false);
   const [isInfluencer, setIsInfluencer] = useState(existing?.isInfluencer ?? false);
   const [submitting, setSubmitting] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [showDupModal, setShowDupModal] = useState(false);
+  const dupCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const schoolId = existing?.schoolId ?? schoolIdParam;
   const schoolName = existing?.schoolName ?? schoolNameParam;
 
-  const handleSubmit = async () => {
-    if (!name.trim()) { Alert.alert('Validation', 'Contact name is required'); return; }
+  const DUP_COLORS = { Definite: '#DC2626', Probable: '#F59E0B', Possible: '#2563EB' } as Record<string, string>;
+
+  // Debounced duplicate check on name + phone change
+  useEffect(() => {
+    if (isEdit || (!name.trim() && !phone.trim())) { setDuplicates([]); return; }
+    if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current);
+    dupCheckTimer.current = setTimeout(async () => {
+      try {
+        const res = await contactsApi.checkDuplicates(name.trim() || undefined, phone.trim() || undefined, schoolId);
+        setDuplicates((res.data as any) ?? []);
+      } catch { setDuplicates([]); }
+    }, 600);
+    return () => { if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current); };
+  }, [name, phone, schoolId, isEdit]);
+
+  const doSave = async () => {
     setSubmitting(true);
     try {
       const data = {
@@ -65,7 +83,17 @@ export const AddContactScreen = ({ navigation, route }: any) => {
       Alert.alert('Error', 'Failed to save contact. Please try again.');
     } finally {
       setSubmitting(false);
+      setShowDupModal(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { Alert.alert('Validation', 'Contact name is required'); return; }
+    if (!isEdit && duplicates.length > 0) {
+      setShowDupModal(true);
+      return;
+    }
+    await doSave();
   };
 
   return (
@@ -79,6 +107,14 @@ export const AddContactScreen = ({ navigation, route }: any) => {
         {schoolName && (
           <View style={[styles.schoolBanner, { backgroundColor: COLOR.light }]}>
             <Text style={[styles.schoolBannerText, { color: COLOR.primary }]}>🏫 {schoolName}</Text>
+          </View>
+        )}
+        {!isEdit && duplicates.length > 0 && (
+          <View style={styles.dupBanner}>
+            <AlertTriangle size={16} color="#92400E" />
+            <Text style={styles.dupBannerText}>
+              {duplicates.length} possible duplicate{duplicates.length > 1 ? 's' : ''} found
+            </Text>
           </View>
         )}
 
@@ -135,6 +171,45 @@ export const AddContactScreen = ({ navigation, route }: any) => {
           style={{ marginTop: 8 }}
         />
       </ScrollView>
+
+      {/* Duplicate Detection Modal */}
+      <Modal visible={showDupModal} transparent animationType="slide" onRequestClose={() => setShowDupModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <AlertTriangle size={18} color="#F59E0B" />
+                <Text style={styles.modalTitle}>Possible Duplicate Found</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDupModal(false)}>
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            {duplicates.map(d => (
+              <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || '#9CA3AF' }]}>
+                <View style={styles.dupCardHeader}>
+                  <Text style={styles.dupName}>{d.matchedEntityName}</Text>
+                  <View style={[styles.matchBadge, { backgroundColor: (DUP_COLORS[d.matchType] || '#9CA3AF') + '20' }]}>
+                    <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || '#9CA3AF' }]}>{d.matchType}</Text>
+                  </View>
+                </View>
+                <Text style={styles.dupReason}>{d.matchReason}</Text>
+                <TouchableOpacity
+                  onPress={() => { setShowDupModal(false); navigation.navigate('ContactDetail', { contactId: d.matchedEntityId }); }}
+                  style={styles.viewExistingBtn}
+                >
+                  <ExternalLink size={13} color={COLOR.primary} />
+                  <Text style={[styles.viewExistingText, { color: COLOR.primary }]}>View Existing</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.modalActions}>
+              <Button title="Create Anyway" onPress={doSave} disabled={submitting} variant="secondary" style={{ flex: 1 }} />
+              <Button title="Cancel" onPress={() => setShowDupModal(false)} variant="primary" style={{ flex: 1 }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -191,4 +266,20 @@ const styles = StyleSheet.create({
   chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   toggleLabel: { fontSize: rf(14), color: '#374151', fontWeight: '500' },
+  dupBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12 },
+  dupBannerText: { flex: 1, fontSize: rf(13), color: '#92400E', fontWeight: '500' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  dupCard: { borderLeftWidth: 4, backgroundColor: '#FAFAFA', borderRadius: 10, padding: 12, marginBottom: 10 },
+  dupCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  dupName: { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
+  matchBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
+  matchBadgeText: { fontSize: rf(11), fontWeight: '700' },
+  dupReason: { fontSize: rf(12), color: '#6B7280', marginBottom: 8 },
+  viewExistingBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewExistingText: { fontSize: rf(13), fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
 });
