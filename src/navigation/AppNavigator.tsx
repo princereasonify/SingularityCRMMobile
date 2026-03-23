@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   LayoutDashboard, Contact2, GitBranch, FileText,
   Handshake, Target, TrendingUp, Users, UserPlus, BarChart3, MapPin, Navigation,
+  Calendar, Building2,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
@@ -21,7 +22,7 @@ import { ZHDashboard } from '../screens/dashboard/ZHDashboard';
 import { RHDashboard } from '../screens/dashboard/RHDashboard';
 import { SHDashboard } from '../screens/dashboard/SHDashboard';
 
-// Shared screens
+// Core screens
 import { LeadsListScreen } from '../screens/leads/LeadsListScreen';
 import { LeadDetailScreen } from '../screens/leads/LeadDetailScreen';
 import { AddLeadScreen } from '../screens/leads/AddLeadScreen';
@@ -35,6 +36,39 @@ import { UserManagementScreen } from '../screens/users/UserManagementScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { MyDayTrackingScreen } from '../screens/tracking/MyDayTrackingScreen';
 import { LiveTrackingScreen } from '../screens/tracking/LiveTrackingScreen';
+
+// Schools
+import { SchoolsListScreen } from '../screens/schools/SchoolsListScreen';
+import { SchoolDetailScreen } from '../screens/schools/SchoolDetailScreen';
+import { AddSchoolScreen } from '../screens/schools/AddSchoolScreen';
+
+// Contacts
+import { ContactsListScreen } from '../screens/contacts/ContactsListScreen';
+import { ContactDetailScreen } from '../screens/contacts/ContactDetailScreen';
+import { AddContactScreen } from '../screens/contacts/AddContactScreen';
+
+// Demos
+import { DemoListScreen } from '../screens/demos/DemoListScreen';
+import { DemoDetailScreen } from '../screens/demos/DemoDetailScreen';
+import { AssignDemoScreen } from '../screens/demos/AssignDemoScreen';
+
+// Onboarding
+import { OnboardListScreen } from '../screens/onboarding/OnboardListScreen';
+import { OnboardDetailScreen } from '../screens/onboarding/OnboardDetailScreen';
+
+// Calendar
+import { CalendarScreen } from '../screens/calendar/CalendarScreen';
+
+// Visit Report
+import { VisitReportScreen } from '../screens/visitReport/VisitReportScreen';
+
+// AI
+import { AiDailyPlanScreen } from '../screens/ai/AiDailyPlanScreen';
+import { AiDailyReportScreen } from '../screens/ai/AiDailyReportScreen';
+import { AiInsightsScreen } from '../screens/ai/AiInsightsScreen';
+
+// Payments
+import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -68,9 +102,9 @@ function FOTabs({ navigation }: any) {
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={FODashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} initialParams={{ navigation }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Activities" component={ActivityLogScreen} options={{ tabBarLabel: 'Activity', tabBarIcon: TabIcon(FileText, C.primary) }} />
-      <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(Calendar, C.primary) }} />
+      <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
     </Tab.Navigator>
   );
@@ -152,11 +186,48 @@ export const AppNavigator = () => {
         ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs!} />
+
+            {/* Leads */}
             <Stack.Screen name="LeadDetail" component={LeadDetailScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="AddLead" component={AddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="EditLead" component={AddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="CreateDeal" component={CreateDealScreen} options={{ animation: 'slide_from_bottom' }} />
+
+            {/* Schools */}
+            <Stack.Screen name="SchoolDetail" component={SchoolDetailScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AddSchool" component={AddSchoolScreen} options={{ animation: 'slide_from_bottom' }} />
+
+            {/* Contacts */}
+            <Stack.Screen name="ContactDetail" component={ContactDetailScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AddContact" component={AddContactScreen} options={{ animation: 'slide_from_bottom' }} />
+
+            {/* Demos */}
+            <Stack.Screen name="DemoList" component={DemoListScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="DemoDetail" component={DemoDetailScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AssignDemo" component={AssignDemoScreen} options={{ animation: 'slide_from_bottom' }} />
+
+            {/* Onboarding */}
+            <Stack.Screen name="OnboardList" component={OnboardListScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="OnboardDetail" component={OnboardDetailScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Contacts List (standalone navigation) */}
+            <Stack.Screen name="ContactsList" component={ContactsListScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Visit Report */}
+            <Stack.Screen name="VisitReport" component={VisitReportScreen} options={{ animation: 'slide_from_bottom' }} />
+
+            {/* AI */}
+            <Stack.Screen name="AiDailyPlan" component={AiDailyPlanScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AiDailyReport" component={AiDailyReportScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AiInsights" component={AiInsightsScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Payments */}
+            <Stack.Screen name="Payments" component={PaymentsScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Misc */}
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="Activities" component={ActivityLogScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="SchoolsList" component={SchoolsListScreen} options={{ animation: 'slide_from_right' }} />
           </>
         )}
       </Stack.Navigator>

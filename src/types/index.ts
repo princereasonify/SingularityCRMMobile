@@ -505,3 +505,328 @@ export interface CreateTargetRequest {
   assignedToId: number;
   parentTargetId?: number;
 }
+
+// ─── School ───────────────────────────────────────────────────────────────────
+
+export interface SchoolFilters {
+  search?: string;
+  status?: string;
+  board?: string;
+  city?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface School {
+  id: number;
+  name: string;
+  board?: string;
+  type?: string;
+  category: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  fullAddress?: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters: number;
+  studentCount?: number;
+  principalName?: string;
+  principalPhone?: string;
+  isPartnerOffice: boolean;
+  status: 'Active' | 'Inactive' | 'Blacklisted';
+  contactCount?: number;
+  leadCount?: number;
+  lastVisitDate?: string;
+  assignedFoId?: number;
+  assignedFoName?: string;
+}
+
+export interface CreateSchoolRequest {
+  name: string;
+  board?: string;
+  type?: string;
+  category: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  fullAddress?: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters?: number;
+  studentCount?: number;
+  principalName?: string;
+  principalPhone?: string;
+}
+
+// ─── Contact ──────────────────────────────────────────────────────────────────
+
+export interface ContactFilters {
+  search?: string;
+  schoolId?: number;
+  relationship?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface Contact {
+  id: number;
+  name: string;
+  designation?: string;
+  department?: string;
+  phone?: string;
+  email?: string;
+  schoolId?: number;
+  schoolName?: string;
+  profession?: string;
+  personalityNotes?: string;
+  isDecisionMaker: boolean;
+  isInfluencer: boolean;
+  relationship: 'New' | 'Warm' | 'Strong' | 'Champion' | 'Detractor';
+  lastContactedAt?: string;
+}
+
+export interface CreateContactRequest {
+  name: string;
+  designation?: string;
+  department?: string;
+  phone?: string;
+  email?: string;
+  schoolId?: number;
+  profession?: string;
+  personalityNotes?: string;
+  isDecisionMaker?: boolean;
+  isInfluencer?: boolean;
+  relationship?: string;
+}
+
+// ─── Geofence ─────────────────────────────────────────────────────────────────
+
+export interface GeofenceEventRequest {
+  schoolId: number;
+  eventType: 'Enter' | 'Exit';
+  timestamp: string;
+  latitude: number;
+  longitude: number;
+  distanceFromCenterMeters: number;
+  durationMinutes?: number;
+}
+
+export interface SchoolVisitLog {
+  id: number;
+  schoolId: number;
+  schoolName: string;
+  enteredAt: string;
+  exitedAt?: string;
+  durationMinutes?: number;
+  isVerified: boolean;
+  hasVisitReport: boolean;
+}
+
+export interface TimeBreakdown {
+  totalVisitMinutes: number;
+  totalTravelMinutes: number;
+  totalIdleMinutes: number;
+  schoolsVisited: number;
+  visits: SchoolVisitLog[];
+}
+
+// ─── Demo ─────────────────────────────────────────────────────────────────────
+
+export interface DemoFilters {
+  search?: string;
+  status?: string;
+  mode?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface DemoAssignment {
+  id: number;
+  leadId: number;
+  schoolId: number;
+  schoolName: string;
+  requestedByName: string;
+  assignedToName: string;
+  scheduledDate: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  demoMode: 'Online' | 'Offline' | 'Hybrid';
+  status: 'Requested' | 'Approved' | 'Scheduled' | 'InProgress' | 'Completed' | 'Cancelled' | 'Rescheduled';
+  outcome?: 'Successful' | 'Partial' | 'Unsuccessful' | 'Rescheduled';
+  meetingLink?: string;
+  notes?: string;
+  feedback?: string;
+  hasRecording: boolean;
+}
+
+export interface CreateDemoRequest {
+  leadId: number;
+  schoolId: number;
+  assignedToId: number;
+  scheduledDate: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  demoMode: string;
+  meetingLink?: string;
+  notes?: string;
+}
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+
+export interface OnboardFilters {
+  search?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface OnboardAssignment {
+  id: number;
+  leadId: number;
+  dealId?: number;
+  schoolId: number;
+  schoolName: string;
+  assignedToName: string;
+  status: 'Assigned' | 'InProgress' | 'Completed' | 'OnHold' | 'Cancelled';
+  completionPercentage: number;
+  scheduledStartDate?: string;
+  scheduledEndDate?: string;
+  modules?: string[];
+}
+
+// ─── Route Plan ───────────────────────────────────────────────────────────────
+
+export interface RouteStop {
+  order: number;
+  schoolId: number;
+  schoolName: string;
+  latitude: number;
+  longitude: number;
+  estimatedArrival?: string;
+  actualArrival?: string;
+  visited: boolean;
+}
+
+export interface DailyRoutePlan {
+  id: number;
+  planDate: string;
+  status: 'Draft' | 'Active' | 'Completed' | 'Abandoned';
+  stops: RouteStop[];
+  totalEstimatedDistanceKm?: number;
+  totalEstimatedDurationMinutes?: number;
+}
+
+export interface CreateRoutePlanRequest {
+  planDate: string;
+  stops: { schoolId: number; order: number }[];
+}
+
+// ─── Visit Report ─────────────────────────────────────────────────────────────
+
+export interface CreateVisitReportRequest {
+  schoolVisitLogId: number;
+  activityId?: number;
+  purpose: string;
+  personMetId?: number;
+  outcome: string;
+  remarks?: string;
+  nextAction: string;
+  nextActionDate?: string;
+  nextActionNotes?: string;
+}
+
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+export interface AiAgendaItem {
+  time: string;
+  action: string;
+  school: string;
+  schoolId: number;
+  reason: string;
+}
+
+export interface AiDailyPlan {
+  id: number;
+  planDate: string;
+  suggestedAgenda: AiAgendaItem[];
+  optimizedRoute?: string;
+  dailyTips?: string;
+  targetReminder?: string;
+}
+
+export interface AiDailyReport {
+  summary: string;
+  completed: string[];
+  pending: string[];
+  metrics: {
+    visitTime: string;
+    travelTime: string;
+    idleTime: string;
+    qualityScore: number;
+  };
+  tomorrowSuggestion?: string;
+}
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+export interface CalendarEvent {
+  id: number;
+  eventType: string;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  schoolName?: string;
+  isCompleted: boolean;
+}
+
+export interface CreateCalendarEventRequest {
+  eventType: string;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  schoolId?: number;
+}
+
+// ─── Payment ──────────────────────────────────────────────────────────────────
+
+export interface PaymentFilters {
+  search?: string;
+  status?: string;
+  method?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface Payment {
+  id: number;
+  dealId: number;
+  schoolName?: string;
+  amount: number;
+  method: string;
+  status: string;
+  transactionId?: string;
+  chequeNumber?: string;
+  chequeDate?: string;
+  bankName?: string;
+  chequeImageUrl?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface CreatePaymentRequest {
+  dealId: number;
+  amount: number;
+  method: string;
+  transactionId?: string;
+  chequeNumber?: string;
+  chequeDate?: string;
+  bankName?: string;
+  notes?: string;
+}
