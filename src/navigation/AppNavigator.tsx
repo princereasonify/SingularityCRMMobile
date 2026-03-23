@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   LayoutDashboard, Contact2, GitBranch, FileText,
-  Handshake, Target, TrendingUp, Users, UserPlus, BarChart3, MapPin,
+  Handshake, Target, TrendingUp, Users, UserPlus, BarChart3, MapPin, Navigation,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
@@ -86,7 +86,8 @@ function ZHTabs({ navigation }: any) {
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
+      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
     </Tab.Navigator>
   );
@@ -103,7 +104,8 @@ function RHTabs({ navigation }: any) {
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
+      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
     </Tab.Navigator>
   );
 }
@@ -119,7 +121,8 @@ function SHTabs({ navigation }: any) {
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
+      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
     </Tab.Navigator>
   );
 }

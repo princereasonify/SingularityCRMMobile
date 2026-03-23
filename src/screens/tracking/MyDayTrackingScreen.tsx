@@ -47,7 +47,6 @@ import { formatCurrency, formatDate, formatTime, toISODate, toISTISOString } fro
 import { rf } from '../../utils/responsive';
 
 
-const COLOR = ROLE_COLORS.FO;
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000; // 30 seconds
 
@@ -57,6 +56,7 @@ const PING_INTERVAL_MS = 30000; // 30 seconds
 
 export const MyDayTrackingScreen = () => {
   const { user } = useAuth();
+  const COLOR = user?.role ? ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] : ROLE_COLORS.FO;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -636,7 +636,7 @@ export const MyDayTrackingScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="My Day Tracking" subtitle={user?.zone || 'Field Officer'} color={COLOR.primary} />
+      <ScreenHeader title="My Day Tracking" subtitle={user?.zone || user?.name || 'Tracking'} color={COLOR.primary} />
 
       <ScrollView
         style={styles.scroll}
