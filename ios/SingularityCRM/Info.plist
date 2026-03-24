@@ -33,6 +33,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SingularityCRM needs access to your photo library to save and share PDF reports and documents.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SingularityCRM needs your location to track your daily travel for attendance and travel allowance calculation.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
