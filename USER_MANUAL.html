@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SingularityCRM — User Manual</title>
+<style>
+  :root {
+    --teal:   #0d9488;
+    --purple: #7c3aed;
+    --orange: #ea580c;
+    --blue:   #2563eb;
+    --gray50: #f9fafb;
+    --gray100:#f3f4f6;
+    --gray200:#e5e7eb;
+    --gray400:#9ca3af;
+    --gray600:#4b5563;
+    --gray800:#1f2937;
+    --green:  #16a34a;
+    --red:    #dc2626;
+    --amber:  #d97706;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f4f6f9;
+    color: var(--gray800);
+    line-height: 1.6;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    background: linear-gradient(135deg, var(--teal) 0%, var(--blue) 100%);
+    color: #fff;
+    padding: 60px 40px;
+    text-align: center;
+  }
+  .cover h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+  .cover p  { font-size: 16px; opacity: .85; }
+  .cover .badge {
+    display: inline-block;
+    background: rgba(255,255,255,.2);
+    border-radius: 20px;
+    padding: 4px 16px;
+    font-size: 13px;
+    margin-top: 16px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    max-width: 860px; margin: 0 auto; padding: 40px 20px;
+    background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    margin-top: -30px;
+  }
+  .toc h2 { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+  .toc ol { padding-left: 20px; column-count: 2; column-gap: 40px; }
+  .toc li { margin-bottom: 6px; }
+  .toc a  { color: var(--blue); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── Sections ── */
+  .section {
+    max-width: 860px; margin: 32px auto; padding: 0 20px;
+  }
+  .section-inner {
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid var(--gray100);
+  }
+  .section-header h2 {
+    font-size: 22px; font-weight: 700; color: var(--gray800);
+  }
+  .section-header p {
+    color: var(--gray600); font-size: 14px; margin-top: 4px;
+  }
+  .section-body { padding: 24px 28px; }
+
+  /* ── Phone mockup ── */
+  .phone-wrap { display: flex; justify-content: center; margin: 20px 0; }
+  .phone {
+    width: 320px;
+    border: 2px solid var(--gray200);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.10);
+    background: #fff;
+  }
+  .phone-notch {
+    background: #111;
+    height: 28px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .phone-notch span {
+    width: 80px; height: 10px;
+    background: #333; border-radius: 5px;
+  }
+  .phone-status {
+    background: #f9fafb;
+    padding: 4px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--gray600); font-weight: 600;
+  }
+  .phone-screen { background: #fff; }
+  .phone-tabbar {
+    display: flex; background: #fff;
+    border-top: 1px solid var(--gray200);
+    padding: 6px 0 4px;
+  }
+  .phone-tabbar .tab {
+    flex: 1; text-align: center;
+    font-size: 9px; color: var(--gray400);
+  }
+  .phone-tabbar .tab.active { color: var(--teal); }
+  .phone-tabbar .tab .icon { font-size: 16px; display: block; }
+
+  /* ── Screen header ── */
+  .ph { padding: 14px 14px 10px; color: #fff; }
+  .ph h3 { font-size: 18px; font-weight: 700; }
+  .ph p  { font-size: 11px; opacity: .8; margin-top: 1px; }
+
+  /* ── Cards inside phone ── */
+  .pc { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .pcard {
+    border: 1px solid var(--gray200);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .pcard-title { font-size: 12px; font-weight: 700; color: var(--gray800); }
+  .pcard-sub   { font-size: 10px; color: var(--gray400); margin-top: 2px; }
+  .pcard-row   { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .pcard-value { font-size: 13px; font-weight: 700; color: var(--gray800); }
+  .badge-hot   { font-size: 9px; color: #d97706; font-weight: 700; margin-bottom: 3px; }
+  .badge-score {
+    border-radius: 20px; padding: 2px 7px;
+    font-size: 10px; font-weight: 700;
+  }
+  .score-green { background: #dcfce7; color: var(--green); }
+  .score-amber { background: #fef3c7; color: var(--amber); }
+  .score-red   { background: #fee2e2; color: var(--red); }
+
+  /* ── KPI row ── */
+  .kpi-row { display: flex; gap: 8px; padding: 10px; }
+  .kpi {
+    flex: 1; border: 1px solid var(--gray200);
+    border-radius: 10px; padding: 10px 8px; text-align: center;
+  }
+  .kpi-num  { font-size: 18px; font-weight: 800; }
+  .kpi-lbl  { font-size: 9px; color: var(--gray400); margin-top: 2px; }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    background: var(--gray200); border-radius: 4px;
+    height: 6px; margin-top: 4px; overflow: hidden;
+  }
+  .progress-fill { height: 100%; border-radius: 4px; }
+
+  /* ── Form fields ── */
+  .pfield {
+    margin: 8px 10px 0;
+  }
+  .pfield label { font-size: 10px; color: var(--gray600); font-weight: 600; display: block; margin-bottom: 3px; }
+  .pfield input {
+    width: 100%; border: 1px solid var(--gray200);
+    border-radius: 8px; padding: 7px 10px;
+    font-size: 12px; color: var(--gray800);
+    background: #fafafa;
+  }
+  .pbtn {
+    margin: 10px; border-radius: 8px;
+    padding: 10px; text-align: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+    cursor: pointer;
+  }
+
+  /* ── Stage chips ── */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; }
+  .chip {
+    border-radius: 20px; padding: 3px 10px;
+    font-size: 10px; font-weight: 600;
+    border: 1px solid var(--gray200); color: var(--gray600);
+    background: var(--gray100);
+  }
+  .chip.active { color: #fff; border-color: transparent; }
+
+  /* ── Timeline ── */
+  .timeline { padding: 10px; }
+  .tl-item { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tl-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0; margin-top: 1px;
+  }
+  .tl-content { flex: 1; }
+  .tl-title  { font-size: 11px; font-weight: 700; color: var(--gray800); }
+  .tl-sub    { font-size: 10px; color: var(--gray400); }
+  .tl-desc   { font-size: 10px; color: var(--gray600); margin-top: 2px; font-style: italic; }
+
+  /* ── Column row (kanban) ── */
+  .kanban-row { display: flex; gap: 6px; padding: 8px; overflow-x: auto; }
+  .kcol {
+    min-width: 110px; border: 1px solid var(--gray200);
+    border-radius: 10px; overflow: hidden;
+    flex-shrink: 0;
+  }
+  .kcol-hdr {
+    padding: 6px 8px;
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--gray100);
+  }
+  .kcol-hdr span { font-size: 9px; font-weight: 700; color: var(--gray600); }
+  .kcol-hdr .cnt {
+    border-radius: 10px; padding: 1px 6px;
+    font-size: 9px; font-weight: 700; color: #fff;
+  }
+  .kcol-body { padding: 5px; display: flex; flex-direction: column; gap: 4px; }
+  .kcard {
+    border: 1px solid var(--gray200); border-radius: 7px;
+    padding: 6px 7px; background: #fff; font-size: 9px;
+  }
+  .kcard-title { font-weight: 700; color: var(--gray800); }
+  .kcard-val   { color: var(--gray400); margin-top: 2px; }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 2px dashed;
+    border-radius: 7px; padding: 8px;
+    text-align: center; font-size: 10px; font-weight: 700;
+    margin: 4px;
+  }
+
+  /* ── Ghost card ── */
+  .ghost-card {
+    position: relative;
+    border: 1px solid var(--gray200);
+    border-radius: 10px; padding: 8px 10px;
+    background: #fff; margin: 8px 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.15);
+    border-left: 3px solid var(--teal);
+    opacity: .92;
+  }
+
+  /* ── Instruction content ── */
+  .steps { margin-top: 16px; }
+  .steps h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .steps ol { padding-left: 20px; }
+  .steps ol li { margin-bottom: 8px; font-size: 14px; line-height: 1.6; }
+  .steps ul { padding-left: 18px; }
+  .steps ul li { margin-bottom: 6px; font-size: 14px; }
+  .note {
+    background: #eff6ff; border-left: 3px solid var(--blue);
+    border-radius: 6px; padding: 10px 14px;
+    font-size: 13px; color: #1d4ed8; margin: 12px 0;
+  }
+  .warn {
+    background: #fffbeb; border-left: 3px solid var(--amber);
+    border-radius: 6px; padding: 10px 14px;
+    font-size: 13px; color: #92400e; margin: 12px 0;
+  }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  thead th {
+    background: var(--gray50); color: var(--gray400);
+    padding: 9px 12px; text-align: left;
+    font-size: 11px; font-weight: 700; letter-spacing: .05em;
+    border-bottom: 2px solid var(--gray200);
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--gray100); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ── Role badges ── */
+  .role { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #fff; }
+  .fo  { background: var(--teal); }
+  .zh  { background: var(--purple); }
+  .rh  { background: var(--orange); }
+  .sh  { background: var(--blue); }
+
+  /* ── Divider ── */
+  hr { border: none; border-top: 1px solid var(--gray100); margin: 20px 0; }
+
+  /* ── Print ── */
+  @media print {
+    body { background: #fff; }
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .section { page-break-inside: avoid; }
+    .no-print { display: none; }
+  }
+
+  /* ── Download button ── */
+  .dl-btn {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--blue); color: #fff;
+    border: none; border-radius: 50px;
+    padding: 12px 24px; font-size: 14px; font-weight: 700;
+    cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,.4);
+    display: flex; align-items: center; gap: 8px;
+    z-index: 100;
+  }
+  .dl-btn:hover { background: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<!-- ── Print button ── -->
+<button class="dl-btn no-print" onclick="window.print()">
+  ⬇ Save as PDF
+</button>
+
+<!-- ── Cover ── -->
+<div class="cover">
+  <h1>SingularityCRM</h1>
+  <p>EduCRM Sales Portal — Mobile Application</p>
+  <div class="badge">User Manual · Version 1.0.0</div>
+</div>
+
+<!-- ── TOC ── -->
+<div style="max-width:860px;margin:0 auto;padding:0 20px;">
+<div class="toc" style="margin-top:32px;">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#login">Login</a></li>
+    <li><a href="#roles">User Roles</a></li>
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#leads">Leads Management</a></li>
+    <li><a href="#pipeline">Pipeline (Kanban)</a></li>
+    <li><a href="#schools">Schools</a></li>
+    <li><a href="#contacts">Contacts</a></li>
+    <li><a href="#activities">Activities</a></li>
+    <li><a href="#demos">Demos</a></li>
+    <li><a href="#deals">Deals</a></li>
+    <li><a href="#calendar">Calendar</a></li>
+    <li><a href="#targets">Targets</a></li>
+    <li><a href="#tracking">Location Tracking</a></li>
+    <li><a href="#ai">AI Features</a></li>
+    <li><a href="#settings">Settings</a></li>
+    <li><a href="#offline">Offline Mode</a></li>
+    <li><a href="#audit">Audit History</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+  </ol>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 1. LOGIN -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="login">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>1. Login</h2>
+    <p>Access the app with your registered credentials.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div style="padding:30px 20px 10px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:4px;">◉</div>
+            <div style="font-weight:800;font-size:17px;color:#0d9488;">SingularityCRM</div>
+            <div style="font-size:11px;color:#9ca3af;margin-top:2px;">EduCRM Sales Portal</div>
+          </div>
+          <div class="pfield">
+            <label>Email Address</label>
+            <input type="text" value="rajesh@educrm.in" readonly />
+          </div>
+          <div class="pfield">
+            <label>Password</label>
+            <input type="password" value="password" readonly />
+          </div>
+          <div class="pbtn" style="background:var(--teal);margin-top:14px;">Login</div>
+          <div style="text-align:center;font-size:10px;color:#9ca3af;padding:10px 0 16px;">Forgot password? · Version 1.0.0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Login Steps</h3>
+      <ol>
+        <li>Enter your official <strong>Email Address</strong> in the email field.</li>
+        <li>Enter your <strong>Password</strong>.</li>
+        <li>Tap the <strong>Login</strong> button.</li>
+        <li>Your role-based dashboard loads automatically.</li>
+      </ol>
+      <div class="note">Your session stays active for <strong>7 days</strong>. You are only asked to log in again after this period or after a manual logout.</div>
+    </div>
+
+    <table>
+      <thead><tr><th>ERROR</th><th>CAUSE</th><th>SOLUTION</th></tr></thead>
+      <tbody>
+        <tr><td>Invalid credentials</td><td>Wrong email or password</td><td>Re-enter or contact your admin</td></tr>
+        <tr><td>Network Error</td><td>No internet connection</td><td>Check Wi-Fi / mobile data</td></tr>
+        <tr><td>Account inactive</td><td>Admin disabled the account</td><td>Contact your administrator</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 2. ROLES -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="roles">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>2. User Roles</h2>
+    <p>Each role has a unique color theme and set of accessible screens.</p>
+  </div>
+  <div class="section-body">
+    <table>
+      <thead><tr><th>ROLE</th><th>FULL NAME</th><th>COLOR</th><th>ACCESS LEVEL</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="role fo">FO</span></td>
+          <td>Field Officer</td>
+          <td style="color:#0d9488;font-weight:700;">#0d9488 Teal</td>
+          <td>Own leads, schools, calendar, My Day tracking, targets</td>
+        </tr>
+        <tr>
+          <td><span class="role zh">ZH</span></td>
+          <td>Zone Head</td>
+          <td style="color:#7c3aed;font-weight:700;">#7c3aed Purple</td>
+          <td>Zone leads, pipeline, team performance, live tracking, user management</td>
+        </tr>
+        <tr>
+          <td><span class="role rh">RH</span></td>
+          <td>Regional Head</td>
+          <td style="color:#ea580c;font-weight:700;">#ea580c Orange</td>
+          <td>Regional leads, pipeline, reports, team tracking</td>
+        </tr>
+        <tr>
+          <td><span class="role sh">SH</span></td>
+          <td>Sales Head</td>
+          <td style="color:#2563eb;font-weight:700;">#2563eb Blue</td>
+          <td>All regions, full reports, pipeline overview, team performance</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 3. DASHBOARD -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="dashboard">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>3. Dashboard</h2>
+    <p>Your personalised home screen showing real-time KPIs, team status, and quick actions.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);">
+            <h3>Good Morning, Ravi! 🌤</h3>
+            <p>Monday, 24 March 2026</p>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi">
+              <div class="kpi-num" style="color:var(--teal);">3</div>
+              <div class="kpi-lbl">Visits Today</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-num" style="color:var(--blue);">7</div>
+              <div class="kpi-lbl">Calls Today</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-num" style="color:var(--orange);">24</div>
+              <div class="kpi-lbl">Active Leads</div>
+            </div>
+          </div>
+          <div style="padding:0 10px 6px;font-size:11px;font-weight:700;color:#374151;">Monthly Target</div>
+          <div style="margin:0 10px 10px;">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7280;margin-bottom:4px;">
+              <span>Revenue ₹4.8L / ₹12L</span><span>40%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:40%;background:var(--red);"></div></div>
+          </div>
+          <div style="padding:0 10px;font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">Today's Plan</div>
+          <div class="timeline" style="padding-top:0;">
+            <div class="tl-item">
+              <div class="tl-dot" style="background:#dcfce7;color:var(--green);">🏫</div>
+              <div class="tl-content">
+                <div class="tl-title">Delhi Public School</div>
+                <div class="tl-sub">9:00 AM · Visit</div>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot" style="background:#eff6ff;color:var(--blue);">📞</div>
+              <div class="tl-content">
+                <div class="tl-title">Modern Academy</div>
+                <div class="tl-sub">11:00 AM · Call</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab active"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab"><span class="icon">🏫</span>School</div>
+          <div class="tab"><span class="icon">📅</span>Cal</div>
+          <div class="tab"><span class="icon">📍</span>My Day</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Key Dashboard Features</h3>
+      <ul>
+        <li><strong>KPI cards</strong> — visits, calls, active leads at a glance</li>
+        <li><strong>Monthly target bar</strong> — colour-coded: green (on track), amber (at risk), red (behind)</li>
+        <li><strong>Today's Plan</strong> — AI-suggested schedule for the day</li>
+        <li><strong>Recent Activity</strong> — last few logged interactions</li>
+        <li><strong>Pull to Refresh</strong> — drag the screen down to reload latest data</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 4. LEADS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="leads">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>4. Leads Management</h2>
+    <p>Create, view, and manage the full lifecycle of school leads.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);">
+            <h3>Leads</h3>
+            <p>47 leads · ₹1,24,50,000</p>
+          </div>
+          <div style="padding:8px 10px 4px;">
+            <input type="text" placeholder="🔍 Search school or city..." style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:12px;" />
+          </div>
+          <div class="chip-row">
+            <div class="chip active" style="background:var(--teal);border-color:var(--teal);color:#fff;">All</div>
+            <div class="chip">New</div>
+            <div class="chip">Demo</div>
+            <div class="chip">Proposal</div>
+            <div class="chip">Won</div>
+          </div>
+          <div class="pc" style="padding-top:0;">
+            <div class="pcard" style="border-left:3px solid #f59e0b;">
+              <div class="badge-hot">🔥 Hot</div>
+              <div class="pcard-title">Delhi Public School</div>
+              <div class="pcard-sub">Dwarka · CBSE · Demo Done</div>
+              <div class="pcard-row">
+                <div class="pcard-value">₹2,40,000</div>
+                <div class="badge-score score-green">82</div>
+              </div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:4px;">📅 Visited 2 days ago</div>
+            </div>
+            <div class="pcard" style="border-left:3px solid #ef4444;">
+              <div class="pcard-title">Modern Academy</div>
+              <div class="pcard-sub">Rohini · ICSE · Contacted</div>
+              <div class="pcard-row">
+                <div class="pcard-value">₹1,80,000</div>
+                <div class="badge-score score-amber">54</div>
+              </div>
+              <div style="font-size:10px;color:#ef4444;margin-top:4px;">⚠ No activity in 6 days</div>
+            </div>
+            <div class="pcard">
+              <div class="pcard-title">Sunrise International</div>
+              <div class="pcard-sub">Gurgaon · IB · Qualified</div>
+              <div class="pcard-row">
+                <div class="pcard-value">₹4,50,000</div>
+                <div class="badge-score score-amber">67</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab active"><span class="icon">📋</span>Leads</div>
+          <div class="tab"><span class="icon">🏫</span>School</div>
+          <div class="tab"><span class="icon">📅</span>Cal</div>
+          <div class="tab"><span class="icon">📍</span>My Day</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Adding a Lead</h3>
+      <ol>
+        <li>Tap the <strong>+</strong> button on the Leads screen.</li>
+        <li>Fill in: School Name, City, Board, Source, Product Modules, Estimated Value.</li>
+        <li>The app automatically checks for <strong>duplicate leads</strong> as you type. A warning banner appears if a match is found.</li>
+        <li>Tap <strong>Add Lead</strong> to save.</li>
+      </ol>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>Lead Card Indicators</h3>
+      <table>
+        <thead><tr><th>INDICATOR</th><th>MEANING</th></tr></thead>
+        <tbody>
+          <tr><td>🔥 Hot badge</td><td>Lead score ≥ 70 — high conversion probability</td></tr>
+          <tr><td>Red left border</td><td>Overdue — no activity in 5+ days</td></tr>
+          <tr><td>Green score chip</td><td>Score 70–100 — hot lead</td></tr>
+          <tr><td>Amber score chip</td><td>Score 40–69 — warm lead</td></tr>
+          <tr><td>Red score chip</td><td>Score 0–39 — cold lead</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>Lead Stages</h3>
+      <table>
+        <thead><tr><th>STAGE</th><th>MEANING</th></tr></thead>
+        <tbody>
+          <tr><td>New Lead</td><td>Created, not yet contacted</td></tr>
+          <tr><td>Contacted</td><td>Initial contact made</td></tr>
+          <tr><td>Qualified</td><td>Budget and decision-maker confirmed</td></tr>
+          <tr><td>Demo Stage</td><td>Demo scheduled</td></tr>
+          <tr><td>Demo Done</td><td>Demo completed, awaiting feedback</td></tr>
+          <tr><td>Proposal Sent</td><td>Formal proposal submitted</td></tr>
+          <tr><td>Negotiation</td><td>Commercial terms being discussed</td></tr>
+          <tr><td>Contract Sent</td><td>Contract shared for signing</td></tr>
+          <tr><td>Won</td><td>Deal signed ✅</td></tr>
+          <tr><td>Implementation Started</td><td>Onboarding in progress</td></tr>
+          <tr><td>Lost</td><td>Deal lost — reason logged</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 5. PIPELINE -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="pipeline">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>5. Pipeline (Kanban Board)</h2>
+    <p>Visual board showing all leads grouped by stage. Supports pinch-to-zoom and drag-and-drop.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--purple);display:flex;justify-content:space-between;align-items:center;">
+            <div><h3>Pipeline</h3><p>47 leads · ₹1.24Cr</p></div>
+            <div style="display:flex;gap:6px;">
+              <div style="background:rgba(255,255,255,.2);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;">−</div>
+              <div style="background:rgba(255,255,255,.2);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;">+</div>
+              <div style="background:rgba(255,255,255,.2);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;">⊡</div>
+            </div>
+          </div>
+          <div style="background:#e0e7ff;padding:4px 10px;font-size:9px;color:#4338ca;text-align:center;">
+            🤏 Pinch to zoom · ✌ Two-finger drag · 👆 Long press to move
+          </div>
+          <div class="kanban-row">
+            <div class="kcol">
+              <div class="kcol-hdr">
+                <span>New/Contacted</span>
+                <div class="cnt" style="background:var(--purple);">12</div>
+              </div>
+              <div class="kcol-body">
+                <div class="kcard">
+                  <div class="kcard-title">DPS Dwarka</div>
+                  <div class="kcard-val">₹2.4L · 82</div>
+                </div>
+                <div class="kcard">
+                  <div class="kcard-title">Bloom School</div>
+                  <div class="kcard-val">₹1.6L · 45</div>
+                </div>
+              </div>
+            </div>
+            <div class="kcol">
+              <div class="kcol-hdr">
+                <span>Qualified</span>
+                <div class="cnt" style="background:var(--purple);">8</div>
+              </div>
+              <div class="kcol-body">
+                <div class="kcard">
+                  <div class="kcard-title">GD Goenka</div>
+                  <div class="kcard-val">₹2.1L · 61</div>
+                </div>
+              </div>
+            </div>
+            <div class="kcol" style="border:2px solid var(--purple);">
+              <div class="kcol-hdr" style="background:#ede9fe;">
+                <span style="color:var(--purple);">Demo Stage</span>
+                <div class="cnt" style="background:var(--purple);">11</div>
+              </div>
+              <div class="kcol-body">
+                <div class="drop-zone" style="border-color:var(--purple);color:var(--purple);">↓ Drop here</div>
+                <div class="kcard">
+                  <div class="kcard-title">Oxford Pub.</div>
+                  <div class="kcard-val">₹2.8L · 58</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Ghost card -->
+          <div style="position:relative;margin:0 10px 4px;">
+            <div class="ghost-card" style="border-left-color:var(--purple);">
+              <div style="font-size:11px;font-weight:700;">🔥 Sunrise Int'l</div>
+              <div style="font-size:10px;color:#9ca3af;">Gurgaon · ₹4,50,000</div>
+            </div>
+            <div style="font-size:9px;color:var(--purple);text-align:center;margin-top:2px;">☝ Dragging card...</div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab active"><span class="icon">🌿</span>Pipeline</div>
+          <div class="tab"><span class="icon">🎯</span>Targets</div>
+          <div class="tab"><span class="icon">⚙️</span>Settings</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Zoom &amp; Pan Controls</h3>
+      <table>
+        <thead><tr><th>GESTURE / BUTTON</th><th>ACTION</th></tr></thead>
+        <tbody>
+          <tr><td>Pinch in / out</td><td>Zoom the board out / in</td></tr>
+          <tr><td>Two-finger drag</td><td>Pan the board in any direction</td></tr>
+          <tr><td>− button</td><td>Zoom out by 20%</td></tr>
+          <tr><td>+ button</td><td>Zoom in by 20%</td></tr>
+          <tr><td>⊡ button</td><td>Reset to default zoom and position</td></tr>
+          <tr><td>Single-finger scroll</td><td>Scroll cards within a column</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>Moving a Card (Drag &amp; Drop)</h3>
+      <ol>
+        <li><strong>Long press</strong> a lead card for ~0.4 seconds — the card fades and a ghost card appears under your finger.</li>
+        <li><strong>Drag</strong> the ghost card to the target column. The destination highlights with a "↓ Drop here" indicator.</li>
+        <li><strong>Release</strong> — the lead moves immediately (optimistic update) and syncs to the server in the background.</li>
+        <li>If the server update fails, the card reverts and an error message is shown.</li>
+      </ol>
+      <div class="note">While dragging, zoom and pan are automatically disabled. A short tap (under 0.4 s) opens the Lead Detail screen as usual.</div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 6. SCHOOLS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="schools">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>6. Schools</h2>
+    <p>Manage the school database with priority scoring and duplicate detection.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);">
+            <h3>Schools</h3><p>63 schools</p>
+          </div>
+          <div style="padding:8px 10px 4px;">
+            <input type="text" placeholder="🔍 Search schools..." style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:12px;" />
+          </div>
+          <div class="chip-row">
+            <div class="chip">All</div>
+            <div class="chip">Active</div>
+            <div class="chip">Inactive</div>
+            <div class="chip active" style="background:var(--orange);border-color:var(--orange);color:#fff;">Priority 🔥</div>
+          </div>
+          <div class="pc" style="padding-top:0;">
+            <div class="pcard" style="border-left:3px solid var(--orange);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div class="pcard-title">Delhi Public School</div>
+                  <div class="pcard-sub">Dwarka · CBSE · Private</div>
+                </div>
+                <div style="text-align:center;">
+                  <div style="font-size:18px;font-weight:800;color:var(--orange);">94</div>
+                  <div style="font-size:9px;color:var(--orange);font-weight:700;">HIGH</div>
+                </div>
+              </div>
+            </div>
+            <div class="pcard" style="border-left:3px solid var(--amber);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div class="pcard-title">Sunrise International</div>
+                  <div class="pcard-sub">Gurgaon · IB · Private</div>
+                </div>
+                <div style="text-align:center;">
+                  <div style="font-size:18px;font-weight:800;color:var(--amber);">72</div>
+                  <div style="font-size:9px;color:var(--amber);font-weight:700;">MEDIUM</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab active"><span class="icon">🏫</span>School</div>
+          <div class="tab"><span class="icon">📅</span>Cal</div>
+          <div class="tab"><span class="icon">📍</span>My Day</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Priority Filter</h3>
+      <p style="font-size:14px;">The <strong>Priority</strong> filter ranks schools by a visit priority score based on days since last visit, lead value, and engagement level. Use this to decide which schools to visit first each day.</p>
+      <table style="margin-top:12px;">
+        <thead><tr><th>PRIORITY LEVEL</th><th>SCORE RANGE</th><th>ACTION</th></tr></thead>
+        <tbody>
+          <tr><td>🔴 HIGH</td><td>80–100</td><td>Visit this week — at risk of going cold</td></tr>
+          <tr><td>🟡 MEDIUM</td><td>50–79</td><td>Visit within 2 weeks</td></tr>
+          <tr><td>🟢 LOW</td><td>0–49</td><td>On track — no urgent action needed</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>Adding a School — Duplicate Detection</h3>
+      <ol>
+        <li>Tap <strong>+ Add School</strong>.</li>
+        <li>As you type the name and city, the app checks for similar schools in real time.</li>
+        <li>If matches are found, a yellow warning banner appears with the count.</li>
+        <li>On submit, a modal shows each match with its type (Definite / Probable / Possible) and a link to view the existing record.</li>
+        <li>Tap <strong>View Existing</strong> to inspect, or <strong>Create Anyway</strong> to proceed.</li>
+      </ol>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 7. CONTACTS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="contacts">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>7. Contacts</h2>
+    <p>Manage people associated with schools — decision makers, influencers, and coordinators.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);"><h3>Dr. Ramesh Sharma</h3><p>Contact Detail</p></div>
+          <div style="padding:16px;text-align:center;">
+            <div style="width:52px;height:52px;border-radius:50%;background:#fef3c7;display:inline-flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--amber);">R</div>
+            <div style="font-weight:700;font-size:14px;margin-top:6px;">Dr. Ramesh Sharma</div>
+            <div style="font-size:11px;color:#9ca3af;">Principal · Delhi Public School</div>
+          </div>
+          <div style="padding:0 12px 10px;display:flex;flex-direction:column;gap:8px;">
+            <div style="font-size:12px;color:#374151;">📞 +91 98765 43210</div>
+            <div style="font-size:12px;color:#374151;">📧 r.sharma@dps.edu</div>
+            <div style="display:flex;gap:6px;margin-top:4px;">
+              <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:5px;text-align:center;font-size:10px;font-weight:700;color:var(--green);">● Strong</div>
+              <div style="flex:1;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:5px;text-align:center;font-size:10px;font-weight:700;color:var(--blue);">✅ Decision Maker</div>
+            </div>
+          </div>
+          <div style="margin:0 10px;display:flex;gap:6px;">
+            <div style="flex:1;background:var(--teal);color:#fff;border-radius:8px;padding:8px;text-align:center;font-size:11px;font-weight:700;">📞 Call</div>
+            <div style="flex:1;background:#25d366;color:#fff;border-radius:8px;padding:8px;text-align:center;font-size:11px;font-weight:700;">💬 WhatsApp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Relationship Stages</h3>
+      <table>
+        <thead><tr><th>STAGE</th><th>MEANING</th></tr></thead>
+        <tbody>
+          <tr><td>New</td><td>First contact — no relationship established</td></tr>
+          <tr><td>Warm</td><td>Had conversations — shows some interest</td></tr>
+          <tr><td>Strong</td><td>Regular interaction — trusts the FO</td></tr>
+          <tr><td>Champion</td><td>Actively advocates for the product internally</td></tr>
+          <tr><td>Detractor</td><td>Opposed to the deal — handle with caution</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>WhatsApp Integration</h3>
+      <ol>
+        <li>Open a Contact Detail screen.</li>
+        <li>Tap the <strong>💬 WhatsApp</strong> button.</li>
+        <li>The app opens a WhatsApp chat directly to that contact's number.</li>
+        <li>If WhatsApp is not installed, you will see an alert with an option to install it.</li>
+      </ol>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 8. ACTIVITIES -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="activities">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>8. Activities</h2>
+    <p>Log every interaction with a lead — visits, calls, demos, proposals, and follow-ups.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);"><h3>Log Activity</h3><p>Delhi Public School</p></div>
+          <div style="padding:10px;">
+            <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:6px;">Activity Type</div>
+            <div class="chip-row" style="padding:0;margin-bottom:10px;">
+              <div class="chip active" style="background:var(--teal);color:#fff;border-color:var(--teal);">Visit</div>
+              <div class="chip">Call</div>
+              <div class="chip">Demo</div>
+              <div class="chip">Proposal</div>
+              <div class="chip">FollowUp</div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:6px;">Outcome</div>
+            <div class="chip-row" style="padding:0;margin-bottom:10px;">
+              <div class="chip active" style="background:var(--green);color:#fff;border-color:var(--green);">Positive</div>
+              <div class="chip">Neutral</div>
+              <div class="chip">Negative</div>
+              <div class="chip">Pending</div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:4px;">Notes</div>
+            <textarea style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:11px;height:60px;resize:none;">Principal very interested in AI Voice module. Agreed to demo next week.</textarea>
+            <div style="font-size:11px;font-weight:700;color:#6b7280;margin:8px 0 4px;">Next Follow-up</div>
+            <input type="text" value="📅 30 March 2026" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:12px;" />
+          </div>
+          <div class="pbtn" style="background:var(--teal);">Save Activity</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Activity Types</h3>
+      <table>
+        <thead><tr><th>TYPE</th><th>WHEN TO USE</th></tr></thead>
+        <tbody>
+          <tr><td>Visit</td><td>In-person school visit</td></tr>
+          <tr><td>Call</td><td>Phone or video call with a contact</td></tr>
+          <tr><td>Demo</td><td>Product demonstration session</td></tr>
+          <tr><td>Proposal</td><td>Proposal presented or sent</td></tr>
+          <tr><td>FollowUp</td><td>Follow-up after any interaction</td></tr>
+          <tr><td>Contract</td><td>Contract discussion or signing</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 9. TARGETS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="targets">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>9. Targets</h2>
+    <p>Track your monthly sales targets vs. actual performance.</p>
+  </div>
+  <div class="section-body">
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);"><h3>My Targets</h3><p>March 2026</p></div>
+          <div style="padding:10px;display:flex;flex-direction:column;gap:8px;">
+            <div class="pcard">
+              <div style="display:flex;justify-content:space-between;">
+                <div class="pcard-title">Leads Added</div>
+                <div style="font-size:11px;color:var(--green);font-weight:700;">🟢 On Track</div>
+              </div>
+              <div style="font-size:12px;color:#6b7280;margin:4px 0;">18 / 25</div>
+              <div class="progress-bar"><div class="progress-fill" style="width:72%;background:var(--green);"></div></div>
+            </div>
+            <div class="pcard">
+              <div style="display:flex;justify-content:space-between;">
+                <div class="pcard-title">Demos Done</div>
+                <div style="font-size:11px;color:var(--amber);font-weight:700;">🟡 At Risk</div>
+              </div>
+              <div style="font-size:12px;color:#6b7280;margin:4px 0;">7 / 12</div>
+              <div class="progress-bar"><div class="progress-fill" style="width:58%;background:var(--amber);"></div></div>
+            </div>
+            <div class="pcard">
+              <div style="display:flex;justify-content:space-between;">
+                <div class="pcard-title">Revenue (₹)</div>
+                <div style="font-size:11px;color:var(--red);font-weight:700;">🔴 Behind</div>
+              </div>
+              <div style="font-size:12px;color:#6b7280;margin:4px 0;">₹4.8L / ₹12L</div>
+              <div class="progress-bar"><div class="progress-fill" style="width:40%;background:var(--red);"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab active"><span class="icon">🎯</span>Targets</div>
+          <div class="tab"><span class="icon">📍</span>My Day</div>
+          <div class="tab"><span class="icon">⚙️</span>Set</div>
+        </div>
+      </div>
+    </div>
+    <div class="steps">
+      <h3>Progress Color Guide</h3>
+      <table>
+        <thead><tr><th>COLOR</th><th>STATUS</th><th>MEANING</th></tr></thead>
+        <tbody>
+          <tr><td>🟢 Green</td><td>On Track</td><td>≥ 66% of target achieved for the period</td></tr>
+          <tr><td>🟡 Amber</td><td>At Risk</td><td>33%–65% achieved — needs attention</td></tr>
+          <tr><td>🔴 Red</td><td>Behind</td><td>&lt; 33% achieved — urgent action required</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 10. LOCATION TRACKING -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="tracking">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>10. Location Tracking</h2>
+    <p>GPS-based work tracking for Field Officers and real-time visibility for managers.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);"><h3>My Day</h3><p>Monday, 24 March 2026</p></div>
+          <div style="padding:10px;display:flex;flex-direction:column;gap:8px;">
+            <div class="pcard" style="background:#f0fdf4;border-color:#bbf7d0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:10px;height:10px;border-radius:50%;background:var(--green);"></div>
+                <div class="pcard-title" style="color:var(--green);">Day Active</div>
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:4px;">Started: 9:02 AM · Duration: 3h 42m</div>
+              <div style="font-size:11px;color:var(--green);margin-top:2px;">📡 GPS Tracking Active</div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:#374151;">Today's Visits</div>
+            <div class="pcard">
+              <div style="display:flex;justify-content:space-between;">
+                <div class="pcard-title">✅ Delhi Public School</div>
+                <div style="font-size:10px;color:#9ca3af;">1h 15m</div>
+              </div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:2px;">In: 9:15 AM · Out: 10:30 AM</div>
+            </div>
+            <div class="pcard">
+              <div style="display:flex;justify-content:space-between;">
+                <div class="pcard-title">✅ Modern Academy</div>
+                <div style="font-size:10px;color:#9ca3af;">55m</div>
+              </div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:2px;">In: 11:10 AM · Out: 12:05 PM</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 10px 10px;">
+            <div style="flex:1;background:var(--teal);color:#fff;border-radius:8px;padding:10px;text-align:center;font-size:11px;font-weight:700;">Start Visit</div>
+            <div style="flex:1;background:#fee2e2;color:var(--red);border:1px solid #fca5a5;border-radius:8px;padding:10px;text-align:center;font-size:11px;font-weight:700;">End My Day</div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab"><span class="icon">🏫</span>School</div>
+          <div class="tab active"><span class="icon">📍</span>My Day</div>
+          <div class="tab"><span class="icon">⚙️</span>Set</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>My Day — Step by Step</h3>
+      <table>
+        <thead><tr><th>BUTTON</th><th>ACTION</th></tr></thead>
+        <tbody>
+          <tr><td>Start My Day</td><td>Begins your work session and GPS tracking</td></tr>
+          <tr><td>Start Visit</td><td>Marks your arrival at a school — geofence verified</td></tr>
+          <tr><td>End Visit</td><td>Marks departure — prompts to submit a visit report</td></tr>
+          <tr><td>End My Day</td><td>Stops GPS tracking and closes the work session</td></tr>
+        </tbody>
+      </table>
+      <div class="note">GPS pings are sent every 60 seconds while your day is active. Tracking continues in the background even when the app is closed.</div>
+      <div class="warn"><strong>Android:</strong> Disable battery optimisation for this app to ensure background tracking works.<br/>
+      <strong>iOS:</strong> Set Location permission to <em>Always</em> (not "While Using").</div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 11. AI FEATURES -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="ai">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>11. AI Features</h2>
+    <p>AI-powered daily planning, end-of-day reports, lead insights, and score breakdown.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--purple);display:flex;justify-content:space-between;align-items:center;">
+            <div><h3>AI Daily Plan</h3><p>Monday, 24 March 2026</p></div>
+            <div style="font-size:20px;cursor:pointer;">↺</div>
+          </div>
+          <div style="margin:8px;background:#f0fdf4;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;">⚡</span>
+            <span style="font-size:11px;color:var(--green);font-weight:600;">2 of 3 regenerations left today</span>
+          </div>
+          <div style="margin:0 8px 6px;background:#fffbeb;border-radius:10px;padding:10px;">
+            <div style="font-size:11px;color:#92400e;">💡 Focus on Demo Stage leads — 3 are overdue for follow-up this week.</div>
+          </div>
+          <div style="padding:0 10px;font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">Suggested Agenda (3 items)</div>
+          <div class="pc" style="padding-top:0;">
+            <div class="pcard" style="border-left:3px solid var(--purple);">
+              <div style="display:flex;gap:8px;align-items:flex-start;">
+                <div style="font-size:11px;font-weight:700;color:var(--purple);min-width:42px;">9:00</div>
+                <div style="flex:1;">
+                  <div style="font-size:11px;font-weight:700;">Visit DPS Dwarka</div>
+                  <div style="font-size:10px;color:#9ca3af;">💬 Overdue follow-up</div>
+                </div>
+                <div style="width:18px;height:18px;border-radius:50%;background:var(--purple);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;">✓</div>
+              </div>
+            </div>
+            <div class="pcard">
+              <div style="display:flex;gap:8px;align-items:flex-start;">
+                <div style="font-size:11px;font-weight:700;color:var(--purple);min-width:42px;">14:00</div>
+                <div style="flex:1;">
+                  <div style="font-size:11px;font-weight:700;">Call Sunrise Int'l</div>
+                  <div style="font-size:10px;color:#9ca3af;">💬 Proposal pending</div>
+                </div>
+                <div style="width:18px;height:18px;border-radius:50%;border:2px solid #d1d5db;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="pbtn" style="background:var(--purple);">Accept Plan (1 item)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>AI Daily Plan</h3>
+      <ol>
+        <li>The plan is generated each morning based on overdue follow-ups, high-priority leads, and scheduled demos.</li>
+        <li>Tap items to select / deselect them from your agenda.</li>
+        <li>Tap <strong>Accept Plan</strong> to confirm your schedule for the day.</li>
+        <li>Tap the <strong>↺ regenerate</strong> icon to get a fresh plan (limited to 3 per day).</li>
+      </ol>
+    </div>
+
+    <hr />
+
+    <div class="steps">
+      <h3>AI Quota Limits</h3>
+      <table>
+        <thead><tr><th>AI FEATURE</th><th>DAILY LIMIT</th><th>RESETS</th></tr></thead>
+        <tbody>
+          <tr><td>Daily Plan regenerations</td><td>3 per day</td><td>Midnight</td></tr>
+          <tr><td>Daily Report generations</td><td>2 per day</td><td>Midnight</td></tr>
+          <tr><td>AI Insights refreshes</td><td>5 per day</td><td>Midnight</td></tr>
+        </tbody>
+      </table>
+      <div class="note">The quota banner at the top of each AI screen shows how many uses remain. When exhausted it shows <em>"Limit reached — resets tomorrow"</em>.</div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 12. SETTINGS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="settings">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>12. Settings</h2>
+    <p>Language, notifications, offline mode, AI usage, dashboard layout, and account management.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--orange);"><h3>Settings</h3></div>
+          <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px;font-size:12px;">
+            <div class="pcard">
+              <div style="font-size:10px;font-weight:700;color:#9ca3af;margin-bottom:8px;">LANGUAGE</div>
+              <div style="display:flex;gap:6px;">
+                <div style="flex:1;background:var(--orange);color:#fff;border-radius:20px;padding:5px;text-align:center;font-size:11px;font-weight:700;">English</div>
+                <div style="flex:1;border:1px solid #e5e7eb;border-radius:20px;padding:5px;text-align:center;font-size:11px;color:#6b7280;">हिंदी (Hindi)</div>
+              </div>
+            </div>
+            <div class="pcard">
+              <div style="font-size:10px;font-weight:700;color:#9ca3af;margin-bottom:8px;">🔔 NOTIFICATIONS</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
+                <div style="font-size:12px;">💬 WhatsApp Notifications</div>
+                <div style="width:36px;height:20px;border-radius:10px;background:#e5e7eb;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid #f3f4f6;margin-top:4px;">
+                <div style="font-size:12px;">🔔 Push Notifications</div>
+                <div style="width:36px;height:20px;border-radius:10px;background:var(--orange);"></div>
+              </div>
+            </div>
+            <div class="pcard">
+              <div style="font-size:10px;font-weight:700;color:#9ca3af;margin-bottom:8px;">📶 OFFLINE MODE</div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--green);"></div>
+                <div style="font-size:12px;font-weight:600;color:var(--green);">Online</div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <div style="flex:1;border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:6px;text-align:center;font-size:10px;font-weight:700;">↺ Sync Now</div>
+                <div style="flex:1;border:1px solid #e5e7eb;color:#6b7280;border-radius:8px;padding:6px;text-align:center;font-size:10px;font-weight:700;">🗑 Clear Cache</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tabbar">
+          <div class="tab"><span class="icon">🏠</span>Dash</div>
+          <div class="tab"><span class="icon">📋</span>Leads</div>
+          <div class="tab"><span class="icon">🌿</span>Pipeline</div>
+          <div class="tab"><span class="icon">🎯</span>Targets</div>
+          <div class="tab active"><span class="icon">⚙️</span>Settings</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Settings Overview</h3>
+      <table>
+        <thead><tr><th>SECTION</th><th>WHAT YOU CAN DO</th></tr></thead>
+        <tbody>
+          <tr><td>Language</td><td>Switch between English and हिंदी (Hindi)</td></tr>
+          <tr><td>Notifications</td><td>Toggle WhatsApp and Push notifications</td></tr>
+          <tr><td>Offline Mode</td><td>View sync queue, trigger manual sync, clear cache</td></tr>
+          <tr><td>AI Usage Today</td><td>See daily quota usage for Daily Plan, Report, Insights</td></tr>
+          <tr><td>Dashboard</td><td>Open widget layout customizer</td></tr>
+          <tr><td>Account</td><td>View your profile, role, and log out</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 13. OFFLINE MODE -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="offline">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>13. Offline Mode</h2>
+    <p>SingularityCRM works without internet. Queued actions sync automatically on reconnect.</p>
+  </div>
+  <div class="section-body">
+    <table>
+      <thead><tr><th>FEATURE</th><th>OFFLINE</th><th>ONLINE ONLY</th></tr></thead>
+      <tbody>
+        <tr><td>View cached leads &amp; schools</td><td style="color:var(--green);font-weight:700;">✅</td><td></td></tr>
+        <tr><td>View calendar &amp; route plan</td><td style="color:var(--green);font-weight:700;">✅</td><td></td></tr>
+        <tr><td>Log activities (queued)</td><td style="color:var(--green);font-weight:700;">✅</td><td></td></tr>
+        <tr><td>GPS pings (queued)</td><td style="color:var(--green);font-weight:700;">✅</td><td></td></tr>
+        <tr><td>Load fresh data</td><td></td><td style="color:var(--red);font-weight:700;">✅</td></tr>
+        <tr><td>Create new leads</td><td></td><td style="color:var(--red);font-weight:700;">✅</td></tr>
+        <tr><td>AI features</td><td></td><td style="color:var(--red);font-weight:700;">✅</td></tr>
+        <tr><td>Reports</td><td></td><td style="color:var(--red);font-weight:700;">✅</td></tr>
+      </tbody>
+    </table>
+    <div class="note" style="margin-top:16px;">Actions that fail 3 times during sync are automatically discarded to prevent infinite retries. The pending count in Settings updates in real time as items sync.</div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 14. AUDIT HISTORY -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="audit">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>14. Audit History</h2>
+    <p>Full change log for every lead, school, and contact — who changed what and when.</p>
+  </div>
+  <div class="section-body">
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"><span></span></div>
+        <div class="phone-status"><span>9:41 AM</span><span>▓▓▓▓▓</span></div>
+        <div class="phone-screen">
+          <div class="ph" style="background:var(--teal);"><h3>Audit History</h3><p>Delhi Public School</p></div>
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-dot" style="background:#eff6ff;color:var(--blue);">✎</div>
+              <div class="tl-content">
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+                  <div style="background:var(--blue);color:#fff;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;">Updated</div>
+                  <div class="tl-sub">Ravi Kumar · 24 Mar, 9:30 AM</div>
+                </div>
+                <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-size:10px;">
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;background:#f9fafb;padding:5px 8px;font-weight:700;color:#9ca3af;">
+                    <span>FIELD</span><span>BEFORE</span><span>AFTER</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;padding:5px 8px;border-top:1px solid #f3f4f6;">
+                    <span style="color:#374151;">Stage</span><span style="color:#9ca3af;">Demo Stage</span><span style="color:var(--green);font-weight:700;">Demo Done</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;padding:5px 8px;border-top:1px solid #f3f4f6;">
+                    <span style="color:#374151;">Score</span><span style="color:#9ca3af;">71</span><span style="color:var(--green);font-weight:700;">82</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tl-item" style="margin-top:10px;">
+              <div class="tl-dot" style="background:#f0fdf4;color:var(--green);">+</div>
+              <div class="tl-content">
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <div style="background:var(--green);color:#fff;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;">Created</div>
+                  <div class="tl-sub">Ravi Kumar · 18 Mar, 10:00 AM</div>
+                </div>
+                <div class="tl-desc" style="margin-top:4px;">"Lead created from field visit"</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <h3>Accessing Audit History</h3>
+      <ul>
+        <li><strong>Schools:</strong> Open School Detail → tap the 🕐 History icon in the header.</li>
+        <li><strong>Leads:</strong> Open Lead Detail → tap the History icon in the header.</li>
+        <li><strong>Contacts:</strong> Open Contact Detail → tap the History icon.</li>
+      </ul>
+      <table style="margin-top:12px;">
+        <thead><tr><th>ENTRY TYPE</th><th>COLOR</th><th>ICON</th></tr></thead>
+        <tbody>
+          <tr><td>Created</td><td style="color:var(--green);font-weight:700;">Green</td><td>＋</td></tr>
+          <tr><td>Updated</td><td style="color:var(--blue);font-weight:700;">Blue</td><td>✎</td></tr>
+          <tr><td>Deleted</td><td style="color:var(--red);font-weight:700;">Red</td><td>🗑</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 15. TROUBLESHOOTING -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="section" id="trouble">
+<div class="section-inner">
+  <div class="section-header">
+    <h2>15. Troubleshooting</h2>
+  </div>
+  <div class="section-body">
+    <table>
+      <thead><tr><th>ISSUE</th><th>CAUSE</th><th>SOLUTION</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Card doesn't move on pipeline drag</td>
+          <td>Long press not held long enough</td>
+          <td>Hold for at least 0.4 seconds before dragging</td>
+        </tr>
+        <tr>
+          <td>Red offline banner despite having internet</td>
+          <td>Server health check pending (15s cycle)</td>
+          <td>Wait or go to Settings → Sync Now</td>
+        </tr>
+        <tr>
+          <td>AI plan not loading</td>
+          <td>Daily quota exhausted or no internet</td>
+          <td>Check connectivity; quota resets at midnight</td>
+        </tr>
+        <tr>
+          <td>Duplicate warning on a unique lead</td>
+          <td>Name/city similarity match</td>
+          <td>Tap <strong>Create Anyway</strong> to proceed</td>
+        </tr>
+        <tr>
+          <td>Login fails with correct credentials</td>
+          <td>Account inactive or network error</td>
+          <td>Check internet; contact your administrator</td>
+        </tr>
+        <tr>
+          <td>Background GPS stops (Android)</td>
+          <td>Battery optimisation enabled</td>
+          <td>Settings → Apps → SingularityCRM → Battery → Unrestricted</td>
+        </tr>
+        <tr>
+          <td>Background GPS stops (iOS)</td>
+          <td>Location permission not set to Always</td>
+          <td>Settings → Privacy → Location → SingularityCRM → Always</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- Footer -->
+<div style="max-width:860px;margin:32px auto 60px;padding:0 20px;text-align:center;color:#9ca3af;font-size:13px;">
+  SingularityCRM · EduCRM Sales Portal · Version 1.0.0<br/>
+  For support, contact your system administrator.
+</div>
+
+</body>
+</html>

@@ -140,11 +140,9 @@ export const SchoolsListScreen = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>Schools</Text>
-          {(role === 'FO' || role === 'ZH') && (
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddSchool')}>
-              <Plus size={20} color="#FFF" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddSchool')}>
+            <Plus size={20} color="#FFF" />
+          </TouchableOpacity>
         </View>
         <View style={styles.searchBar}>
           <Search size={16} color="#9CA3AF" />

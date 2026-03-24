@@ -234,6 +234,13 @@ export const SettingsScreen = ({ navigation }: any) => {
             <Text style={styles.navRowText}>{t('settings.customizeDashboard')}</Text>
             <ChevronRight size={16} color="#9CA3AF" />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navRow, { borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 2 }]}
+            onPress={() => navigation.navigate('UserManual')}
+          >
+            <Text style={styles.navRowText}>📖 User Manual</Text>
+            <ChevronRight size={16} color="#9CA3AF" />
+          </TouchableOpacity>
         </Card>
 
         {/* Account */}

@@ -74,6 +74,8 @@ import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
 
 // Settings
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
+import { DashboardCustomizeScreen } from '../screens/settings/DashboardCustomizeScreen';
+import { UserManualScreen } from '../screens/settings/UserManualScreen';
 
 // Audit History
 import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
@@ -126,6 +128,7 @@ function ZHTabs({ navigation }: any) {
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={ZHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
@@ -144,6 +147,7 @@ function RHTabs({ navigation }: any) {
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={RHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
@@ -162,6 +166,7 @@ function SHTabs({ navigation }: any) {
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={SHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
@@ -258,6 +263,8 @@ export const AppNavigator = () => {
             <Stack.Screen name="Payments" component={PaymentsScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Settings & Audit */}
+            <Stack.Screen name="DashboardCustomize" component={DashboardCustomizeScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="UserManual" component={UserManualScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="AuditHistory" component={AuditHistoryScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Misc */}

@@ -4,7 +4,7 @@ import {
   Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Phone, CheckCircle, Clock, History } from 'lucide-react-native';
+import { Plus, Phone, CheckCircle, Clock, History, Pencil } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
 import { contactsApi } from '../../api/contacts';
 import { School, Contact, SchoolVisitLog } from '../../types';
@@ -86,9 +86,14 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
         color={COLOR.primary}
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={() => navigation.navigate('AuditHistory', { entityType: 'School', entityId: school.id, title: school.name })}>
-            <History size={20} color="#FFF" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity onPress={() => navigation.navigate('AddSchool', { school })}>
+              <Pencil size={20} color="#FFF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('AuditHistory', { entityType: 'School', entityId: school.id, title: school.name })}>
+              <History size={20} color="#FFF" />
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -150,11 +155,9 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
         <Card style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Contacts ({contacts.length})</Text>
-            {(role === 'FO' || role === 'ZH') && (
-              <TouchableOpacity onPress={() => navigation.navigate('AddContact', { schoolId: school.id, schoolName: school.name })}>
-                <Text style={[styles.addLink, { color: COLOR.primary }]}>+ Add</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity onPress={() => navigation.navigate('AddContact', { schoolId: school.id, schoolName: school.name })}>
+              <Text style={[styles.addLink, { color: COLOR.primary }]}>+ Add</Text>
+            </TouchableOpacity>
           </View>
           {contacts.length === 0 ? (
             <Text style={styles.emptyText}>No contacts yet</Text>
