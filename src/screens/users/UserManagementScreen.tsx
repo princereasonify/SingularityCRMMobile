@@ -18,9 +18,10 @@ import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
 
 const CREATABLE_ROLES: Record<string, string[]> = {
-  SH: ['RH', 'ZH', 'FO'],
-  RH: ['ZH', 'FO'],
-  ZH: ['FO'],
+  SCA: ['SH', 'RH', 'ZH', 'FO'],
+  SH:  ['RH', 'ZH', 'FO'],
+  RH:  ['ZH', 'FO'],
+  ZH:  ['FO'],
 };
 
 export const UserManagementScreen = ({ navigation }: any) => {

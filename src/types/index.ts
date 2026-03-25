@@ -1,6 +1,6 @@
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH';
+export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH' | 'SCA';
 
 export type LeadStage =
   | 'NewLead'
@@ -294,6 +294,15 @@ export interface NationalDashboardDto {
   regions: RegionSummaryDto[];
   revenueChart: { label: string; value: number }[];
   lossReasons: { reason: string; count: number }[];
+}
+
+export interface ScaDashboardDto extends NationalDashboardDto {
+  totalUsers?: number;
+  activeUsers?: number;
+  totalRegions?: number;
+  totalZones?: number;
+  directPaymentsTotal?: number;
+  pendingAllowances?: number;
 }
 
 export interface UserPerformanceDto {
@@ -802,6 +811,23 @@ export interface PaymentFilters {
   to?: string;
   page?: number;
   pageSize?: number;
+}
+
+export interface DirectPayment {
+  id: number;
+  userId: number;
+  userName?: string;
+  type: 'Bonus' | 'Allowance' | 'Incentive';
+  amount: number;
+  description?: string;
+  createdAt: string;
+}
+
+export interface CreateDirectPaymentRequest {
+  userId: number;
+  type: 'Bonus' | 'Allowance' | 'Incentive';
+  amount: number;
+  description?: string;
 }
 
 export interface Payment {

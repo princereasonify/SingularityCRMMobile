@@ -9,20 +9,20 @@ import {
   Alert,
   TouchableOpacity,
   useWindowDimensions,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, EyeOff, BookOpen, Zap } from 'lucide-react-native';
+import { Eye, EyeOff, BookOpen } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
-import { rf, isTablet } from '../../utils/responsive';
+import { rf } from '../../utils/responsive';
 
 const DEMO_CREDS = [
-  { role: 'FO', email: 'arjun@educrm.in', password: 'fo123', color: '#0d9488' },
-  { role: 'ZH', email: 'priya@educrm.in', password: 'zh123', color: '#7c3aed' },
-  { role: 'RH', email: 'rajesh@educrm.in', password: 'rh123', color: '#ea580c' },
-  { role: 'SH', email: 'anita@educrm.in', password: 'sh123', color: '#2563eb' },
+  { role: 'FO',  email: 'arjun@educrm.in',  password: 'fo123',  color: '#0d9488' },
+  { role: 'ZH',  email: 'priya@educrm.in',  password: 'zh123',  color: '#7c3aed' },
+  { role: 'RH',  email: 'rajesh@educrm.in', password: 'rh123',  color: '#ea580c' },
+  { role: 'SH',  email: 'anita@educrm.in',  password: 'sh123',  color: '#2563eb' },
+  { role: 'SCA', email: 'supersaleadmin@gmail.com', password: 'admin123', color: '#E11D48' },
 ];
 
 export const LoginScreen = () => {
@@ -270,8 +270,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     gap: 6,
-    flex: 1,
-    minWidth: '45%',
+    width: '48%',
   },
   demoRolePill: {
     borderRadius: 100,

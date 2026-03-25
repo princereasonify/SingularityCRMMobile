@@ -26,7 +26,7 @@ const SECTIONS: Section[] = [
   { title: '📝 Additional', key: 'extra' },
 ];
 
-export const AddLeadScreen = ({ route, navigation }: any) => {
+export const AddLeadScreen = ({ navigation }: any) => {
   const { user } = useAuth();
   const role = user?.role || 'FO';
   const COLOR = ROLE_COLORS[role];
@@ -62,7 +62,6 @@ export const AddLeadScreen = ({ route, navigation }: any) => {
     const e: Record<string, string> = {};
     if (!form.school.trim()) e.school = 'School name is required';
     if (!form.city.trim()) e.city = 'City is required';
-    if (!form.contactName.trim()) e.contactName = 'Contact name is required';
     if (!form.contactPhone.trim()) e.contactPhone = 'Phone is required';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -178,7 +177,7 @@ export const AddLeadScreen = ({ route, navigation }: any) => {
                 )}
                 {sec.key === 'contact' && (
                   <>
-                    <Input label="Contact Name *" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" accentColor={COLOR.primary} />
+                    <Input label="Contact Name" value={form.contactName} onChangeText={(v) => set('contactName', v)} placeholder="e.g. Mrs. Sharma" accentColor={COLOR.primary} />
                     <Input label="Designation" value={form.contactDesignation} onChangeText={(v) => set('contactDesignation', v)} placeholder="e.g. Principal" accentColor={COLOR.primary} />
                     <Input label="Phone *" value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" accentColor={COLOR.primary} />
                     <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" accentColor={COLOR.primary} />

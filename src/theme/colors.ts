@@ -46,6 +46,10 @@ export const Palette = {
   indigo400: '#8B5CF6',
 
   cyan500:   '#14B8A6',
+
+  rose600:   '#E11D48',
+  rose50:    '#FFF1F2',
+  rose900:   '#9F1239',
 } as const;
 
 // ─── Semantic Colors ──────────────────────────────────────────────────────────
@@ -85,10 +89,11 @@ export const Colors = {
 
   // ─── Role Themes ────────────────────────────────────────────────────────────
   roles: {
-    FO: { primary: Palette.teal500,   light: Palette.teal50,   dark: Palette.teal700   },
-    ZH: { primary: Palette.purple600, light: Palette.purple50, dark: Palette.purple900 },
-    RH: { primary: Palette.orange600, light: Palette.orange50, dark: Palette.orange800 },
-    SH: { primary: Palette.blue600,   light: Palette.blue50,   dark: Palette.blue900   },
+    FO:  { primary: Palette.teal500,   light: Palette.teal50,   dark: Palette.teal700   },
+    ZH:  { primary: Palette.purple600, light: Palette.purple50, dark: Palette.purple900 },
+    RH:  { primary: Palette.orange600, light: Palette.orange50, dark: Palette.orange800 },
+    SH:  { primary: Palette.blue600,   light: Palette.blue50,   dark: Palette.blue900   },
+    SCA: { primary: Palette.rose600,   light: Palette.rose50,   dark: Palette.rose900   },
   } as Record<UserRole, { primary: string; light: string; dark: string }>,
 
   // ─── Stage Colors ────────────────────────────────────────────────────────────

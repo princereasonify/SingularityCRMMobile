@@ -351,7 +351,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
       {/* ── Map ────────────────────────────────────────────────────────── */}
       <View style={{ flex: 1 }}>
-        <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={INDIA_REGION}>
+        <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={INDIA_REGION}>
           {/* Route polyline */}
           {routeCoords.length > 1 && (
             <Polyline
@@ -802,6 +802,8 @@ export const LiveTrackingScreen = () => {
   const [liveUsers, setLiveUsers] = useState<LiveLocationDto[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<LiveLocationDto | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
   const mapRef = useRef<MapView>(null);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const didFitMap = useRef(false);
@@ -905,6 +907,16 @@ export const LiveTrackingScreen = () => {
   const activeCount = useMemo(() => liveUsers.filter(u => u.status === 'active').length, [liveUsers]);
   const zoneGroups = useMemo(() => buildZoneGroups(liveUsers), [liveUsers]);
   const regionGroups = useMemo(() => buildRegionGroups(liveUsers), [liveUsers]);
+
+  // SCA: filter by search + role across all users
+  const scaFilteredUsers = useMemo(() => {
+    if (user?.role !== 'SCA') return liveUsers;
+    return liveUsers.filter(u => {
+      const matchRole = roleFilter === 'all' || u.role === roleFilter;
+      const matchSearch = !searchQuery.trim() || u.name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchRole && matchSearch;
+    });
+  }, [liveUsers, user?.role, roleFilter, searchQuery]);
   const totalAllowance = useMemo(() => allowances.reduce((s, a) => s + a.grossAmount, 0), [allowances]);
 
   // ── Individual tracking guard ─────────────────────────────────────────────
@@ -924,6 +936,7 @@ export const LiveTrackingScreen = () => {
   }
 
   const subtitle =
+    user?.role === 'SCA' ? 'National · All Users' :
     user?.role === 'SH' ? 'National View' :
     user?.role === 'RH' ? (user?.region ?? 'Regional View') :
     (user?.zone ?? 'Zonal View');
@@ -1120,6 +1133,56 @@ export const LiveTrackingScreen = () => {
                   : regionGroups.map(g => (
                     <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
                   ))
+              )}
+
+              {/* SCA: national view — search + role filter + full hierarchy */}
+              {user?.role === 'SCA' && (
+                <>
+                  {/* Search bar */}
+                  <View style={styles.scaSearchBar}>
+                    <TextInput
+                      style={styles.scaSearchInput}
+                      placeholder="Search by name..."
+                      placeholderTextColor="#9CA3AF"
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                  </View>
+                  {/* Role filter chips */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.scaRoleRow}
+                  >
+                    {(['all', 'SH', 'RH', 'ZH', 'FO'] as const).map(r => (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.scaRoleChip, roleFilter === r && { backgroundColor: rc.primary }]}
+                        onPress={() => setRoleFilter(r)}
+                      >
+                        <Text style={[styles.scaRoleText, roleFilter === r && { color: '#FFF' }]}>
+                          {r === 'all' ? 'All Roles' : r}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {/* SH-level users (national heads) */}
+                  {scaFilteredUsers.filter(u => u.role === 'SH').length > 0 && (
+                    <View style={styles.scaSHSection}>
+                      <Text style={styles.scaSHLabel}>🏢 National Heads</Text>
+                      {scaFilteredUsers.filter(u => u.role === 'SH').map(u => (
+                        <PersonRow key={u.userId} user={u} onPress={handlePersonPress} />
+                      ))}
+                    </View>
+                  )}
+                  {/* Regional hierarchy */}
+                  {buildRegionGroups(scaFilteredUsers).length === 0
+                    ? <EmptyState title="No users match" subtitle="Try adjusting the search or role filter." icon="🔍" />
+                    : buildRegionGroups(scaFilteredUsers).map(g => (
+                      <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
+                    ))
+                  }
+                </>
               )}
             </>
           )}
@@ -1321,4 +1384,25 @@ const styles = StyleSheet.create({
   totalFooter: { padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
   totalValue: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
+
+  // SCA-specific styles
+  scaSearchBar: { paddingHorizontal: 12, paddingVertical: 8 },
+  scaSearchInput: {
+    backgroundColor: '#FFF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: rf(14), color: '#111827', borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  scaRoleRow: { paddingHorizontal: 12, paddingBottom: 10, gap: 8 },
+  scaRoleChip: {
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 100,
+    backgroundColor: '#E5E7EB',
+  },
+  scaRoleText: { fontSize: rf(12), fontWeight: '700', color: '#374151' },
+  scaSHSection: {
+    marginHorizontal: 12, marginBottom: 10,
+    borderRadius: 12, borderWidth: 1, borderColor: '#E11D4844', overflow: 'hidden',
+  },
+  scaSHLabel: {
+    fontSize: rf(12), fontWeight: '700', color: '#E11D48',
+    backgroundColor: '#FFF1F2', paddingHorizontal: 14, paddingVertical: 8,
+  },
 });

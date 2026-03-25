@@ -16,4 +16,11 @@ export const aiApi = {
   // Lead score breakdown
   getLeadScoreBreakdown: (leadId: number) =>
     apiClient.get<LeadScoreBreakdown>(`/ai/lead-score/${leadId}`),
+
+  // SH/SCA: AI report management
+  getAiReports: (params?: { date?: string; type?: string; userId?: number }) =>
+    apiClient.get<any[]>('/ai-reports', { params }),
+  getAiReport: (id: number) => apiClient.get<any>(`/ai-reports/${id}`),
+  generateDailyReports: () => apiClient.post('/ai-reports/generate-daily', {}),
+  generateManagementReports: () => apiClient.post('/ai-reports/generate-management', {}),
 };

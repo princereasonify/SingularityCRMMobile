@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   LayoutDashboard, Contact2, GitBranch,
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
-  Calendar, Building2, Settings,
+  Calendar, Building2, Settings, CreditCard,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 
@@ -23,6 +23,7 @@ import { FODashboard } from '../screens/dashboard/FODashboard';
 import { ZHDashboard } from '../screens/dashboard/ZHDashboard';
 import { RHDashboard } from '../screens/dashboard/RHDashboard';
 import { SHDashboard } from '../screens/dashboard/SHDashboard';
+import { SCADashboard } from '../screens/dashboard/SCADashboard';
 
 // Core screens
 import { LeadsListScreen } from '../screens/leads/LeadsListScreen';
@@ -71,6 +72,7 @@ import { AiInsightsScreen } from '../screens/ai/AiInsightsScreen';
 
 // Payments
 import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
+import { ScaPaymentsScreen } from '../screens/payments/ScaPaymentsScreen';
 
 // Settings
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
@@ -178,12 +180,31 @@ function SHTabs({ navigation }: any) {
   );
 }
 
+// ─── SCA Tab Navigator ────────────────────────────────────────────────────────
+function SCATabs() {
+  const C = ROLE_COLORS.SCA;
+  return (
+    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
+      <Tab.Screen name="Dashboard" component={SCADashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
+      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
+      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="Payments" component={ScaPaymentsScreen} options={{ tabBarIcon: TabIcon(CreditCard, C.primary) }} />
+      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
+    </Tab.Navigator>
+  );
+}
+
 const getRoleNavigator = (role: string) => {
   switch (role) {
-    case 'ZH': return ZHTabs;
-    case 'RH': return RHTabs;
-    case 'SH': return SHTabs;
-    default: return FOTabs;
+    case 'ZH':  return ZHTabs;
+    case 'RH':  return RHTabs;
+    case 'SH':  return SHTabs;
+    case 'SCA': return SCATabs;
+    default:    return FOTabs;
   }
 };
 
