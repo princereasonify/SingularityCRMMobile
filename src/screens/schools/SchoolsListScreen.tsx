@@ -181,6 +181,7 @@ export const SchoolsListScreen = ({ navigation }: any) => {
           keyExtractor={item => String(item.id)}
           renderItem={renderSchool}
           contentContainerStyle={[styles.list, schools.length === 0 && styles.listEmpty]}
+          key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? { gap: 10 } : undefined}
           refreshControl={

@@ -164,6 +164,7 @@ export const LeadsListScreen = ({ navigation }: any) => {
           keyExtractor={(item) => String(item.id)}
           renderItem={renderLead}
           contentContainerStyle={[styles.list, leads.length === 0 && styles.listEmpty]}
+          key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? styles.columnWrapper : undefined}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setPage(1); fetchLeads(1, true); }} colors={[COLOR.primary]} />}

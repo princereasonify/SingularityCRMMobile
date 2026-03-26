@@ -39,6 +39,7 @@ import { UserManagementScreen } from '../screens/users/UserManagementScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { MyDayTrackingScreen } from '../screens/tracking/MyDayTrackingScreen';
 import { LiveTrackingScreen } from '../screens/tracking/LiveTrackingScreen';
+import { AssignedSchoolsScreen } from '../screens/tracking/AssignedSchoolsScreen';
 
 // Schools
 import { SchoolsListScreen } from '../screens/schools/SchoolsListScreen';
@@ -271,6 +272,9 @@ export const AppNavigator = () => {
 
             {/* Contacts List (standalone navigation) */}
             <Stack.Screen name="ContactsList" component={ContactsListScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Assigned Schools map */}
+            <Stack.Screen name="AssignedSchools" component={AssignedSchoolsScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Visit Report */}
             <Stack.Screen name="VisitReport" component={VisitReportScreen} options={{ animation: 'slide_from_bottom' }} />

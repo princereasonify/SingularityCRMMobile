@@ -55,6 +55,19 @@ export interface UserDto {
   regionalHead?: string;
 }
 
+export interface SchoolAssignment {
+  id: number;
+  schoolName: string;
+  schoolCity: string;
+  schoolAddress?: string;
+  schoolLatitude: number;
+  schoolLongitude: number;
+  visitOrder: number;
+  isVisited: boolean;
+  timeSpentMinutes: number | null;
+  geofenceRadiusMetres: number;
+}
+
 export interface Region {
   id: number;
   name: string;

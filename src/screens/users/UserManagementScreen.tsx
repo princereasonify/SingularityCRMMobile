@@ -181,6 +181,7 @@ export const UserManagementScreen = ({ navigation }: any) => {
           keyExtractor={(u) => String(u.id)}
           renderItem={renderUser}
           contentContainerStyle={styles.list}
+          key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? { gap: 12 } : undefined}
           ListEmptyComponent={<EmptyState title="No users found" icon="👥" />}

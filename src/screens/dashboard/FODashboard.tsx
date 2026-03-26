@@ -18,6 +18,7 @@ import {
   LogOut,
   ChevronRight,
   Zap,
+  School,
 } from 'lucide-react-native';
 import { dashboardApi } from '../../api/dashboard';
 import { FoDashboardDto } from '../../types';
@@ -144,6 +145,22 @@ export const FODashboard = ({ navigation }: any) => {
             style={{ width: cardW }}
           />
         </View>
+
+        {/* Today's Assigned Schools — quick-access banner */}
+        <TouchableOpacity
+          style={styles.schoolsBanner}
+          onPress={() => navigation.navigate('AssignedSchools')}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.schoolsBannerIcon, { backgroundColor: COLOR.light }]}>
+            <School size={22} color={COLOR.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.schoolsBannerTitle}>Today's Assigned Schools</Text>
+            <Text style={styles.schoolsBannerSub}>View map, route & geofence check-ins</Text>
+          </View>
+          <ChevronRight size={18} color={COLOR.primary} />
+        </TouchableOpacity>
 
         {/* Hot Leads */}
         {(data?.hotLeads?.length || 0) > 0 && (
@@ -331,4 +348,18 @@ const styles = StyleSheet.create({
   actSchool: { fontSize: rf(14), fontWeight: '500', color: '#111827' },
   actMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
   actDate: { fontSize: rf(12), color: '#9CA3AF' },
+
+  schoolsBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFF', borderRadius: 14,
+    padding: 14, marginBottom: 4,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+  },
+  schoolsBannerIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  schoolsBannerTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  schoolsBannerSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
 });

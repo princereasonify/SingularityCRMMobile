@@ -132,6 +132,7 @@ export const DemoListScreen = ({ navigation }: any) => {
           keyExtractor={item => String(item.id)}
           renderItem={renderDemo}
           contentContainerStyle={[styles.list, demos.length === 0 && { flex: 1 }]}
+          key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? { gap: 10 } : undefined}
           refreshControl={
