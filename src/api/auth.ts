@@ -1,9 +1,10 @@
 import { apiClient } from './client';
 import { LoginResponse, UserDto, Region, Zone } from '../types';
+import { DeviceInfoPayload } from '../utils/deviceInfo';
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    apiClient.post<LoginResponse>('/auth/login', { email, password }),
+  login: (email: string, password: string, deviceInfo?: DeviceInfoPayload) =>
+    apiClient.post<LoginResponse>('/auth/login', { email, password, deviceInfo }),
 
   logout: () => apiClient.post('/auth/logout'),
 

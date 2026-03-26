@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../api/auth';
 import { setUnauthorizedHandler } from '../api/client';
 import { UserDto } from '../types';
+import { getDeviceInfo } from '../utils/deviceInfo';
 
 interface AuthContextType {
   user: UserDto | null;
@@ -53,7 +54,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [logout]);
 
   const login = async (email: string, password: string) => {
-    const { data: res } = await authApi.login(email, password);
+    let deviceInfo;
+    try {
+      deviceInfo = await getDeviceInfo();
+    } catch {
+      deviceInfo = undefined;
+    }
+    const { data: res } = await authApi.login(email, password, deviceInfo);
     const { token, user } = res;
     await AsyncStorage.setItem('auth_token', token);
     await AsyncStorage.setItem('auth_user', JSON.stringify(user));
