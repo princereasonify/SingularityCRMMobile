@@ -5,14 +5,17 @@ export const weeklyPlanApi = {
     apiClient.get<any>('/weekly-plans/my', { params: { weekStart } }),
   getTeam: (weekStart: string) =>
     apiClient.get<any[]>('/weekly-plans/team', { params: { weekStart } }),
-  create: (data: { weekStartDate: string; weekEndDate: string; planData: any[] }) =>
+  create: (data: { weekStartDate: string; weekEndDate: string; planData: string }) =>
     apiClient.post<any>('/weekly-plans', data),
-  update: (id: number, planData: any[]) =>
+  update: (id: number, planData: string) =>
     apiClient.put<any>(`/weekly-plans/${id}`, { planData }),
   submit: (id: number) => apiClient.post<any>(`/weekly-plans/${id}/submit`, {}),
   approve: (id: number) => apiClient.post<any>(`/weekly-plans/${id}/approve`, {}),
   managerEdit: (id: number, planData: any[]) =>
-    apiClient.post<any>(`/weekly-plans/${id}/edit`, { planData }),
+    apiClient.post<any>(`/weekly-plans/${id}/edit`, {
+      managerEdits: JSON.stringify(planData),
+      reviewNotes: 'Edited by manager',
+    }),
   reject: (id: number, notes: string) =>
     apiClient.post<any>(`/weekly-plans/${id}/reject`, { notes }),
 };
