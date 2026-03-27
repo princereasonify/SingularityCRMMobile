@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Linking, Alert, ActivityIndicator, Platform, PermissionsAndroid,
+  Linking, ActivityIndicator, Platform, PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
@@ -31,30 +31,31 @@ const hexToRgba = (hex: string, alpha: number): string => {
 };
 
 // ─── Build Google Maps multi-stop URL ────────────────────────────────────────
-// Google Maps expects: origin → waypoints (pipe-separated) → destination.
-// We sort by visitOrder so the FO navigates in the planned sequence.
+// Uses the daddr format with +to: separators — this is the only format that
+// reliably opens ALL stops in the native Google Maps app on Android.
+// The api=1/waypoints format often gets stripped down to just the destination.
+//
+// Format: maps.google.com/maps?saddr=ORIGIN&daddr=stop1+to:stop2+to:stop3
+// If GPS is not yet acquired we omit saddr; Google Maps uses device location.
 const buildGoogleMapsUrl = (
-  userLat: number,
-  userLng: number,
+  userLat: number | null,
+  userLng: number | null,
   schools: SchoolAssignment[],
 ): string => {
   const sorted = [...schools].sort((a, b) => a.visitOrder - b.visitOrder);
   if (sorted.length === 0) return '';
 
-  const destination = sorted[sorted.length - 1];
-  const waypoints = sorted.slice(0, -1)
+  // All schools as a chain: "lat1,lng1+to:lat2,lng2+to:lat3,lng3"
+  const daddr = sorted
     .map(s => `${s.schoolLatitude},${s.schoolLongitude}`)
-    .join('|');
+    .join('+to:');
 
-  // Linking.openURL() will hand this off to the native Google Maps app if
-  // installed, or open maps.google.com in the browser as a fallback.
-  return (
-    `https://www.google.com/maps/dir/?api=1` +
-    `&origin=${userLat},${userLng}` +
-    `&destination=${destination.schoolLatitude},${destination.schoolLongitude}` +
-    (waypoints ? `&waypoints=${waypoints}` : '') +
-    `&travelmode=driving`
-  );
+  let url = 'https://maps.google.com/maps?dirflg=d';
+  if (userLat != null && userLng != null) {
+    url += `&saddr=${userLat},${userLng}`;
+  }
+  url += `&daddr=${daddr}`;
+  return url;
 };
 
 // ─── Today's date as YYYY-MM-DD ───────────────────────────────────────────────
@@ -152,18 +153,14 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 
   // ── Open all schools as a driving route in Google Maps ───────────────────
   const openGoogleMaps = () => {
-    if (!userLocation) {
-      Alert.alert('Location Unavailable', 'Waiting for your GPS location. Please try again in a moment.');
-      return;
-    }
-    if (assignments.length === 0) {
-      Alert.alert('No Schools', 'No assigned schools to navigate to.');
-      return;
-    }
-    const url = buildGoogleMapsUrl(userLocation.latitude, userLocation.longitude, assignments);
-    Linking.openURL(url).catch(() =>
-      Alert.alert('Error', 'Could not open Google Maps.'),
+    if (assignments.length === 0) return;
+    // Pass GPS coords if available; omit origin if not — Google Maps handles it.
+    const url = buildGoogleMapsUrl(
+      userLocation?.latitude ?? null,
+      userLocation?.longitude ?? null,
+      assignments,
     );
+    Linking.openURL(url).catch(() => {});
   };
 
   // ── Derived counts for the summary bar ───────────────────────────────────

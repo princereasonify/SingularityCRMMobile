@@ -670,6 +670,7 @@ export interface DemoAssignment {
   leadId: number;
   schoolId: number;
   schoolName: string;
+  leadName?: string;
   requestedByName: string;
   assignedToName: string;
   scheduledDate: string;
@@ -681,6 +682,10 @@ export interface DemoAssignment {
   meetingLink?: string;
   notes?: string;
   feedback?: string;
+  feedbackSentiment?: 'Positive' | 'Neutral' | 'Negative';
+  feedbackVideoUrl?: string;
+  feedbackAudioUrl?: string;
+  screenRecordingUrl?: string;
   hasRecording: boolean;
 }
 
@@ -893,6 +898,50 @@ export interface AuditFilters {
   pageSize?: number;
 }
 
+// ─── Allowance Config ─────────────────────────────────────────────────────────
+
+export interface AllowanceConfig {
+  id: number;
+  scope: 'Global' | 'Region' | 'Zone' | 'User';
+  scopeId?: number;
+  ratePerKm: number;
+  maxDailyAllowance?: number;
+  minDistanceKm?: number;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  setByName?: string;
+  createdAt?: string;
+}
+
+export interface CreateAllowanceConfigRequest {
+  scope: 'Global' | 'Region' | 'Zone' | 'User';
+  scopeId?: number;
+  ratePerKm: number;
+  maxDailyAllowance?: number;
+  minDistanceKm?: number;
+  effectiveFrom: string;
+  effectiveTo?: string;
+}
+
+// ─── Visit Field Config ───────────────────────────────────────────────────────
+
+export interface VisitField {
+  id: number;
+  fieldName: string;
+  fieldType: 'Text' | 'Number' | 'Date' | 'Dropdown' | 'MultiSelect';
+  options?: string[];
+  displayOrder: number;
+  isRequired: boolean;
+}
+
+export interface CreateVisitFieldRequest {
+  fieldName: string;
+  fieldType: 'Text' | 'Number' | 'Date' | 'Dropdown' | 'MultiSelect';
+  options?: string[];
+  displayOrder?: number;
+  isRequired?: boolean;
+}
+
 // ─── Duplicate Detection ──────────────────────────────────────────────────────
 
 export interface DuplicateMatch {
@@ -974,4 +1023,35 @@ export interface OfflineAction {
   data: any;
   timestamp: string;
   retryCount: number;
+}
+
+// ─── Weekly Plan ──────────────────────────────────────────────────────────────
+
+export interface WeeklyActivity {
+  type: 'Visit' | 'Demo' | 'Call' | 'Meeting' | 'FollowUp';
+  schoolId?: number | string;
+  schoolName?: string;
+  notes?: string;
+}
+
+export interface DayPlan {
+  date: string;
+  dayOfWeek: string;
+  activities: WeeklyActivity[];
+}
+
+export interface WeeklyPlan {
+  id: number;
+  userId: number;
+  userName?: string;
+  userRole?: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'EditedByManager' | 'Rejected';
+  planData: DayPlan[];
+  reviewedByName?: string;
+  reviewNotes?: string;
+  managerEdits?: DayPlan[];
+  submittedAt?: string;
+  reviewedAt?: string;
 }

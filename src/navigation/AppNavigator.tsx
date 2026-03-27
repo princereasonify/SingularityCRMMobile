@@ -6,7 +6,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   LayoutDashboard, Contact2, GitBranch,
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
-  Calendar, Building2, Settings, CreditCard,
+  Building2, Settings, CreditCard, Monitor,
+  ClipboardList, CalendarClock,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 
@@ -40,6 +41,7 @@ import { NotificationsScreen } from '../screens/notifications/NotificationsScree
 import { MyDayTrackingScreen } from '../screens/tracking/MyDayTrackingScreen';
 import { LiveTrackingScreen } from '../screens/tracking/LiveTrackingScreen';
 import { AssignedSchoolsScreen } from '../screens/tracking/AssignedSchoolsScreen';
+import { RoutePlannerScreen } from '../screens/tracking/RoutePlannerScreen';
 
 // Schools
 import { SchoolsListScreen } from '../screens/schools/SchoolsListScreen';
@@ -79,14 +81,19 @@ import { ScaPaymentsScreen } from '../screens/payments/ScaPaymentsScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { DashboardCustomizeScreen } from '../screens/settings/DashboardCustomizeScreen';
 import { UserManualScreen } from '../screens/settings/UserManualScreen';
+import { AllowanceConfigScreen } from '../screens/settings/AllowanceConfigScreen';
+import { VisitFieldConfigScreen } from '../screens/settings/VisitFieldConfigScreen';
 
 // Audit History
 import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
 
+// Weekly Plan
+import { WeeklyPlanScreen } from '../screens/weeklyPlan/WeeklyPlanScreen';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const TabIcon = (IconComponent: any, color: string, size = 22) => ({ focused, color: c }: any) => (
+const TabIcon = (IconComponent: any, _color: string, size = 22) => ({ focused, color: c }: any) => (
   <IconComponent size={size} color={c} strokeWidth={focused ? 2.5 : 1.8} />
 );
 
@@ -109,23 +116,26 @@ const tabBarStyle = (primaryColor: string) => ({
 });
 
 // ─── FO Tab Navigator ─────────────────────────────────────────────────────────
-function FOTabs({ navigation }: any) {
+function FOTabs() {
   const C = ROLE_COLORS.FO;
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={FODashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} initialParams={{ navigation }} />
+      <Tab.Screen name="Dashboard" component={FODashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
+      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
       <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(Calendar, C.primary) }} />
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
+      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'My Stats', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
+      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
 
 // ─── ZH Tab Navigator ─────────────────────────────────────────────────────────
-function ZHTabs({ navigation }: any) {
+function ZHTabs() {
   const C = ROLE_COLORS.ZH;
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
@@ -133,18 +143,22 @@ function ZHTabs({ navigation }: any) {
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
+      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
 
 // ─── RH Tab Navigator ─────────────────────────────────────────────────────────
-function RHTabs({ navigation }: any) {
+function RHTabs() {
   const C = ROLE_COLORS.RH;
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
@@ -152,18 +166,22 @@ function RHTabs({ navigation }: any) {
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
+      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
 }
 
 // ─── SH Tab Navigator ─────────────────────────────────────────────────────────
-function SHTabs({ navigation }: any) {
+function SHTabs() {
   const C = ROLE_COLORS.SH;
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
@@ -171,11 +189,15 @@ function SHTabs({ navigation }: any) {
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
+      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
       <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
       <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
@@ -194,6 +216,7 @@ function SCATabs() {
       <Tab.Screen name="Payments" component={ScaPaymentsScreen} options={{ tabBarIcon: TabIcon(CreditCard, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
+      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
@@ -273,8 +296,9 @@ export const AppNavigator = () => {
             {/* Contacts List (standalone navigation) */}
             <Stack.Screen name="ContactsList" component={ContactsListScreen} options={{ animation: 'slide_from_right' }} />
 
-            {/* Assigned Schools map */}
+            {/* Tracking & Route */}
             <Stack.Screen name="AssignedSchools" component={AssignedSchoolsScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="RoutePlanner" component={RoutePlannerScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Visit Report */}
             <Stack.Screen name="VisitReport" component={VisitReportScreen} options={{ animation: 'slide_from_bottom' }} />
@@ -287,6 +311,10 @@ export const AppNavigator = () => {
             {/* Payments */}
             <Stack.Screen name="Payments" component={PaymentsScreen} options={{ animation: 'slide_from_right' }} />
 
+            {/* Admin config (SH) */}
+            <Stack.Screen name="AllowanceConfig" component={AllowanceConfigScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="VisitFieldConfig" component={VisitFieldConfigScreen} options={{ animation: 'slide_from_right' }} />
+
             {/* Settings & Audit */}
             <Stack.Screen name="DashboardCustomize" component={DashboardCustomizeScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="UserManual" component={UserManualScreen} options={{ animation: 'slide_from_right' }} />
@@ -296,6 +324,10 @@ export const AppNavigator = () => {
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="Activities" component={ActivityLogScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="SchoolsList" component={SchoolsListScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="Calendar" component={CalendarScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* Weekly Plan */}
+            <Stack.Screen name="WeeklyPlanScreen" component={WeeklyPlanScreen} options={{ animation: 'slide_from_right' }} />
           </>
         )}
       </Stack.Navigator>

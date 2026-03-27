@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Globe, Bell, MessageSquare, Wifi, WifiOff, Database,
-  RefreshCw, LayoutDashboard, LogOut, ChevronRight,
+  RefreshCw, LayoutDashboard, LogOut, ChevronRight, Settings,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -242,6 +242,27 @@ export const SettingsScreen = ({ navigation }: any) => {
             <ChevronRight size={16} color="#9CA3AF" />
           </TouchableOpacity>
         </Card>
+
+        {/* SH Admin Config */}
+        {(user?.role === 'SH' || user?.role === 'SCA') && (
+          <Card style={styles.section}>
+            <SectionTitle icon={<Settings size={16} color={COLOR.primary} />} title="Admin Configuration" />
+            <TouchableOpacity
+              style={styles.navRow}
+              onPress={() => navigation.navigate('AllowanceConfig')}
+            >
+              <Text style={styles.navRowText}>💰 Allowance Config</Text>
+              <ChevronRight size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.navRow, { borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 2 }]}
+              onPress={() => navigation.navigate('VisitFieldConfig')}
+            >
+              <Text style={styles.navRowText}>📝 Visit Field Config</Text>
+              <ChevronRight size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+          </Card>
+        )}
 
         {/* Account */}
         <Card style={styles.section}>

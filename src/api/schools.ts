@@ -20,4 +20,8 @@ export const schoolsApi = {
   // Visit priority score
   getPriority: (filters?: SchoolFilters) =>
     apiClient.get<PaginatedResult<SchoolWithPriority>>('/schools/priority', { params: filters }),
+
+  // School assignments (FO self-assign when creating)
+  bulkAssign: (data: { userId: number; schoolIds: number[]; assignmentDate: string }) =>
+    apiClient.post('/school-assignments/bulk', data),
 };

@@ -6,6 +6,8 @@ export const demosApi = {
     apiClient.get<PaginatedResult<DemoAssignment>>('/demos', { params: filters }),
   getById: (id: number) => apiClient.get<DemoAssignment>(`/demos/${id}`),
   create: (data: CreateDemoRequest) => apiClient.post<DemoAssignment>('/demos', data),
+  update: (id: number, data: Partial<DemoAssignment> & { status?: string }) =>
+    apiClient.put<DemoAssignment>(`/demos/${id}`, data),
   updateStatus: (id: number, status: string, outcome?: string, feedback?: string) =>
     apiClient.patch<DemoAssignment>(`/demos/${id}/status`, { status, outcome, feedback }),
   getCalendar: (from: string, to: string) =>
