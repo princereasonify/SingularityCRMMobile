@@ -16,4 +16,11 @@ RCT_EXTERN_METHOD(startTracking:(NSString *)token
 RCT_EXTERN_METHOD(stopTracking:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(updateGeofences:(NSArray *)schools
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(clearGeofences:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
 @end

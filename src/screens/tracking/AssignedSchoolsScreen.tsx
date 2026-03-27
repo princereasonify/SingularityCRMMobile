@@ -11,6 +11,7 @@ import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { SchoolAssignment } from '../../types';
 import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
+import { updateGeofences } from '../../services/nativeLocationTracking';
 
 // ─── Pin colors per visit index (for unvisited schools) ──────────────────────
 // Index 0 = first school to visit today, gets a unique accent color so FO
@@ -85,6 +86,8 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
       // Sort by visitOrder so the Polyline connects them in the planned route sequence
       const sorted = (res.data as SchoolAssignment[]).sort((a, b) => a.visitOrder - b.visitOrder);
       setAssignments(sorted);
+      // Register background geofences so the FO gets notified on arrival at each school
+      updateGeofences(sorted).catch(() => {});
     } catch {
       setAssignments([]);
     } finally {

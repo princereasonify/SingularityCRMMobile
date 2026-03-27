@@ -11,6 +11,7 @@
 import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../utils/constants';
+import { SchoolAssignment } from '../types';
 
 const { LocationTrackingModule } = NativeModules;
 
@@ -66,5 +67,44 @@ export const stopNativeTracking = async (): Promise<void> => {
     console.log('[NativeTracking] Stopped successfully');
   } catch (e: any) {
     console.warn('[NativeTracking] Failed to stop:', e?.message);
+  }
+};
+
+/**
+ * Registers CLCircularRegion geofences for today's assigned schools (iOS).
+ * Field officers get local notifications when they enter/exit a school zone,
+ * and visit logs are automatically sent to the backend.
+ *
+ * Returns the number of regions successfully registered (iOS max: 20).
+ */
+export const updateGeofences = async (schools: SchoolAssignment[]): Promise<number> => {
+  if (!LocationTrackingModule?.updateGeofences) return 0;
+  try {
+    const payload = schools.map(s => ({
+      schoolId:     s.id,
+      schoolName:   s.schoolName,
+      latitude:     s.schoolLatitude,
+      longitude:    s.schoolLongitude,
+      radiusMetres: s.geofenceRadiusMetres,
+    }));
+    const count: number = await LocationTrackingModule.updateGeofences(payload);
+    console.log(`[NativeTracking] Geofences registered: ${count}`);
+    return count;
+  } catch (e: any) {
+    console.warn('[NativeTracking] updateGeofences error:', e?.message);
+    return 0;
+  }
+};
+
+/**
+ * Stops all school geofence monitoring. Call when the tracking session ends.
+ */
+export const clearGeofences = async (): Promise<void> => {
+  if (!LocationTrackingModule?.clearGeofences) return;
+  try {
+    await LocationTrackingModule.clearGeofences();
+    console.log('[NativeTracking] Geofences cleared');
+  } catch (e: any) {
+    console.warn('[NativeTracking] clearGeofences error:', e?.message);
   }
 };
