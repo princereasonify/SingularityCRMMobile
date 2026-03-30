@@ -11,11 +11,11 @@ export const weeklyPlanApi = {
     apiClient.put<any>(`/weekly-plans/${id}`, { planData }),
   submit: (id: number) => apiClient.post<any>(`/weekly-plans/${id}/submit`, {}),
   approve: (id: number) => apiClient.post<any>(`/weekly-plans/${id}/approve`, {}),
-  managerEdit: (id: number, planData: any[]) =>
+  managerEdit: (id: number, planData: any[], reviewNotes?: string) =>
     apiClient.post<any>(`/weekly-plans/${id}/edit`, {
       managerEdits: JSON.stringify(planData),
-      reviewNotes: 'Edited by manager',
+      reviewNotes: reviewNotes || 'Edited by manager',
     }),
   reject: (id: number, notes: string) =>
-    apiClient.post<any>(`/weekly-plans/${id}/reject`, { notes }),
+    apiClient.post<any>(`/weekly-plans/${id}/reject`, { reviewNotes: notes }),
 };

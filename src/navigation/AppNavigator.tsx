@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Contact2, GitBranch,
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
   Building2, Settings, CreditCard, Monitor,
-  ClipboardList, CalendarClock,
+  ClipboardList, CalendarClock, CalendarDays,
+  Activity, Briefcase,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 
@@ -121,13 +122,18 @@ function FOTabs() {
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={FODashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
+      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
       <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
+      <Tab.Screen name="ActivityLog" component={ActivityLogScreen} options={{ tabBarLabel: 'Activity', tabBarIcon: TabIcon(Activity, C.primary) }} />
+      <Tab.Screen name="CreateDeal" component={CreateDealScreen} options={{ tabBarLabel: 'New Deal', tabBarIcon: TabIcon(Briefcase, C.primary) }} />
       <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'My Stats', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(MapPin, C.primary) }} />
+      <Tab.Screen name="RoutePlanner" component={RoutePlannerScreen} options={{ tabBarLabel: 'Route', tabBarIcon: TabIcon(Navigation, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
+      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarLabel: 'My Targets', tabBarIcon: TabIcon(Target, C.primary) }} />
+      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'My Stats', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
       <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
@@ -152,6 +158,7 @@ function ZHTabs() {
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
       <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
@@ -175,6 +182,7 @@ function RHTabs() {
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
       <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
@@ -198,6 +206,7 @@ function SHTabs() {
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
       <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
       <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );
@@ -209,14 +218,19 @@ function SCATabs() {
   return (
     <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
       <Tab.Screen name="Dashboard" component={SCADashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
+      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
       <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Payments" component={ScaPaymentsScreen} options={{ tabBarIcon: TabIcon(CreditCard, C.primary) }} />
+      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarLabel: 'Demos', tabBarIcon: TabIcon(Monitor, C.primary) }} />
+      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
+      <Tab.Screen name="Payments" component={ScaPaymentsScreen} options={{ tabBarLabel: 'Gateway', tabBarIcon: TabIcon(CreditCard, C.primary) }} />
+      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
+      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
       <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
       <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
+      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
     </Tab.Navigator>
   );

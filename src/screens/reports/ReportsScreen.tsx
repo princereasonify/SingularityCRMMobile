@@ -1,541 +1,640 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
-  useWindowDimensions, Modal, ActivityIndicator, Linking, Share,
-  FlatList,
+  Modal, ActivityIndicator, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Download, Eye, BarChart2, TrendingUp, Users, Map,
-  DollarSign, GraduationCap, Settings, X, FileText,
-  Share2, Filter,
+  Eye, ChevronDown, ChevronUp, AlertTriangle, CheckCircle,
+  TrendingUp, ArrowLeft, Users, Clock, Target,
 } from 'lucide-react-native';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { Button } from '../../components/common/Button';
-import { ROLE_COLORS, REPORTS } from '../../utils/constants';
-import { formatCurrency } from '../../utils/formatting';
-import { rf, getCardWidth } from '../../utils/responsive';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { ROLE_COLORS } from '../../utils/constants';
+import { formatDate, formatCurrency } from '../../utils/formatting';
+import { rf } from '../../utils/responsive';
 import { reportsApi, ReportFilters } from '../../api/reports';
-import { API_BASE_URL } from '../../utils/constants';
+import { aiReportsApi } from '../../api/aiReports';
 
-const CATEGORIES = ['All', 'Performance', 'Pipeline', 'Analysis', 'Territory', 'Finance', 'Onboarding', 'Custom'];
-const PERIODS = ['monthly', 'weekly', 'quarterly', 'yearly'] as const;
+// ─── Constants ──────────────────────────────────────────────────────────────
+const REPORT_TABS = ['User Performance', 'School Visits', 'Pipeline', 'AI Daily (FO)', 'AI Management'];
 
-const ICONS: Record<number, React.ReactNode> = {
-  1: <BarChart2 size={24} color="#3B82F6" />,
-  2: <TrendingUp size={24} color="#F59E0B" />,
-  3: <Users size={24} color="#8B5CF6" />,
-  4: <TrendingUp size={24} color="#EF4444" />,
-  5: <Map size={24} color="#22C55E" />,
-  6: <Users size={24} color="#F97316" />,
-  7: <DollarSign size={24} color="#14B8A6" />,
-  8: <GraduationCap size={24} color="#6366F1" />,
-  9: <Settings size={24} color="#6B7280" />,
+const todayStr = () => new Date().toISOString().split('T')[0];
+const thirtyDaysAgo = () => {
+  const d = new Date(); d.setDate(d.getDate() - 30);
+  return d.toISOString().split('T')[0];
 };
 
-const ICON_BG: Record<number, string> = {
-  1: '#EFF6FF', 2: '#FFFBEB', 3: '#F5F3FF', 4: '#FEF2F2',
-  5: '#F0FDF4', 6: '#FFF7ED', 7: '#ECFDF5', 8: '#EEF2FF', 9: '#F9FAFB',
+const scoreColorHex = (s: number) => s >= 70 ? '#10B981' : s >= 50 ? '#F59E0B' : '#EF4444';
+const ratingBg = (r: string) => {
+  if (!r) return { bg: '#F3F4F6', text: '#6B7280' };
+  const l = r.toLowerCase();
+  if (l.includes('good')) return { bg: '#D1FAE5', text: '#059669' };
+  if (l.includes('average')) return { bg: '#FEF3C7', text: '#D97706' };
+  return { bg: '#FEE2E2', text: '#DC2626' };
+};
+const severityColor = (s: string) => {
+  if (s === 'HIGH') return { bg: '#FEE2E2', text: '#DC2626' };
+  if (s === 'MEDIUM') return { bg: '#FEF3C7', text: '#D97706' };
+  return { bg: '#DBEAFE', text: '#2563EB' };
 };
 
-// ─── Report Viewer ─────────────────────────────────────────────────────────────
+// Robust JSON parse that handles truncated Gemini output (matching web)
+function safeParseJSON(str: any) {
+  if (!str) return null;
+  if (typeof str === 'object') return str;
+  try { return JSON.parse(str); } catch { /* truncated — try repair */ }
+  try {
+    let s = String(str)
+      .replace(/,\s*"[^"]*$/, '')
+      .replace(/,\s*\[[^\]]*$/, '')
+      .replace(/,\s*$/, '');
+    const ob = (s.match(/{/g) || []).length - (s.match(/}/g) || []).length;
+    const oq = (s.match(/\[/g) || []).length - (s.match(/\]/g) || []).length;
+    for (let i = 0; i < oq; i++) s += ']';
+    for (let i = 0; i < ob; i++) s += '}';
+    return JSON.parse(s);
+  } catch { return null; }
+}
 
-const ReportViewer = ({
-  report,
-  data,
-  color,
-}: {
-  report: typeof REPORTS[0];
-  data: any;
-  color: { primary: string; light: string };
-}) => {
-  if (!data) return (
-    <View style={viewerStyles.empty}>
-      <Text style={viewerStyles.emptyText}>No data available for this report.</Text>
-    </View>
-  );
-
-  // Render rows / items as a generic table
-  const renderValue = (val: any): string => {
-    if (val == null) return '—';
-    if (typeof val === 'number') return val % 1 !== 0 ? val.toFixed(1) : String(val);
-    if (typeof val === 'boolean') return val ? 'Yes' : 'No';
-    if (typeof val === 'string') return val;
-    return JSON.stringify(val);
-  };
-
-  // Try to find a summary object and an items/rows array
-  const summary: Record<string, any> = data.summary ?? data.totals ?? data.metrics ?? {};
-  const items: any[] = data.items ?? data.rows ?? data.data ?? data.results ?? [];
-  const hasSummary = Object.keys(summary).length > 0;
-  const hasItems = Array.isArray(items) && items.length > 0;
+// ─── Score Circle Component ─────────────────────────────────────────────────
+const ScoreCircle = ({ score, size = 56 }: { score: number; size?: number }) => {
+  const s = Math.min(100, Math.max(0, score || 0));
+  const strokeWidth = 4;
+  const r = (size - strokeWidth * 2) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (s / 100) * circ;
+  const color = scoreColorHex(s);
 
   return (
-    <ScrollView style={viewerStyles.scroll} contentContainerStyle={viewerStyles.content}>
-      {/* Summary Cards */}
-      {hasSummary && (
-        <View style={viewerStyles.section}>
-          <Text style={[viewerStyles.sectionTitle, { color: color.primary }]}>Summary</Text>
-          <View style={viewerStyles.summaryGrid}>
-            {Object.entries(summary).slice(0, 8).map(([key, val]) => (
-              <View key={key} style={[viewerStyles.summaryBox, { borderTopColor: color.primary }]}>
-                <Text style={[viewerStyles.summaryValue, { color: color.primary }]}>
-                  {typeof val === 'number' && key.toLowerCase().includes('revenue')
-                    ? formatCurrency(val)
-                    : renderValue(val)}
-                </Text>
-                <Text style={viewerStyles.summaryLabel}>
-                  {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}
-                </Text>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+        <SvgCircle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E5E7EB" strokeWidth={strokeWidth} />
+        <SvgCircle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
+          strokeDasharray={`${circ}`} strokeDashoffset={offset} strokeLinecap="round" />
+      </Svg>
+      <Text style={{ position: 'absolute', fontSize: rf(size > 60 ? 18 : 14), fontWeight: '700', color }}>{s}</Text>
+    </View>
+  );
+};
+
+// ─── Section Accordion ──────────────────────────────────────────────────────
+const SectionAccordion = ({ section }: { section: any }) => {
+  const [open, setOpen] = useState(false);
+  if (!section) return null;
+  const rc = ratingBg(section.rating || '');
+  return (
+    <View style={acc.card}>
+      <TouchableOpacity style={acc.header} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text style={acc.title}>{section.title}</Text>
+          {section.rating ? (
+            <View style={[acc.ratingBadge, { backgroundColor: rc.bg }]}>
+              <Text style={[acc.ratingText, { color: rc.text }]}>{section.rating}</Text>
+            </View>
+          ) : null}
+        </View>
+        {open ? <ChevronUp size={16} color="#9CA3AF" /> : <ChevronDown size={16} color="#9CA3AF" />}
+      </TouchableOpacity>
+      {open && (
+        <View style={acc.body}>
+          {section.narrative ? <Text style={acc.narrative}>{section.narrative}</Text> : null}
+          {section.flags?.length > 0 && (
+            <View style={acc.flagRow}>
+              {section.flags.map((f: string, i: number) => (
+                <View key={i} style={acc.flag}><Text style={acc.flagText}>{f}</Text></View>
+              ))}
+            </View>
+          )}
+          {section.compliancePercent != null && (
+            <View style={acc.complianceRow}>
+              <View style={acc.complianceBg}>
+                <View style={[acc.complianceFill, {
+                  width: `${Math.min(100, section.compliancePercent)}%`,
+                  backgroundColor: scoreColorHex(section.compliancePercent),
+                }]} />
               </View>
-            ))}
-          </View>
+              <Text style={acc.compliancePct}>{section.compliancePercent}%</Text>
+            </View>
+          )}
         </View>
       )}
+    </View>
+  );
+};
+const acc = StyleSheet.create({
+  card: { borderWidth: 1, borderColor: '#F3F4F6', borderRadius: 12, overflow: 'hidden', marginBottom: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FAFAFA' },
+  title: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  ratingBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  ratingText: { fontSize: rf(10), fontWeight: '700' },
+  body: { paddingHorizontal: 14, paddingVertical: 12, gap: 8, backgroundColor: '#FFF' },
+  narrative: { fontSize: rf(13), color: '#374151', lineHeight: 20 },
+  flagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  flag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
+  flagText: { fontSize: rf(10), color: '#DC2626', fontWeight: '600' },
+  complianceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  complianceBg: { flex: 1, height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' as const },
+  complianceFill: { height: 6, borderRadius: 3 },
+  compliancePct: { fontSize: rf(12), fontWeight: '600', color: '#6B7280' },
+});
 
-      {/* Items Table */}
-      {hasItems && (
-        <View style={viewerStyles.section}>
-          <Text style={[viewerStyles.sectionTitle, { color: color.primary }]}>
-            Details ({items.length} records)
-          </Text>
-          {items.map((row, idx) => {
-            const entries = Object.entries(row).filter(([k]) =>
-              !['id', 'userId', 'foId', 'zoneId', 'regionId'].includes(k)
-            );
-            return (
-              <View key={idx} style={[viewerStyles.tableRow, idx % 2 === 0 && viewerStyles.tableRowAlt]}>
-                <Text style={viewerStyles.rowIndex}>{idx + 1}</Text>
-                <View style={viewerStyles.rowContent}>
-                  {entries.slice(0, 5).map(([key, val]) => (
-                    <View key={key} style={viewerStyles.rowField}>
-                      <Text style={viewerStyles.rowKey}>
-                        {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}
-                      </Text>
-                      <Text style={viewerStyles.rowVal} numberOfLines={1}>
-                        {typeof val === 'number' && key.toLowerCase().includes('revenue')
-                          ? formatCurrency(val as number)
-                          : renderValue(val)}
-                      </Text>
-                    </View>
-                  ))}
+// ─── Main Screen ────────────────────────────────────────────────────────────
+export const ReportsScreen = (_: any) => {
+  const { user } = useAuth();
+  const role = user?.role || 'FO';
+  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
+  const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(role);
+
+  const [activeTab, setActiveTab] = useState('User Performance');
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [dateFrom] = useState(thirtyDaysAgo);
+  const [dateTo] = useState(todayStr);
+
+  // AI report states
+  const [aiReports, setAiReports] = useState<any[]>([]);
+  const [viewingAi, setViewingAi] = useState<any>(null);
+  const [aiDetail, setAiDetail] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const tabs = isManager ? REPORT_TABS : REPORT_TABS.filter(t => t !== 'AI Management');
+
+  // ─── Fetch standard reports ────────────────────────────────────────────────
+  const fetchReport = useCallback(async (tab: string) => {
+    setLoading(true);
+    setData(null);
+    const filters: ReportFilters = { from: dateFrom, to: dateTo };
+    try {
+      let res: any;
+      if (tab === 'User Performance') res = await reportsApi.getUserPerformance(filters);
+      else if (tab === 'School Visits') res = await reportsApi.getSchoolVisits(filters);
+      else if (tab === 'Pipeline') res = await reportsApi.getPipeline(filters);
+      if (res) {
+        const d = res.data?.data ?? res.data ?? res;
+        setData(d);
+      }
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [dateFrom, dateTo]);
+
+  // ─── Fetch AI reports ──────────────────────────────────────────────────────
+  const fetchAiReports = useCallback(async (tab: string) => {
+    setLoading(true);
+    setAiReports([]);
+    try {
+      const filters: any = { dateFrom, dateTo };
+      if (tab === 'AI Daily (FO)') filters.reportType = 'FoDaily';
+      const res = await aiReportsApi.getReports(filters);
+      const d: any = res.data;
+      const items = Array.isArray(d) ? d : d?.items ?? d?.reports ?? [];
+      // For management, exclude FoDaily
+      if (tab === 'AI Management') {
+        setAiReports(items.filter((r: any) => r.reportType !== 'FoDaily'));
+      } else {
+        setAiReports(items);
+      }
+    } catch {
+      setAiReports([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (activeTab.startsWith('AI')) fetchAiReports(activeTab);
+    else fetchReport(activeTab);
+  }, [activeTab]);
+
+  // ─── View AI report detail ─────────────────────────────────────────────────
+  const viewAiReport = async (report: any) => {
+    setViewingAi(report);
+    setAiDetail(null);
+    setLoadingDetail(true);
+    try {
+      const res = await aiReportsApi.getReport(report.id);
+      const d: any = res.data;
+      setAiDetail(d);
+    } catch {
+      Alert.alert('Error', 'Failed to load report details');
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  // ─── Render standard table ─────────────────────────────────────────────────
+  const renderStandardReport = () => {
+    if (!data) return (
+      <View style={s.emptyBox}><Text style={s.emptyIcon}>📊</Text><Text style={s.emptyText}>No data available</Text></View>
+    );
+
+    // User Performance / School Visits = array of rows
+    const rows: any[] = data.items || data.rows || data.users || data.schools || (Array.isArray(data) ? data : []);
+    // Pipeline = array of stage objects
+    const stages: any[] = data.stages || data.pipeline || [];
+
+    if (activeTab === 'Pipeline' && stages.length > 0) {
+      return (
+        <View style={s.pipelineGrid}>
+          {stages.map((stage: any, i: number) => (
+            <View key={i} style={s.pipelineCard}>
+              <Text style={s.pipelineStage}>{stage.stage || stage.name}</Text>
+              <View style={s.pipelineRow}>
+                <View style={s.pipelineStat}>
+                  <Text style={s.pipelineVal}>{stage.count ?? stage.deals ?? 0}</Text>
+                  <Text style={s.pipelineLabel}>Deals</Text>
+                </View>
+                <View style={s.pipelineStat}>
+                  <Text style={[s.pipelineVal, { color: '#16A34A' }]}>{formatCurrency(stage.totalValue ?? stage.value ?? 0)}</Text>
+                  <Text style={s.pipelineLabel}>Value</Text>
+                </View>
+                <View style={s.pipelineStat}>
+                  <Text style={s.pipelineVal}>{stage.avgAge ?? stage.avgDays ?? 0}d</Text>
+                  <Text style={s.pipelineLabel}>Avg Age</Text>
                 </View>
               </View>
-            );
-          })}
-        </View>
-      )}
-
-      {/* Fallback — raw top-level fields */}
-      {!hasSummary && !hasItems && (
-        <View style={viewerStyles.section}>
-          <Text style={[viewerStyles.sectionTitle, { color: color.primary }]}>Report Data</Text>
-          {Object.entries(data).slice(0, 20).map(([key, val]) => (
-            <View key={key} style={viewerStyles.tableRow}>
-              <Text style={viewerStyles.rowKey}>
-                {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}
-              </Text>
-              <Text style={viewerStyles.rowVal}>{renderValue(val)}</Text>
             </View>
           ))}
         </View>
-      )}
-    </ScrollView>
-  );
-};
-
-const viewerStyles = StyleSheet.create({
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 16, paddingBottom: 32 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { fontSize: rf(14), color: '#9CA3AF', textAlign: 'center' },
-  section: { gap: 10 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', marginBottom: 4 },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  summaryBox: {
-    minWidth: '45%', flex: 1, backgroundColor: '#FFF', borderRadius: 12,
-    padding: 12, borderTopWidth: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1,
-  },
-  summaryValue: { fontSize: rf(18), fontWeight: '700', marginBottom: 4 },
-  summaryLabel: { fontSize: rf(11), color: '#9CA3AF', textTransform: 'capitalize' },
-  tableRow: {
-    backgroundColor: '#FFF', borderRadius: 10, padding: 12,
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-  },
-  tableRowAlt: { backgroundColor: '#F9FAFB' },
-  rowIndex: { fontSize: rf(12), color: '#9CA3AF', fontWeight: '700', minWidth: 24, paddingTop: 2 },
-  rowContent: { flex: 1, gap: 4 },
-  rowField: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  rowKey: { fontSize: rf(12), color: '#6B7280', flex: 1, textTransform: 'capitalize' },
-  rowVal: { fontSize: rf(12), color: '#111827', fontWeight: '600', flex: 1, textAlign: 'right' },
-});
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-
-export const ReportsScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const role = user?.role || 'RH';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
-  const { width } = useWindowDimensions();
-  const tablet = width >= 768;
-
-  const [category, setCategory] = useState('All');
-
-  // View modal state
-  const [viewModalVisible, setViewModalVisible] = useState(false);
-  const [viewingReport, setViewingReport] = useState<typeof REPORTS[0] | null>(null);
-  const [reportData, setReportData] = useState<any>(null);
-  const [loadingView, setLoadingView] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<typeof PERIODS[number]>('monthly');
-
-  // Export state
-  const [exportingId, setExportingId] = useState<number | null>(null);
-
-  const accessible = REPORTS.filter((r) => r.roles.includes(role));
-  const filtered = category === 'All' ? accessible : accessible.filter((r) => r.category === category);
-
-  const cols = tablet ? 3 : 1;
-  const cardW = getCardWidth(cols, tablet ? 48 + (cols - 1) * 12 : 32);
-
-  // ─── View Report ──────────────────────────────────────────────────────────
-
-  const handleView = useCallback(async (report: typeof REPORTS[0]) => {
-    setViewingReport(report);
-    setReportData(null);
-    setViewModalVisible(true);
-    setLoadingView(true);
-    try {
-      const filters: ReportFilters = { period: selectedPeriod };
-      const res = await reportsApi.getReport(report.id, filters);
-      setReportData(res.data);
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 404) {
-        // Report endpoint not yet on backend — show friendly message
-        setReportData({ _message: 'This report is not yet available from the server.' });
-      } else {
-        Alert.alert('Error', 'Failed to load report data. Please try again.');
-        setViewModalVisible(false);
-      }
-    } finally {
-      setLoadingView(false);
+      );
     }
-  }, [selectedPeriod]);
 
-  const handleRefreshView = useCallback(async () => {
-    if (!viewingReport) return;
-    setLoadingView(true);
-    try {
-      const res = await reportsApi.getReport(viewingReport.id, { period: selectedPeriod });
-      setReportData(res.data);
-    } catch {
-      // keep existing data
-    } finally {
-      setLoadingView(false);
+    if (rows.length > 0) {
+      const keys = Object.keys(rows[0]).filter(k => !['id', 'userId', 'foId', 'schoolId'].includes(k));
+      return (
+        <View style={s.tableContainer}>
+          {rows.map((row: any, idx: number) => (
+            <View key={idx} style={[s.tableRow, idx % 2 === 0 && { backgroundColor: '#F9FAFB' }]}>
+              <Text style={s.tableIdx}>{idx + 1}</Text>
+              <View style={s.tableFields}>
+                {keys.slice(0, 6).map(k => (
+                  <View key={k} style={s.tableField}>
+                    <Text style={s.tableKey}>{k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}</Text>
+                    <Text style={s.tableVal} numberOfLines={1}>
+                      {typeof row[k] === 'number' && (k.toLowerCase().includes('revenue') || k.toLowerCase().includes('amount') || k.toLowerCase().includes('allowance'))
+                        ? formatCurrency(row[k])
+                        : String(row[k] ?? '—')}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      );
     }
-  }, [viewingReport, selectedPeriod]);
 
-  // ─── Export Report ────────────────────────────────────────────────────────
-
-  const handleExport = useCallback(async (report: typeof REPORTS[0], format: 'pdf' | 'csv' = 'pdf') => {
-    setExportingId(report.id);
-    try {
-      // Try to get a signed export URL from the backend
-      const res = await reportsApi.getExportUrl(report.id, format, { period: selectedPeriod });
-      const { url, filename } = res.data ?? {};
-
-      if (url) {
-        // Option 1: Open the URL in the browser (triggers download)
-        const canOpen = await Linking.canOpenURL(url);
-        if (canOpen) {
-          await Linking.openURL(url);
-        } else {
-          // Option 2: Share the URL
-          await Share.share({
-            title: filename || `${report.title}.${format}`,
-            message: `Download ${report.title}: ${url}`,
-            url,
-          });
-        }
-      } else {
-        throw new Error('No download URL returned');
-      }
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 404 || status === 501) {
-        // Backend export not implemented — fall back to sharing API base URL
-        await _fallbackShare(report, format);
-      } else if (err?.message !== 'No download URL returned') {
-        await _fallbackShare(report, format);
-      }
-    } finally {
-      setExportingId(null);
-    }
-  }, [selectedPeriod]);
-
-  const _fallbackShare = async (report: typeof REPORTS[0], format: string) => {
-    try {
-      // Build the export URL manually with the API base
-      const exportUrl = `${API_BASE_URL}/reports/${report.id}/export?format=${format}&period=${selectedPeriod}`;
-      await Share.share({
-        title: `${report.title} — ${format.toUpperCase()}`,
-        message: `Export link for ${report.title} (${format.toUpperCase()}): ${exportUrl}`,
-        url: exportUrl,
-      });
-    } catch {
-      Alert.alert('Export', `Report export for "${report.title}" is not yet available on the server.`);
-    }
+    return <View style={s.emptyBox}><Text style={s.emptyIcon}>📊</Text><Text style={s.emptyText}>No records found</Text></View>;
   };
 
-  const handleExportChoice = (report: typeof REPORTS[0]) => {
-    Alert.alert(
-      `Export: ${report.title}`,
-      'Choose export format',
-      [
-        { text: 'PDF', onPress: () => handleExport(report, 'pdf') },
-        { text: 'CSV', onPress: () => handleExport(report, 'csv') },
-        { text: 'Cancel', style: 'cancel' },
-      ]
+  // ─── Render AI report list ─────────────────────────────────────────────────
+  const renderAiReportCard = ({ item: report }: { item: any }) => {
+    const rc = ratingBg(report.overallRating || '');
+    return (
+      <Card style={s.aiCard} onPress={() => viewAiReport(report)}>
+        <View style={s.aiCardRow}>
+          <ScoreCircle score={report.overallScore} size={52} />
+          <View style={s.aiCardInfo}>
+            <View style={s.aiCardNameRow}>
+              <Text style={s.aiCardName} numberOfLines={1}>{report.userName}</Text>
+              <View style={s.aiRoleBadge}><Text style={s.aiRoleText}>{report.userRole}</Text></View>
+            </View>
+            <View style={s.aiCardMeta}>
+              {report.reportType === 'FoDaily'
+                ? <Clock size={12} color="#6B7280" />
+                : <Users size={12} color="#6B7280" />}
+              <Text style={s.aiMetaText}>{report.reportType === 'FoDaily' ? 'Daily Report' : 'Bi-Weekly'}</Text>
+              <Text style={s.aiMetaText}>{formatDate(report.reportDate)}</Text>
+            </View>
+          </View>
+          <View style={s.aiCardRight}>
+            <View style={[s.aiRatingBadge, { backgroundColor: rc.bg }]}>
+              <Text style={[s.aiRatingText, { color: rc.text }]}>{report.overallRating || 'N/A'}</Text>
+            </View>
+            {report.status === 'Completed' && <Eye size={16} color={COLOR.primary} />}
+            {report.status === 'Generating' && <ActivityIndicator size="small" color="#F59E0B" />}
+            {report.status === 'Failed' && <Text style={{ fontSize: rf(11), color: '#DC2626' }}>Failed</Text>}
+          </View>
+        </View>
+      </Card>
     );
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render AI report detail ───────────────────────────────────────────────
+  const renderAiDetail = () => {
+    if (!viewingAi) return null;
+    const report = aiDetail || viewingAi;
+    const output = safeParseJSON(report.outputJson) || {};
+    const sections = parseSections(output);
+    const redFlags = parseRedFlags(output);
+    const insights = parseInsights(output);
+    const teamRanking = output.teamRanking || [];
+    const summary = output.summary || output.executiveSummary || '';
+    const scoreBd = output.scoreBreakdown || {};
+
+    return (
+      <Modal visible={!!viewingAi} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setViewingAi(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }} edges={['top']}>
+          {/* Header */}
+          <View style={[s.aiDetailHeader, { backgroundColor: COLOR.primary }]}>
+            <TouchableOpacity onPress={() => setViewingAi(null)} style={s.aiBackBtn}>
+              <ArrowLeft size={18} color="#FFF" />
+              <Text style={s.aiBackText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loadingDetail ? (
+            <View style={s.loadCenter}><ActivityIndicator size="large" color={COLOR.primary} /></View>
+          ) : (
+            <ScrollView contentContainerStyle={s.aiDetailContent}>
+              {/* Score Header */}
+              <View style={s.aiScoreHeader}>
+                <ScoreCircle score={report.overallScore} size={72} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.aiDetailName}>{report.userName}</Text>
+                  <Text style={s.aiDetailMeta}>
+                    {report.userRole} · {report.reportType === 'FoDaily' ? 'Daily' : 'Bi-Weekly'} · {formatDate(report.reportDate)}
+                  </Text>
+                </View>
+                <View style={[s.aiRatingBadgeLg, { backgroundColor: ratingBg(report.overallRating || '').bg }]}>
+                  <Text style={[s.aiRatingTextLg, { color: ratingBg(report.overallRating || '').text }]}>{report.overallRating || 'N/A'}</Text>
+                </View>
+              </View>
+
+              {/* Summary */}
+              {summary ? <View style={s.summaryCard}><Text style={s.summaryText}>{summary}</Text></View> : null}
+
+              {/* Score Breakdown */}
+              {Object.keys(scoreBd).length > 0 && (
+                <View style={s.section}>
+                  <View style={s.sectionHeader}><Target size={14} color="#6B7280" /><Text style={s.sectionTitle}>Score Breakdown</Text></View>
+                  <View style={s.scoreGrid}>
+                    {Object.entries(scoreBd).map(([key, val]: [string, any]) => (
+                      <View key={key} style={s.scoreItem}>
+                        <Text style={s.scoreLabel}>{key.replace(/([A-Z])/g, ' $1').trim()}</Text>
+                        <View style={s.scoreBarRow}>
+                          <View style={s.scoreBarBg}>
+                            <View style={[s.scoreBarFill, { width: `${Math.min(100, Math.max(0, val))}%`, backgroundColor: scoreColorHex(val) }]} />
+                          </View>
+                          <Text style={[s.scoreNum, { color: scoreColorHex(val) }]}>{val}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Team Ranking */}
+              {teamRanking.length > 0 && (
+                <View style={s.section}>
+                  <View style={s.sectionHeader}><Users size={14} color="#6B7280" /><Text style={s.sectionTitle}>Team Ranking</Text></View>
+                  {teamRanking.slice(0, 15).map((fo: any, i: number) => (
+                    <View key={i} style={[s.rankRow, i % 2 === 0 && { backgroundColor: '#F9FAFB' }]}>
+                      <Text style={s.rankNum}>{fo.rank || i + 1}</Text>
+                      <Text style={s.rankName} numberOfLines={1}>{fo.foName}</Text>
+                      <Text style={[s.rankScore, { color: scoreColorHex(fo.avgDailyScore || 0) }]}>{fo.avgDailyScore || 0}</Text>
+                      <Text style={s.rankObs} numberOfLines={1}>{fo.keyObservation || ''}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Detailed Analysis */}
+              {sections.length > 0 && (
+                <View style={s.section}>
+                  <View style={s.sectionHeader}><Text style={s.sectionTitle}>Detailed Analysis</Text></View>
+                  {sections.map((sec: any, i: number) => <SectionAccordion key={i} section={sec} />)}
+                </View>
+              )}
+
+              {/* Red Flags */}
+              {redFlags.length > 0 && (
+                <View style={s.section}>
+                  <View style={s.sectionHeader}><AlertTriangle size={14} color="#DC2626" /><Text style={[s.sectionTitle, { color: '#DC2626' }]}>Red Flags ({redFlags.length})</Text></View>
+                  {redFlags.map((f: any, i: number) => {
+                    const sc = severityColor(f.severity || 'MEDIUM');
+                    return (
+                      <View key={i} style={[s.flagCard, { borderLeftColor: sc.text }]}>
+                        <View style={s.flagHeader}>
+                          <View style={[s.flagSeverity, { backgroundColor: sc.bg }]}>
+                            <Text style={[s.flagSeverityText, { color: sc.text }]}>{f.severity || 'MEDIUM'}</Text>
+                          </View>
+                          {f.category ? <Text style={s.flagCategory}>{f.category}</Text> : null}
+                        </View>
+                        <Text style={s.flagIssue}>{f.issue}</Text>
+                        {f.evidence ? <Text style={s.flagEvidence}>{f.evidence}</Text> : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* AI Insights */}
+              {(insights.strengths?.length > 0 || insights.problems?.length > 0 || insights.recommendations?.length > 0) && (
+                <View style={s.section}>
+                  <View style={s.sectionHeader}><Text style={s.sectionTitle}>AI Insights</Text></View>
+                  {insights.strengths?.length > 0 && (
+                    <View style={s.insightGroup}>
+                      <Text style={[s.insightLabel, { color: '#059669' }]}>STRENGTHS</Text>
+                      {insights.strengths.map((item: string, i: number) => (
+                        <View key={i} style={s.insightRow}><CheckCircle size={12} color="#059669" /><Text style={s.insightText}>{item}</Text></View>
+                      ))}
+                    </View>
+                  )}
+                  {(insights.problems || insights.problemAreas)?.length > 0 && (
+                    <View style={s.insightGroup}>
+                      <Text style={[s.insightLabel, { color: '#DC2626' }]}>PROBLEMS</Text>
+                      {(insights.problems || insights.problemAreas).map((item: string, i: number) => (
+                        <View key={i} style={s.insightRow}><AlertTriangle size={12} color="#DC2626" /><Text style={s.insightText}>{item}</Text></View>
+                      ))}
+                    </View>
+                  )}
+                  {insights.recommendations?.length > 0 && (
+                    <View style={s.insightGroup}>
+                      <Text style={[s.insightLabel, { color: '#2563EB' }]}>RECOMMENDATIONS</Text>
+                      {insights.recommendations.map((item: string, i: number) => (
+                        <View key={i} style={s.insightRow}><TrendingUp size={12} color="#2563EB" /><Text style={s.insightText}>{item}</Text></View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <View style={{ height: 32 }} />
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <Text style={styles.headerTitle}>Reports Library</Text>
-        <Text style={styles.headerSub}>{accessible.length} reports available</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-          {CATEGORIES.map((cat) => (
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <View style={[s.header, { backgroundColor: COLOR.primary }]}>
+        <Text style={s.headerTitle}>Reports</Text>
+        <Text style={s.headerSub}>Generate and view performance reports</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
+          {tabs.map(tab => (
             <TouchableOpacity
-              key={cat}
-              style={[styles.catChip, category === cat && { backgroundColor: '#FFF' }]}
-              onPress={() => setCategory(cat)}
+              key={tab}
+              style={[s.tabChip, activeTab === tab && { backgroundColor: '#FFF' }]}
+              onPress={() => setActiveTab(tab)}
             >
-              <Text style={[styles.catText, category === cat && { color: COLOR.primary }]}>{cat}</Text>
+              <Text style={[s.tabText, activeTab === tab && { color: COLOR.primary }]}>{tab}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, tablet && styles.contentTablet]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.grid, tablet && { flexDirection: 'row', flexWrap: 'wrap', gap: 14 }]}>
-          {filtered.map((report) => (
-            <Card key={report.id} style={tablet ? { ...styles.reportCard, width: cardW } : styles.reportCard}>
-              <View style={styles.reportHeader}>
-                <View style={[styles.iconWrap, { backgroundColor: ICON_BG[report.id] }]}>
-                  {ICONS[report.id]}
-                </View>
-                <View style={styles.reportMeta}>
-                  <Badge label={report.category} color="#6B7280" size="sm" />
-                  <View style={styles.rolesList}>
-                    {report.roles.map((r) => (
-                      <View key={r} style={[styles.rolePill, { backgroundColor: ROLE_COLORS[r as keyof typeof ROLE_COLORS]?.primary || '#6B7280' }]}>
-                        <Text style={styles.rolePillText}>{r}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-              <Text style={styles.reportTitle}>{report.title}</Text>
-              <Text style={styles.reportDesc} numberOfLines={2}>{report.description}</Text>
-              <View style={styles.reportActions}>
-                <TouchableOpacity
-                  style={[styles.reportBtn, { borderColor: COLOR.primary }]}
-                  onPress={() => handleView(report)}
-                >
-                  <Eye size={14} color={COLOR.primary} />
-                  <Text style={[styles.reportBtnText, { color: COLOR.primary }]}>View</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.reportBtn, { borderColor: '#6B7280', opacity: exportingId === report.id ? 0.6 : 1 }]}
-                  onPress={() => handleExportChoice(report)}
-                  disabled={exportingId === report.id}
-                >
-                  {exportingId === report.id
-                    ? <ActivityIndicator size="small" color="#6B7280" />
-                    : <Download size={14} color="#6B7280" />}
-                  <Text style={[styles.reportBtnText, { color: '#6B7280' }]}>
-                    {exportingId === report.id ? 'Exporting...' : 'Export'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          ))}
-        </View>
+      {loading ? (
+        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading report..." />
+      ) : activeTab.startsWith('AI') ? (
+        <FlatList
+          data={aiReports}
+          keyExtractor={item => String(item.id)}
+          renderItem={renderAiReportCard}
+          contentContainerStyle={[s.listContent, aiReports.length === 0 && { flex: 1 }]}
+          ListEmptyComponent={
+            <View style={s.emptyBox}><Text style={s.emptyIcon}>🤖</Text><Text style={s.emptyText}>No AI reports found for this period</Text></View>
+          }
+        />
+      ) : (
+        <ScrollView contentContainerStyle={s.listContent}>
+          {renderStandardReport()}
+        </ScrollView>
+      )}
 
-        {filtered.length === 0 && (
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📊</Text>
-            <Text style={styles.emptyTitle}>No reports in this category</Text>
-          </View>
-        )}
-        <View style={{ height: 24 }} />
-      </ScrollView>
-
-      {/* ─── View Report Modal ─────────────────────────────────────────────── */}
-      <Modal
-        visible={viewModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setViewModalVisible(false)}
-      >
-        <SafeAreaView style={styles.modalSafe} edges={['top']}>
-          {/* Modal Header */}
-          <View style={[styles.modalHeader, { backgroundColor: COLOR.primary }]}>
-            <View style={styles.modalTitleRow}>
-              <View style={styles.modalTitleWrap}>
-                <Text style={styles.modalTitle} numberOfLines={1}>{viewingReport?.title}</Text>
-                <Text style={styles.modalSub}>{viewingReport?.category}</Text>
-              </View>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setViewModalVisible(false)}>
-                <X size={20} color="#FFF" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Period Picker */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodScroll}>
-              {PERIODS.map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[styles.periodChip, selectedPeriod === p && { backgroundColor: '#FFF' }]}
-                  onPress={() => {
-                    setSelectedPeriod(p);
-                    if (viewingReport) {
-                      setTimeout(() => handleRefreshView(), 100);
-                    }
-                  }}
-                >
-                  <Text style={[styles.periodText, selectedPeriod === p && { color: COLOR.primary }]}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Content */}
-          {loadingView ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color={COLOR.primary} />
-              <Text style={[styles.loadingText, { color: COLOR.primary }]}>Loading report...</Text>
-            </View>
-          ) : reportData?._message ? (
-            <View style={styles.notAvailBox}>
-              <Text style={styles.notAvailIcon}>📊</Text>
-              <Text style={styles.notAvailTitle}>{viewingReport?.title}</Text>
-              <Text style={styles.notAvailText}>{reportData._message}</Text>
-              <TouchableOpacity
-                style={[styles.exportFromModal, { borderColor: COLOR.primary }]}
-                onPress={() => viewingReport && handleExportChoice(viewingReport)}
-              >
-                <Share2 size={16} color={COLOR.primary} />
-                <Text style={[styles.exportFromModalText, { color: COLOR.primary }]}>Export Report Instead</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <ReportViewer report={viewingReport!} data={reportData} color={COLOR} />
-          )}
-
-          {/* Footer Actions */}
-          <View style={styles.modalFooter}>
-            <Button
-              title="Refresh"
-              onPress={handleRefreshView}
-              variant="secondary"
-              color={COLOR.primary}
-              disabled={loadingView}
-              style={{ flex: 1 }}
-            />
-            <Button
-              title="Export PDF"
-              onPress={() => viewingReport && handleExport(viewingReport, 'pdf')}
-              variant="primary"
-              color={COLOR.primary}
-              disabled={!viewingReport || exportingId === viewingReport?.id}
-              style={{ flex: 1 }}
-            />
-          </View>
-        </SafeAreaView>
-      </Modal>
+      {renderAiDetail()}
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
+// ─── Helpers for AI detail ──────────────────────────────────────────────────
+function parseSections(output: any) {
+  // Check multiple possible keys for sections data
+  const raw = output?.sections || output?.detailedAnalysis || output?.analysis || {};
+  if (Array.isArray(raw)) {
+    return raw.map((item: any) => {
+      if (typeof item === 'string') return { title: item, narrative: '', rating: '', flags: [], compliancePercent: undefined };
+      return {
+        title: item.title || '',
+        narrative: item.narrative || item.details || item.comments || item.content || item.summary || '',
+        rating: item.rating || '',
+        flags: item.flags || [],
+        compliancePercent: item.compliancePercent,
+      };
+    }).filter((sec: any) => sec.narrative);
+  }
+  // Object — values can be strings, objects, or nested structures
+  return Object.entries(raw).map(([key, val]: [string, any]) => {
+    const label = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, (c: string) => c.toUpperCase()).trim();
+    if (typeof val === 'string') return { title: label, narrative: val, rating: '', flags: [], compliancePercent: undefined };
+    if (typeof val !== 'object' || val === null) return { title: label, narrative: String(val ?? ''), rating: '', flags: [], compliancePercent: undefined };
+    return {
+      title: val.title || label,
+      narrative: val.narrative || val.details || val.comments || val.content || val.summary || '',
+      rating: val.rating || '',
+      flags: val.flags || [],
+      compliancePercent: val.compliancePercent,
+    };
+  }).filter((sec: any) => sec.narrative);
+}
+function parseRedFlags(output: any) {
+  return (output?.redFlags || []).map((f: any) => typeof f === 'string' ? { severity: 'MEDIUM', category: 'General', issue: f } : f);
+}
+function parseInsights(output: any) {
+  const raw = output?.aiInsights || {};
+  return Array.isArray(raw) ? { problems: raw, strengths: [], recommendations: [] } : raw;
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F9FAFB' },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
   headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
   headerSub: { fontSize: rf(13), color: 'rgba(255,255,255,0.75)', marginTop: 2, marginBottom: 12 },
-  catScroll: {},
-  catChip: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.2)', marginRight: 6,
-  },
-  catText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
-  scroll: { flex: 1 },
-  content: { padding: 14, gap: 10 },
-  contentTablet: { padding: 24 },
-  grid: { gap: 10 },
-  reportCard: { padding: 16 },
-  reportHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
-  iconWrap: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  reportMeta: { flex: 1, gap: 4 },
-  rolesList: { flexDirection: 'row', gap: 4 },
-  rolePill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 100 },
-  rolePillText: { fontSize: rf(10), fontWeight: '700', color: '#FFF' },
-  reportTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827', marginBottom: 6 },
-  reportDesc: { fontSize: rf(13), color: '#6B7280', lineHeight: 19, marginBottom: 14 },
-  reportActions: { flexDirection: 'row', gap: 8 },
-  reportBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, paddingVertical: 8, borderRadius: 8, borderWidth: 1.5,
-  },
-  reportBtnText: { fontSize: rf(13), fontWeight: '600' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  tabContent: { flexDirection: 'row', gap: 6 },
+  tabChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.2)' },
+  tabText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  listContent: { padding: 14, paddingBottom: 32 },
+  loadCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: rf(16), fontWeight: '600', color: '#374151', textAlign: 'center' },
-  // Modal
-  modalSafe: { flex: 1, backgroundColor: '#F9FAFB' },
-  modalHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  modalTitleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
-  modalTitleWrap: { flex: 1 },
-  modalTitle: { fontSize: rf(18), fontWeight: '700', color: '#FFF' },
-  modalSub: { fontSize: rf(12), color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  modalClose: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
-  },
-  periodScroll: {},
-  periodChip: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.2)', marginRight: 6,
-  },
-  periodText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
-  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: rf(14), fontWeight: '600' },
-  notAvailBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  notAvailIcon: { fontSize: 56 },
-  notAvailTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
-  notAvailText: { fontSize: rf(14), color: '#6B7280', textAlign: 'center', lineHeight: 22 },
-  exportFromModal: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8,
-  },
-  exportFromModalText: { fontSize: rf(14), fontWeight: '600' },
-  modalFooter: {
-    flexDirection: 'row', gap: 10, padding: 16,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
-    backgroundColor: '#FFF',
-  },
+  emptyText: { fontSize: rf(14), color: '#9CA3AF', textAlign: 'center' },
+  // Standard report table
+  tableContainer: { gap: 6 },
+  tableRow: { backgroundColor: '#FFF', borderRadius: 10, padding: 12, flexDirection: 'row', gap: 10 },
+  tableIdx: { fontSize: rf(12), color: '#9CA3AF', fontWeight: '700', minWidth: 24, paddingTop: 2 },
+  tableFields: { flex: 1, gap: 4 },
+  tableField: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  tableKey: { fontSize: rf(12), color: '#6B7280', flex: 1, textTransform: 'capitalize' },
+  tableVal: { fontSize: rf(12), color: '#111827', fontWeight: '600', flex: 1, textAlign: 'right' },
+  // Pipeline
+  pipelineGrid: { gap: 10 },
+  pipelineCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1 },
+  pipelineStage: { fontSize: rf(15), fontWeight: '700', color: '#111827', marginBottom: 10 },
+  pipelineRow: { flexDirection: 'row', gap: 12 },
+  pipelineStat: { flex: 1, alignItems: 'center' },
+  pipelineVal: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  pipelineLabel: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
+  // AI report card
+  aiCard: { padding: 14, marginBottom: 10 },
+  aiCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  aiCardInfo: { flex: 1 },
+  aiCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  aiCardName: { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
+  aiRoleBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  aiRoleText: { fontSize: rf(10), color: '#6B7280', fontWeight: '600' },
+  aiCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aiMetaText: { fontSize: rf(12), color: '#6B7280' },
+  aiCardRight: { alignItems: 'center', gap: 6 },
+  aiRatingBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
+  aiRatingText: { fontSize: rf(11), fontWeight: '700' },
+  // AI detail
+  aiDetailHeader: { paddingHorizontal: 16, paddingVertical: 12 },
+  aiBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aiBackText: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
+  aiDetailContent: { padding: 14, gap: 14, paddingBottom: 32 },
+  aiScoreHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1 },
+  aiDetailName: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
+  aiDetailMeta: { fontSize: rf(12), color: '#6B7280', marginTop: 4 },
+  aiRatingBadgeLg: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  aiRatingTextLg: { fontSize: rf(13), fontWeight: '700' },
+  summaryCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 16 },
+  summaryText: { fontSize: rf(13), color: '#374151', lineHeight: 20 },
+  section: { gap: 8 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  sectionTitle: { fontSize: rf(12), fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 },
+  // Score breakdown
+  scoreGrid: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, gap: 10 },
+  scoreItem: { gap: 4 },
+  scoreLabel: { fontSize: rf(11), color: '#6B7280', textTransform: 'capitalize' },
+  scoreBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scoreBarBg: { flex: 1, height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' },
+  scoreBarFill: { height: 6, borderRadius: 3 },
+  scoreNum: { fontSize: rf(13), fontWeight: '700', minWidth: 28, textAlign: 'right' },
+  // Team ranking
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8 },
+  rankNum: { fontSize: rf(12), color: '#9CA3AF', fontWeight: '700', width: 22 },
+  rankName: { fontSize: rf(13), fontWeight: '600', color: '#111827', width: 80 },
+  rankScore: { fontSize: rf(13), fontWeight: '700', width: 32 },
+  rankObs: { fontSize: rf(11), color: '#6B7280', flex: 1 },
+  // Red flags
+  flagCard: { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, borderLeftWidth: 3, marginBottom: 6 },
+  flagHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  flagSeverity: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  flagSeverityText: { fontSize: rf(10), fontWeight: '700' },
+  flagCategory: { fontSize: rf(11), color: '#6B7280' },
+  flagIssue: { fontSize: rf(13), color: '#111827', fontWeight: '600' },
+  flagEvidence: { fontSize: rf(12), color: '#6B7280', marginTop: 4 },
+  // Insights
+  insightGroup: { gap: 6, marginBottom: 12 },
+  insightLabel: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.5 },
+  insightRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  insightText: { fontSize: rf(13), color: '#374151', flex: 1, lineHeight: 19 },
 });

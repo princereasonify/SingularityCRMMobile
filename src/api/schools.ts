@@ -24,4 +24,7 @@ export const schoolsApi = {
   // School assignments (FO self-assign when creating)
   bulkAssign: (data: { userId: number; schoolIds: number[]; assignmentDate: string }) =>
     apiClient.post('/school-assignments/bulk', data),
+
+  getMyAssignments: (date: string) =>
+    apiClient.get<any[]>('/school-assignments/my', { params: { date } }),
 };

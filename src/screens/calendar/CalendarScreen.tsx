@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import { calendarApi } from '../../api/calendar';
+import { weeklyPlanApi } from '../../api/weeklyPlan';
 import { CalendarEvent } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
@@ -47,7 +48,8 @@ export const CalendarScreen = (_: any) => {
   const { user } = useAuth();
   const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
   const { width } = useWindowDimensions();
-  const cellWidth = Math.floor((width - 32) / 7);
+  // Total horizontal insets: content padding (16*2) + calCard padding (4*2) + grid padding (4*2) = 48
+  const cellWidth = Math.floor((width - 48) / 7);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -79,13 +81,49 @@ export const CalendarScreen = (_: any) => {
   // Pad to full rows
   while (gridCells.length % 7 !== 0) gridCells.push(null);
 
-  // ── Fetch events for this month ────────────────────────────────────────────
+  // ── Fetch events for this month + merge approved weekly plan activities ────
   const loadEvents = useCallback(async () => {
     const from = toDateStr(year, month, 1);
     const to = toDateStr(year, month, daysInMonth);
     try {
       const res = await calendarApi.getEvents(from, to);
-      setEvents((res.data as any) ?? []);
+      const calEvents: CalendarEvent[] = (res.data as any) ?? [];
+
+      // Merge approved weekly plan activities (like web)
+      const planEvents: CalendarEvent[] = [];
+      try {
+        for (let w = -1; w < 5; w++) {
+          const ws = new Date(year, month, 1 + w * 7);
+          const dow = ws.getDay();
+          const monday = new Date(ws);
+          monday.setDate(monday.getDate() - ((dow + 6) % 7));
+          const weekStart = monday.toISOString().split('T')[0];
+          const planRes = await weeklyPlanApi.getMy(weekStart);
+          const p: any = planRes.data;
+          if (p && (p.status === 'Approved' || p.status === 'EditedByManager')) {
+            let days: any[] = [];
+            try {
+              const raw = p.managerEdits || p.planData;
+              days = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+            } catch {}
+            days.forEach((day: any) => {
+              (day.activities || []).forEach((act: any) => {
+                planEvents.push({
+                  id: `wp-${p.id}-${day.date}-${act.type}` as any,
+                  title: `${act.type}: ${act.schoolName || act.notes || ''}`,
+                  eventType: act.type,
+                  startTime: `${day.date}T09:00`,
+                  endTime: `${day.date}T10:00`,
+                  isCompleted: false,
+                  isWeeklyPlan: true,
+                } as any);
+              });
+            });
+          }
+        }
+      } catch {}
+
+      setEvents([...calEvents, ...planEvents]);
     } catch {
       setEvents([]);
     } finally {

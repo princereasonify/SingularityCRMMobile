@@ -20,6 +20,14 @@ export const reportsApi = {
       params: { format, ...filters },
     }),
 
+  // Standard reports (matching web)
+  getUserPerformance: (filters?: ReportFilters) =>
+    apiClient.get<any>('/reports/user-performance', { params: filters }),
+  getSchoolVisits: (filters?: ReportFilters) =>
+    apiClient.get<any>('/reports/school-visits', { params: filters }),
+  getPipeline: (filters?: ReportFilters) =>
+    apiClient.get<any>('/reports/pipeline', { params: filters }),
+
   // Specific well-typed endpoints
   getMonthlyPerformance: (filters?: ReportFilters) =>
     apiClient.get<any>('/reports/monthly-performance', { params: filters }),

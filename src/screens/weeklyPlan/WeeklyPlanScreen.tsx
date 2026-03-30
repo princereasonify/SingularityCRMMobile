@@ -10,6 +10,7 @@
   } from 'lucide-react-native';
   import { weeklyPlanApi } from '../../api/weeklyPlan';
   import { schoolsApi } from '../../api/schools';
+  import { leadsApi } from '../../api/leads';
   import { useAuth } from '../../context/AuthContext';
   import { ROLE_COLORS } from '../../utils/constants';
   import { rf } from '../../utils/responsive';
@@ -142,26 +143,43 @@
     empty: { textAlign: 'center', padding: 28, color: '#9CA3AF', fontSize: rf(13) },
   });
 
+  // ─── Get allowed activity types based on lead stage ─────────────────────────
+  function getAllowedActivityTypes(schoolName: string | undefined, leads: any[]): string[] {
+    const allTypes = [...ACTIVITY_TYPES] as string[];
+    if (!schoolName) return allTypes;
+    const lead = leads.find((l: any) => (l.school || l.schoolName) === schoolName);
+    if (!lead) return allTypes;
+    const stage = lead.stage || '';
+    // After DemoDone or later: hide Visit AND Demo
+    if (['DemoDone', 'ProposalSent', 'Negotiation', 'ContractSent', 'Won', 'ImplementationStarted'].includes(stage))
+      return allTypes.filter(t => t !== 'Visit' && t !== 'Demo');
+    // After DemoStage: hide Visit
+    if (['DemoStage'].includes(stage))
+      return allTypes.filter(t => t !== 'Visit');
+    return allTypes;
+  }
+
   // ─── Activity Row ──────────────────────────────────────────────────────────────
   const ActivityRow = ({
-    activity, schools, onChange, onRemove, color,
+    activity, schools, leads, onChange, onRemove,
   }: {
     activity: WeeklyActivity;
     schools: any[];
+    leads: any[];
     onChange: (a: WeeklyActivity) => void;
     onRemove: () => void;
-    color: string;
   }) => {
     const [showSchoolPicker, setShowSchoolPicker] = useState(false);
+    const allowedTypes = getAllowedActivityTypes(activity.schoolName, leads);
     return (
       <View style={ar.container}>
         {/* Activity type row */}
         <View style={ar.typeRow}>
-          {ACTIVITY_TYPES.map(t => (
+          {allowedTypes.map(t => (
             <TouchableOpacity
               key={t}
               style={[ar.typeChip, activity.type === t && { backgroundColor: ACTIVITY_COLORS[t] }]}
-              onPress={() => onChange({ ...activity, type: t })}
+              onPress={() => onChange({ ...activity, type: t as WeeklyActivity['type'] })}
             >
               <Text style={[ar.typeText, activity.type === t && { color: '#FFF' }]}>{t}</Text>
             </TouchableOpacity>
@@ -209,10 +227,11 @@
 
   // ─── Day Card ──────────────────────────────────────────────────────────────────
   const DayCard = ({
-    day, schools, onChange, editable, color,
+    day, schools, leads, onChange, editable, color,
   }: {
     day: DayPlan;
     schools: any[];
+    leads: any[];
     onChange?: (d: DayPlan) => void;
     editable: boolean;
     color: string;
@@ -272,9 +291,9 @@
                     key={i}
                     activity={act}
                     schools={schools}
+                    leads={leads}
                     onChange={a => updateActivity(i, a)}
                     onRemove={() => removeActivity(i)}
-                    color={color}
                   />
                 ) : (
                   <View key={i} style={dc.readonlyRow}>
@@ -312,10 +331,11 @@
 
   // ─── Team Member Card ──────────────────────────────────────────────────────────
   const TeamMemberCard = ({
-    plan, schools, onApprove, onReject, color,
+    plan, schools, leads, onApprove, onReject, color,
   }: {
     plan: WeeklyPlan;
     schools: any[];
+    leads: any[];
     onApprove: () => void;
     onReject: () => void;
     color: string;
@@ -323,19 +343,21 @@
     const [expanded, setExpanded] = useState(false);
     const [editing, setEditing] = useState(false);
     const [editDays, setEditDays] = useState<DayPlan[]>([]);
+    const [editNotes, setEditNotes] = useState('');
     const [saving, setSaving] = useState(false);
     const safePlanData = parsePlanData(plan.planData);
     const totalActivities = safePlanData.reduce((s, d) => s + (Array.isArray(d.activities) ? d.activities.length : 0), 0);
 
     const startEdit = () => {
       setEditDays(JSON.parse(JSON.stringify(safePlanData)));
+      setEditNotes('');
       setEditing(true);
       setExpanded(true);
     };
     const saveEdit = async () => {
       setSaving(true);
       try {
-        await weeklyPlanApi.managerEdit(plan.id, editDays);
+        await weeklyPlanApi.managerEdit(plan.id, editDays, editNotes || undefined);
         setEditing(false);
         Alert.alert('Saved', 'Plan edits saved successfully');
       } catch { Alert.alert('Error', 'Failed to save edits'); }
@@ -397,6 +419,7 @@
                   key={day.date}
                   day={day}
                   schools={schools}
+                  leads={leads}
                   editable={editing}
                   onChange={editing ? (d) => {
                     const updated = [...editDays];
@@ -408,17 +431,28 @@
               ))
             )}
             {editing && (
-              <View style={tm.editBtns}>
-                <TouchableOpacity style={tm.cancelEdit} onPress={() => setEditing(false)}>
-                  <Text style={tm.cancelEditText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[tm.saveEdit, { backgroundColor: color, opacity: saving ? 0.6 : 1 }]}
-                  onPress={saveEdit}
-                  disabled={saving}
-                >
-                  <Text style={tm.saveEditText}>{saving ? 'Saving...' : 'Save Edits'}</Text>
-                </TouchableOpacity>
+              <View>
+                <TextInput
+                  style={tm.editNotesInput}
+                  value={editNotes}
+                  onChangeText={setEditNotes}
+                  placeholder="Review notes (optional)..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={2}
+                />
+                <View style={tm.editBtns}>
+                  <TouchableOpacity style={tm.cancelEdit} onPress={() => setEditing(false)}>
+                    <Text style={tm.cancelEditText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[tm.saveEdit, { backgroundColor: color, opacity: saving ? 0.6 : 1 }]}
+                    onPress={saveEdit}
+                    disabled={saving}
+                  >
+                    <Text style={tm.saveEditText}>{saving ? 'Saving...' : 'Save Edits'}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
@@ -450,6 +484,7 @@
     cancelEditText: { fontSize: rf(13), fontWeight: '600', color: '#6B7280' },
     saveEdit: { flex: 2, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
     saveEditText: { fontSize: rf(13), fontWeight: '600', color: '#FFF' },
+    editNotesInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(13), color: '#111827', backgroundColor: '#FAFAFA', marginBottom: 10, textAlignVertical: 'top' as const, minHeight: 60 },
   });
 
   // ─── Main Screen ───────────────────────────────────────────────────────────────
@@ -473,23 +508,62 @@
     const [loadingTeam, setLoadingTeam] = useState(false);
     const [refreshingTeam, setRefreshingTeam] = useState(false);
 
-    // Schools for pickers
+    // Schools for pickers + leads for stage filtering
     const [schools, setSchools] = useState<any[]>([]);
+    const [leads, setLeads] = useState<any[]>([]);
 
     // Reject modal
     const [rejectTarget, setRejectTarget] = useState<WeeklyPlan | null>(null);
     const [rejectNotes, setRejectNotes] = useState('');
     const [rejecting, setRejecting] = useState(false);
 
-    // Load schools once
+    // Load assigned schools for the week (date-specific) + leads for stage info
     useEffect(() => {
-      schoolsApi.getAll({ limit: 500 } as any)
-        .then(res => {
+      const loadSchoolsAndLeads = async () => {
+        // Fetch assigned schools per day and deduplicate
+        try {
+          const allAssignments: any[] = [];
+          for (let i = 0; i < 7; i++) {
+            const date = toYMD(addDays(weekMonday, i));
+            try {
+              const res = await schoolsApi.getMyAssignments(date);
+              const items: any[] = Array.isArray(res.data) ? res.data : (res.data as any)?.items ?? [];
+              items.forEach((a: any) => {
+                if (!allAssignments.find(x => (x.schoolId || x.id) === (a.schoolId || a.id)))
+                  allAssignments.push(a);
+              });
+            } catch {}
+          }
+          if (allAssignments.length > 0) {
+            setSchools(allAssignments.map(a => ({
+              id: a.schoolId || a.id,
+              name: a.schoolName || a.name,
+              city: a.schoolCity || a.city || '',
+            })));
+          } else {
+            // Fallback to all schools if no assignments found
+            const res = await schoolsApi.getAll({ limit: 500 } as any);
+            const d: any = res.data;
+            setSchools(Array.isArray(d) ? d : d?.items ?? d?.schools ?? []);
+          }
+        } catch {
+          // Fallback to all schools
+          try {
+            const res = await schoolsApi.getAll({ limit: 500 } as any);
+            const d: any = res.data;
+            setSchools(Array.isArray(d) ? d : d?.items ?? d?.schools ?? []);
+          } catch {}
+        }
+
+        // Fetch leads for stage info
+        try {
+          const res = await leadsApi.getLeads({ pageSize: 200 });
           const d: any = res.data;
-          setSchools(Array.isArray(d) ? d : d?.items ?? d?.schools ?? []);
-        })
-        .catch(() => {});
-    }, []);
+          setLeads(Array.isArray(d) ? d : d?.items ?? d?.leads ?? []);
+        } catch {}
+      };
+      loadSchoolsAndLeads();
+    }, [weekMonday]);
 
     // Load My Plan
     const loadMyPlan = useCallback(async () => {
@@ -558,24 +632,38 @@
       }
     };
 
-    // Submit for Review
+    // Submit for Review — auto-saves first if no plan exists (like web)
     const handleSubmit = async () => {
-      if (!myPlan?.id) {
-        Alert.alert('Save First', 'Please save the plan as draft first');
-        return;
-      }
       Alert.alert('Submit Plan', 'Submit this plan for review?', [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Submit', onPress: async () => {
             setSaving(true);
             try {
-              await weeklyPlanApi.submit(myPlan.id);
-              loadMyPlan();
+              let planId = myPlan?.id;
+              // Auto-save first if plan doesn't exist yet
+              if (!planId) {
+                const createRes = await weeklyPlanApi.create({
+                  weekStartDate: toYMD(weekMonday),
+                  weekEndDate: toYMD(addDays(weekMonday, 6)),
+                  planData: JSON.stringify(planDays),
+                });
+                planId = (createRes.data as any)?.id;
+              } else {
+                // Save latest changes before submitting
+                await weeklyPlanApi.update(planId, JSON.stringify(planDays));
+              }
+              if (planId) {
+                await weeklyPlanApi.submit(planId);
+                loadMyPlan();
+              } else {
+                Alert.alert('Error', 'Failed to create plan');
+              }
             } catch (err: any) {
               Alert.alert('Error', err?.response?.data?.message || 'Failed to submit');
             } finally {
-              setSaving(false); }
+              setSaving(false);
+            }
           },
         },
       ]);
@@ -692,6 +780,7 @@
                   key={day.date}
                   day={day}
                   schools={schools}
+                  leads={leads}
                   editable={canEdit}
                   onChange={canEdit ? (d) => {
                     const updated = [...planDays];
@@ -753,6 +842,7 @@
                 <TeamMemberCard
                   plan={item}
                   schools={schools}
+                  leads={leads}
                   color={COLOR.primary}
                   onApprove={() => handleApprove(item)}
                   onReject={() => { setRejectTarget(item); setRejectNotes(''); }}
@@ -808,11 +898,6 @@
     );
   };
 
-console.log('rf:', typeof rf);
-console.log('ROLE_COLORS:', ROLE_COLORS);
-console.log('weeklyPlanApi:', Object.keys(weeklyPlanApi));
-console.log('schoolsApi.getAll:', typeof schoolsApi.getAll);
-console.log('useAuth:', typeof useAuth);
   const s = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#F9FAFB' },
     header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, RefreshControl, useWindowDimensions,
+  TextInput, RefreshControl, useWindowDimensions, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Plus, Calendar, Clock } from 'lucide-react-native';
@@ -15,7 +15,7 @@ import { ROLE_COLORS } from '../../utils/constants';
 import { formatDate } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 
-const FILTERS = ['All', 'Today', 'Upcoming', 'Completed', 'Cancelled'];
+const FILTERS = ['All', 'Requested', 'Approved', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
 
 const STATUS_COLORS: Record<string, string> = {
   Requested: '#F59E0B', Approved: '#2563EB', Scheduled: '#0D9488',
@@ -38,17 +38,13 @@ export const DemoListScreen = ({ navigation }: any) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
 
-  const today = new Date().toISOString().split('T')[0];
-
   const fetchDemos = useCallback(async (reset = false) => {
     try {
-      const params: any = { search: search || undefined };
-      if (filter === 'Today') { params.from = today; params.to = today; }
-      if (filter === 'Upcoming') { params.from = today; }
-      if (filter === 'Completed') params.status = 'Completed';
-      if (filter === 'Cancelled') params.status = 'Cancelled';
+      const params: any = { search: search || undefined, limit: 20 };
+      if (filter !== 'All') params.status = filter;
       const res = await demosApi.getAll(params);
-      const items: DemoAssignment[] = (res.data as any)?.items ?? res.data ?? [];
+      const d: any = res.data;
+      const items: DemoAssignment[] = d?.demos ?? d?.items ?? (Array.isArray(d) ? d : []);
       setDemos(items);
     } catch {
       setDemos([]);
@@ -95,11 +91,9 @@ export const DemoListScreen = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>Demos</Text>
-          {role === 'FO' && (
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AssignDemo')}>
-              <Plus size={20} color="#FFF" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AssignDemo')}>
+            <Plus size={20} color="#FFF" />
+          </TouchableOpacity>
         </View>
         <View style={styles.searchBar}>
           <Search size={16} color="#9CA3AF" />
@@ -111,7 +105,7 @@ export const DemoListScreen = ({ navigation }: any) => {
             onChangeText={setSearch}
           />
         </View>
-        <View style={styles.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
           {FILTERS.map(f => (
             <TouchableOpacity
               key={f}
@@ -121,7 +115,7 @@ export const DemoListScreen = ({ navigation }: any) => {
               <Text style={[styles.filterText, filter === f && { color: COLOR.primary }]}>{f}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
 
       {loading ? (
@@ -165,7 +159,8 @@ const styles = StyleSheet.create({
     marginBottom: 10, gap: 8,
   },
   searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
-  filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  filterRow: { flexGrow: 0 },
+  filterContent: { flexDirection: 'row', gap: 6 },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
     backgroundColor: 'rgba(255,255,255,0.2)',
