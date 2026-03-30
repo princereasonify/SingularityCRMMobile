@@ -474,23 +474,7 @@ export const ReportsScreen = (_: any) => {
   };
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
-      <View style={[s.header, { backgroundColor: COLOR.primary }]}>
-        <Text style={s.headerTitle}>Reports</Text>
-        <Text style={s.headerSub}>Generate and view performance reports</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
-          {tabs.map(tab => (
-            <TouchableOpacity
-              key={tab}
-              style={[s.tabChip, activeTab === tab && { backgroundColor: '#FFF' }]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[s.tabText, activeTab === tab && { color: COLOR.primary }]}>{tab}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
+    <SafeAreaView style={s.safe} edges={['bottom']}>
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} message="Loading report..." />
       ) : activeTab.startsWith('AI') ? (
@@ -499,12 +483,50 @@ export const ReportsScreen = (_: any) => {
           keyExtractor={item => String(item.id)}
           renderItem={renderAiReportCard}
           contentContainerStyle={[s.listContent, aiReports.length === 0 && { flex: 1 }]}
+          ListHeaderComponent={
+            <View style={s.controlsCard}>
+              <Text style={s.controlsTitle}>Reports</Text>
+              <Text style={s.controlsSub}>Generate and view performance reports</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
+                {tabs.map(tab => (
+                  <TouchableOpacity
+                    key={tab}
+                    style={[
+                      s.tabChip,
+                      activeTab === tab && { backgroundColor: COLOR.primary, borderColor: COLOR.primary },
+                    ]}
+                    onPress={() => setActiveTab(tab)}
+                  >
+                    <Text style={[s.tabText, activeTab === tab && { color: '#FFF' }]}>{tab}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          }
           ListEmptyComponent={
             <View style={s.emptyBox}><Text style={s.emptyIcon}>🤖</Text><Text style={s.emptyText}>No AI reports found for this period</Text></View>
           }
         />
       ) : (
         <ScrollView contentContainerStyle={s.listContent}>
+          <View style={s.controlsCard}>
+            <Text style={s.controlsTitle}>Reports</Text>
+            <Text style={s.controlsSub}>Generate and view performance reports</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
+              {tabs.map(tab => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    s.tabChip,
+                    activeTab === tab && { backgroundColor: COLOR.primary, borderColor: COLOR.primary },
+                  ]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  <Text style={[s.tabText, activeTab === tab && { color: '#FFF' }]}>{tab}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
           {renderStandardReport()}
         </ScrollView>
       )}
@@ -555,12 +577,31 @@ function parseInsights(output: any) {
 // ─── Styles ─────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
-  headerSub: { fontSize: rf(13), color: 'rgba(255,255,255,0.75)', marginTop: 2, marginBottom: 12 },
+  controlsCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  controlsTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
+  controlsSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2, marginBottom: 10 },
   tabContent: { flexDirection: 'row', gap: 6 },
-  tabChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.2)' },
-  tabText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  tabChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 100,
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  tabText: { fontSize: rf(12), color: '#374151', fontWeight: '700' },
   listContent: { padding: 14, paddingBottom: 32 },
   loadCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },

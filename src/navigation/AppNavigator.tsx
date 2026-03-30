@@ -1,14 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createDrawerNavigator } from '@react-navigation/drawer';
 import {
   LayoutDashboard, Contact2, GitBranch,
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
   Building2, Settings, CreditCard, Monitor,
   ClipboardList, CalendarClock, CalendarDays,
-  Activity, Briefcase,
+  Activity, Briefcase, Menu,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 
@@ -92,157 +92,206 @@ import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
 import { WeeklyPlanScreen } from '../screens/weeklyPlan/WeeklyPlanScreen';
 
 const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
+const Drawer = createDrawerNavigator();
 
-const TabIcon = (IconComponent: any, _color: string, size = 22) => ({ focused, color: c }: any) => (
-  <IconComponent size={size} color={c} strokeWidth={focused ? 2.5 : 1.8} />
-);
+const DrawerIcon =
+  (IconComponent: any, size = 20) =>
+  ({ focused, color: c }: any) =>
+    <IconComponent size={size} color={c} strokeWidth={focused ? 2.5 : 1.8} />;
 
-const tabBarStyle = (primaryColor: string) => ({
-  tabBarActiveTintColor: primaryColor,
-  tabBarInactiveTintColor: '#9CA3AF',
-  tabBarStyle: {
-    backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    paddingBottom: 6,
-    paddingTop: 6,
-    height: 62,
-  },
-  tabBarLabelStyle: {
-    fontSize: rf(10),
-    fontWeight: '600' as const,
-    marginTop: 2,
-  },
+const drawerStyle = (primaryColor: string) => ({
+  headerShown: true,
+  headerTitleStyle: { fontSize: rf(14), fontWeight: '700' as const },
+  headerStyle: { backgroundColor: '#FFF' },
+  headerTintColor: '#111827',
+  headerShadowVisible: false,
+  headerTitleAlign: 'center' as const,
+  drawerActiveTintColor: primaryColor,
+  drawerInactiveTintColor: '#6B7280',
+  drawerLabelStyle: { fontSize: rf(12), fontWeight: '600' as const },
+  drawerStyle: { backgroundColor: '#FFF' },
+  drawerType: 'front' as const,
+  overlayColor: 'rgba(17,24,39,0.25)',
+  sceneContainerStyle: { backgroundColor: '#F8FAFC' },
 });
 
-// ─── FO Tab Navigator ─────────────────────────────────────────────────────────
-function FOTabs() {
+const withDrawerHeader =
+  (primaryColor: string) =>
+  ({ navigation }: any) => ({
+    ...drawerStyle(primaryColor),
+    headerLeft: () => (
+      <Pressable
+        onPress={() => navigation.toggleDrawer()}
+        style={({ pressed }) => [
+          navStyles.headerLeftButton,
+          pressed && navStyles.headerLeftButtonPressed,
+        ]}
+        android_ripple={{ color: 'rgba(17,24,39,0.08)', borderless: true }}
+        hitSlop={12}
+      >
+        <View style={navStyles.headerLeftIconWrap}>
+          <Menu size={20} color={primaryColor} />
+        </View>
+      </Pressable>
+    ),
+  });
+
+const navStyles = StyleSheet.create({
+  headerLeftButton: {
+    marginLeft: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#111827',
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  headerLeftButtonPressed: { opacity: 0.85 },
+  headerLeftIconWrap: { alignItems: 'center', justifyContent: 'center' },
+});
+
+// ─── FO Drawer Navigator ──────────────────────────────────────────────────────
+function FODrawer() {
   const C = ROLE_COLORS.FO;
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={FODashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="ActivityLog" component={ActivityLogScreen} options={{ tabBarLabel: 'Activity', tabBarIcon: TabIcon(Activity, C.primary) }} />
-      <Tab.Screen name="CreateDeal" component={CreateDealScreen} options={{ tabBarLabel: 'New Deal', tabBarIcon: TabIcon(Briefcase, C.primary) }} />
-      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Tracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="RoutePlanner" component={RoutePlannerScreen} options={{ tabBarLabel: 'Route', tabBarIcon: TabIcon(Navigation, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarLabel: 'My Targets', tabBarIcon: TabIcon(Target, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'My Stats', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
-    </Tab.Navigator>
+    <Drawer.Navigator
+      screenOptions={withDrawerHeader(C.primary)}
+      initialRouteName="Dashboard"
+    >
+      <Drawer.Screen name="Dashboard" component={FODashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Activity" component={ActivityLogScreen} options={{ drawerIcon: DrawerIcon(Activity) }} />
+      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Route Planner" component={RoutePlannerScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="My Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="My Stats" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+    </Drawer.Navigator>
   );
 }
 
-// ─── ZH Tab Navigator ─────────────────────────────────────────────────────────
-function ZHTabs() {
+// ─── ZH Drawer Navigator ──────────────────────────────────────────────────────
+function ZHDrawer() {
   const C = ROLE_COLORS.ZH;
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={ZHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
-      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
-    </Tab.Navigator>
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+      <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
+      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+    </Drawer.Navigator>
   );
 }
 
-// ─── RH Tab Navigator ─────────────────────────────────────────────────────────
-function RHTabs() {
+// ─── RH Drawer Navigator ──────────────────────────────────────────────────────
+function RHDrawer() {
   const C = ROLE_COLORS.RH;
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={RHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
-      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
-    </Tab.Navigator>
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+      <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
+      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+    </Drawer.Navigator>
   );
 }
 
-// ─── SH Tab Navigator ─────────────────────────────────────────────────────────
-function SHTabs() {
+// ─── SH Drawer Navigator ──────────────────────────────────────────────────────
+function SHDrawer() {
   const C = ROLE_COLORS.SH;
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={SHDashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarLabel: 'Team', tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="MyTracking" component={MyDayTrackingScreen} options={{ tabBarLabel: 'My Day', tabBarIcon: TabIcon(Navigation, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
-      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
-    </Tab.Navigator>
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+      <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
+      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+    </Drawer.Navigator>
   );
 }
 
-// ─── SCA Tab Navigator ────────────────────────────────────────────────────────
-function SCATabs() {
+// ─── SCA Drawer Navigator ─────────────────────────────────────────────────────
+function SCADrawer() {
   const C = ROLE_COLORS.SCA;
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false, ...tabBarStyle(C.primary) }}>
-      <Tab.Screen name="Dashboard" component={SCADashboard} options={{ tabBarIcon: TabIcon(LayoutDashboard, C.primary) }} />
-      <Tab.Screen name="Schools" component={SchoolsListScreen} options={{ tabBarIcon: TabIcon(Building2, C.primary) }} />
-      <Tab.Screen name="Leads" component={LeadsListScreen} options={{ tabBarIcon: TabIcon(Contact2, C.primary) }} />
-      <Tab.Screen name="Pipeline" component={PipelineScreen} options={{ tabBarIcon: TabIcon(GitBranch, C.primary) }} />
-      <Tab.Screen name="Demos" component={DemoListScreen} options={{ tabBarLabel: 'Demos', tabBarIcon: TabIcon(Monitor, C.primary) }} />
-      <Tab.Screen name="Onboarding" component={OnboardListScreen} options={{ tabBarLabel: 'Onboard', tabBarIcon: TabIcon(ClipboardList, C.primary) }} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarIcon: TabIcon(CalendarDays, C.primary) }} />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarIcon: TabIcon(BarChart3, C.primary) }} />
-      <Tab.Screen name="Payments" component={ScaPaymentsScreen} options={{ tabBarLabel: 'Gateway', tabBarIcon: TabIcon(CreditCard, C.primary) }} />
-      <Tab.Screen name="Targets" component={TargetsScreen} options={{ tabBarIcon: TabIcon(Target, C.primary) }} />
-      <Tab.Screen name="Performance" component={PerformanceScreen} options={{ tabBarIcon: TabIcon(TrendingUp, C.primary) }} />
-      <Tab.Screen name="Tracking" component={LiveTrackingScreen} options={{ tabBarLabel: 'Live', tabBarIcon: TabIcon(MapPin, C.primary) }} />
-      <Tab.Screen name="WeeklyPlan" component={WeeklyPlanScreen} options={{ tabBarLabel: 'Week Plan', tabBarIcon: TabIcon(CalendarClock, C.primary) }} />
-      <Tab.Screen name="ManageUsers" component={UserManagementScreen} options={{ tabBarLabel: 'Users', tabBarIcon: TabIcon(UserPlus, C.primary) }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarIcon: TabIcon(Settings, C.primary) }} />
-    </Tab.Navigator>
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+      <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Gateway" component={ScaPaymentsScreen} options={{ drawerIcon: DrawerIcon(CreditCard) }} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+    </Drawer.Navigator>
   );
 }
 
 const getRoleNavigator = (role: string) => {
   switch (role) {
-    case 'ZH':  return ZHTabs;
-    case 'RH':  return RHTabs;
-    case 'SH':  return SHTabs;
-    case 'SCA': return SCATabs;
-    default:    return FOTabs;
+    case 'ZH':  return ZHDrawer;
+    case 'RH':  return RHDrawer;
+    case 'SH':  return SHDrawer;
+    case 'SCA': return SCADrawer;
+    default:    return FODrawer;
   }
 };
 

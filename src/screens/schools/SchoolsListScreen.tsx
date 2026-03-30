@@ -136,43 +136,7 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Schools</Text>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddSchool')}>
-            <Plus size={20} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.searchBar}>
-          <Search size={16} color="#9CA3AF" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search school, city..."
-            placeholderTextColor="#9CA3AF"
-            value={search}
-            onChangeText={setSearch}
-          />
-        </View>
-        <View style={styles.filterRow}>
-          {FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && { backgroundColor: '#FFF' }]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterText, filter === f && { color: COLOR.primary }]}>{f}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {!loading && (
-        <View style={styles.countBar}>
-          <Text style={styles.countText}>{schools.length} Schools</Text>
-        </View>
-      )}
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} message="Loading schools..." />
       ) : (
@@ -184,6 +148,47 @@ export const SchoolsListScreen = ({ navigation }: any) => {
           key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? { gap: 10 } : undefined}
+          ListHeaderComponent={
+            <View>
+              <View style={styles.controlsCard}>
+                <View style={styles.controlsTopRow}>
+                  <View style={styles.searchBar}>
+                    <Search size={16} color="#9CA3AF" />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search school, city..."
+                      placeholderTextColor="#9CA3AF"
+                      value={search}
+                      onChangeText={setSearch}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.addBtn, { backgroundColor: COLOR.primary }]}
+                    onPress={() => navigation.navigate('AddSchool')}
+                  >
+                    <Plus size={18} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.filterRow}>
+                  {FILTERS.map(f => (
+                    <TouchableOpacity
+                      key={f}
+                      style={[
+                        styles.filterChip,
+                        filter === f && { backgroundColor: COLOR.primary, borderColor: COLOR.primary },
+                      ]}
+                      onPress={() => setFilter(f)}
+                    >
+                      <Text style={[styles.filterText, filter === f && { color: '#FFF' }]}>{f}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={styles.countBar}>
+                <Text style={styles.countText}>{schools.length} Schools</Text>
+              </View>
+            </View>
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -203,26 +208,39 @@ export const SchoolsListScreen = ({ navigation }: any) => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
+  controlsCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
+  controlsTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-    marginBottom: 10, gap: 8,
+    gap: 8,
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
   filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  filterText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  filterText: { fontSize: rf(12), color: '#374151', fontWeight: '700' },
   countBar: { paddingHorizontal: 16, paddingVertical: 8 },
   countText: { fontSize: rf(12), color: '#6B7280', fontWeight: '600' },
   list: { padding: 12, gap: 10 },

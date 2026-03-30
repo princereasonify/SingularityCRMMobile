@@ -4,7 +4,7 @@ import {
   useWindowDimensions, TouchableOpacity, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, LogOut, CheckCircle, XCircle, Users, TrendingUp, Clock, Target } from 'lucide-react-native';
+import { Bell, LogOut, CheckCircle, XCircle, Users, TrendingUp, Clock, Target, Menu } from 'lucide-react-native';
 import { dashboardApi } from '../../api/dashboard';
 import { dealsApi } from '../../api/deals';
 import { ZoneDashboardDto } from '../../types';
@@ -82,6 +82,9 @@ export const ZHDashboard = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
+              <Menu size={20} color="#FFF" />
+            </TouchableOpacity>
             <Avatar initials={user?.avatar || 'ZH'} color="#FFF" size={42} />
             <View>
               <Text style={styles.greeting}>Zone Head</Text>

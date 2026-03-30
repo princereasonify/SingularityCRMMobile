@@ -3,6 +3,7 @@
  * Built with React Native 0.84 + New Architecture
  */
 
+import 'react-native-reanimated';
 import React from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

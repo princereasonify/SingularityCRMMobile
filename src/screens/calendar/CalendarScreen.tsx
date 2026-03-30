@@ -9,7 +9,6 @@ import { calendarApi } from '../../api/calendar';
 import { weeklyPlanApi } from '../../api/weeklyPlan';
 import { CalendarEvent } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Badge } from '../../components/common/Badge';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { ROLE_COLORS } from '../../utils/constants';
@@ -191,20 +190,7 @@ export const CalendarScreen = (_: any) => {
     !!day && day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader
-        title="Calendar"
-        color={COLOR.primary}
-        rightAction={
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-            onPress={() => setShowModal(true)}
-          >
-            <Plus size={18} color="#FFF" />
-          </TouchableOpacity>
-        }
-      />
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -216,6 +202,13 @@ export const CalendarScreen = (_: any) => {
           />
         }
       >
+        <View style={styles.controlsRow}>
+          <Text style={styles.controlsTitle}>Calendar</Text>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: COLOR.primary }]} onPress={() => setShowModal(true)}>
+            <Plus size={18} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+
         {/* ── Monthly grid card ────────────────────────────────────────── */}
         <View style={styles.calCard}>
           {/* Month navigation header */}
@@ -432,7 +425,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F9FAFB' },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14, paddingBottom: 32 },
-  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  controlsTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
+  addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 
   // Calendar card
   calCard: {

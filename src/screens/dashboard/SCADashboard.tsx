@@ -7,7 +7,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bell, LogOut, TrendingUp, Building2, DollarSign,
-  Users, Zap, Plus, X, MapPin, CreditCard,
+  Users, Zap, Plus, X, MapPin, CreditCard, Menu,
 } from 'lucide-react-native';
 import { dashboardApi } from '../../api/dashboard';
 import { paymentsApi } from '../../api/payments';
@@ -129,6 +129,9 @@ export const SCADashboard = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
+              <Menu size={20} color="#FFF" />
+            </TouchableOpacity>
             <Avatar initials={user?.avatar || 'SA'} color="#FFF" size={42} />
             <View>
               <Text style={styles.greeting}>SuperSale Admin</Text>

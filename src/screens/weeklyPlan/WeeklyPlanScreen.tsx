@@ -701,41 +701,43 @@
     const isSubmitted = myPlan?.status === 'Submitted' || myPlan?.status === 'Approved';
     const canEdit = !myPlan || myPlan.status === 'Draft' || myPlan.status === 'Rejected' || myPlan.status === 'EditedByManager';
 
-    return (
-      <SafeAreaView style={s.safe} edges={['top']}>
-        {/* Header */}
-        <View style={[s.header, { backgroundColor: COLOR.primary }]}>
-          <Text style={s.title}>Weekly Plan</Text>
-
-          {/* Week Navigator */}
-          <View style={s.weekNav}>
-            <TouchableOpacity style={s.weekBtn} onPress={prevWeek}>
-              <ChevronLeft size={18} color="#FFF" />
-            </TouchableOpacity>
-            <Text style={s.weekRange}>{fmtWeekRange(weekMonday)}</Text>
-            <TouchableOpacity style={s.weekBtn} onPress={nextWeek}>
-              <ChevronRight size={18} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Tabs */}
-          <View style={s.tabRow}>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'my' && { backgroundColor: '#FFF' }]}
-              onPress={() => setTab('my')}
-            >
-              <Text style={[s.tabText, tab === 'my' && { color: COLOR.primary }]}>My Plan</Text>
-            </TouchableOpacity>
-            {isManager && (
-              <TouchableOpacity
-                style={[s.tabBtn, tab === 'team' && { backgroundColor: '#FFF' }]}
-                onPress={() => setTab('team')}
-              >
-                <Text style={[s.tabText, tab === 'team' && { color: COLOR.primary }]}>Team Plans</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+    const WeekControls = () => (
+      <View style={s.controlsCard}>
+        <View style={s.controlsTopRow}>
+          <Text style={s.controlsTitle}>Weekly Plan</Text>
         </View>
+
+        <View style={s.weekNav}>
+          <TouchableOpacity style={s.weekBtn} onPress={prevWeek}>
+            <ChevronLeft size={18} color={COLOR.primary} />
+          </TouchableOpacity>
+          <Text style={s.weekRange}>{fmtWeekRange(weekMonday)}</Text>
+          <TouchableOpacity style={s.weekBtn} onPress={nextWeek}>
+            <ChevronRight size={18} color={COLOR.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.tabRow}>
+          <TouchableOpacity
+            style={[s.tabBtn, tab === 'my' && { backgroundColor: COLOR.primary, borderColor: COLOR.primary }]}
+            onPress={() => setTab('my')}
+          >
+            <Text style={[s.tabText, tab === 'my' && { color: '#FFF' }]}>My Plan</Text>
+          </TouchableOpacity>
+          {isManager && (
+            <TouchableOpacity
+              style={[s.tabBtn, tab === 'team' && { backgroundColor: COLOR.primary, borderColor: COLOR.primary }]}
+              onPress={() => setTab('team')}
+            >
+              <Text style={[s.tabText, tab === 'team' && { color: '#FFF' }]}>Team Plans</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+
+    return (
+      <SafeAreaView style={s.safe} edges={['bottom']}>
 
         {/* ── MY PLAN TAB ── */}
         {tab === 'my' && (
@@ -743,6 +745,7 @@
             <View style={s.center}><ActivityIndicator color={COLOR.primary} size="large" /></View>
           ) : (
             <ScrollView style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+              <WeekControls />
               {/* Status */}
               {myPlan && (
                 <View style={s.statusRow}>
@@ -831,6 +834,7 @@
               data={teamPlans}
               keyExtractor={item => String(item.id)}
               contentContainerStyle={[s.content, teamPlans.length === 0 && { flex: 1 }]}
+              ListHeaderComponent={<WeekControls />}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshingTeam}
@@ -900,14 +904,43 @@
 
   const s = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#F9FAFB' },
-    header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-    title: { fontSize: rf(22), fontWeight: '700', color: '#FFF', marginBottom: 10 },
+    controlsCard: {
+      backgroundColor: '#FFF',
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: '#EEF2F7',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: 1,
+    },
+    controlsTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    controlsTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
     weekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-    weekBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-    weekRange: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
-    tabRow: { flexDirection: 'row', gap: 6 },
-    tabBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.2)' },
-    tabText: { fontSize: rf(13), fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
+    weekBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: '#F3F4F6',
+      borderWidth: 1,
+      borderColor: '#E5E7EB',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    weekRange: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+    tabRow: { flexDirection: 'row', gap: 8 },
+    tabBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 100,
+      backgroundColor: '#FFF',
+      borderWidth: 1,
+      borderColor: '#E5E7EB',
+    },
+    tabText: { fontSize: rf(13), fontWeight: '700', color: '#374151' },
     scroll: { flex: 1 },
     content: { padding: 14, paddingBottom: 32 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

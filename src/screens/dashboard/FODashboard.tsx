@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Zap,
   School,
+  Menu,
 } from 'lucide-react-native';
 import { dashboardApi } from '../../api/dashboard';
 import { FoDashboardDto } from '../../types';
@@ -75,6 +76,9 @@ export const FODashboard = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
+              <Menu size={20} color="#FFF" />
+            </TouchableOpacity>
             <Avatar initials={user?.avatar || 'FO'} color="#FFF" size={42} />
             <View style={styles.headerText}>
               <Text style={styles.greeting}>Good morning 👋</Text>

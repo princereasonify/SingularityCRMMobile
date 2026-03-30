@@ -14,7 +14,6 @@ import { settingsApi } from '../../api/settings';
 import { aiApi } from '../../api/ai';
 import { OfflineCache } from '../../services/OfflineCache';
 import { Card } from '../../components/common/Card';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
 import { Language } from '../../i18n';
@@ -110,12 +109,7 @@ export const SettingsScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader
-        title={t('settings.title')}
-        color={COLOR.primary}
-        onBack={() => navigation.goBack()}
-      />
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
 
         {/* Offline status banner */}

@@ -4,7 +4,7 @@ import {
   TextInput, RefreshControl, useWindowDimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Plus, Filter, Grid3X3 } from 'lucide-react-native';
+import { Search, Plus } from 'lucide-react-native';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -111,51 +111,7 @@ export const LeadsListScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Leads</Text>
-          <View style={styles.headerActions}>
-            {role !== 'FO' && (
-              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddLead')}>
-                <Plus size={20} color="#FFF" />
-              </TouchableOpacity>
-            )}
-            {role === 'FO' && (
-              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddLead')}>
-                <Plus size={20} color="#FFF" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Search */}
-        <View style={styles.searchBar}>
-          <Search size={16} color="#9CA3AF" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search school, city, contact..."
-            placeholderTextColor="#9CA3AF"
-            value={search}
-            onChangeText={setSearch}
-          />
-        </View>
-
-        {/* Filters */}
-        <View style={styles.filterRow}>
-          {FILTERS.map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && { backgroundColor: '#FFF' }]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterText, filter === f && { color: COLOR.primary }]}>{f}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} message="Loading leads..." />
       ) : (
@@ -167,6 +123,42 @@ export const LeadsListScreen = ({ navigation }: any) => {
           key={tablet ? 'grid' : 'list'}
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? styles.columnWrapper : undefined}
+          ListHeaderComponent={
+            <View style={styles.controlsCard}>
+              <View style={styles.controlsTopRow}>
+                <View style={styles.searchBar}>
+                  <Search size={16} color="#9CA3AF" />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search school, city, contact..."
+                    placeholderTextColor="#9CA3AF"
+                    value={search}
+                    onChangeText={setSearch}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.addBtn, { backgroundColor: COLOR.primary }]}
+                  onPress={() => navigation.navigate('AddLead')}
+                >
+                  <Plus size={18} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.filterRow}>
+                {FILTERS.map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[
+                      styles.filterChip,
+                      filter === f && { backgroundColor: COLOR.primary, borderColor: COLOR.primary },
+                    ]}
+                    onPress={() => setFilter(f)}
+                  >
+                    <Text style={[styles.filterText, filter === f && { color: '#FFF' }]}>{f}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setPage(1); fetchLeads(1, true); }} colors={[COLOR.primary]} />}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
@@ -180,28 +172,39 @@ export const LeadsListScreen = ({ navigation }: any) => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center',
+  controlsCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
+  controlsTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-    marginBottom: 10, gap: 8,
+    gap: 8,
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
-  filterRow: { flexDirection: 'row', gap: 6 },
+  filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  filterText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  filterText: { fontSize: rf(12), color: '#374151', fontWeight: '700' },
   list: { padding: 12, gap: 10 },
   listEmpty: { flex: 1 },
   columnWrapper: { gap: 10 },
