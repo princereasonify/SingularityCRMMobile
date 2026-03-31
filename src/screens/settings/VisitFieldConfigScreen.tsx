@@ -43,7 +43,8 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
   const loadFields = useCallback(async () => {
     try {
       const res = await visitReportApi.getFields();
-      setFields((res.data as any) ?? []);
+      const d = res.data as any;
+      setFields(d?.fields ?? (Array.isArray(d) ? d : []));
     } catch {
       setFields([]);
     } finally {
@@ -162,7 +163,7 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
       <ScreenHeader
         title="Visit Field Config"
         color={COLOR.primary}
-        onBack={() => navigation.goBack()}
+        onMenu={() => navigation.toggleDrawer()}
         rightAction={
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}

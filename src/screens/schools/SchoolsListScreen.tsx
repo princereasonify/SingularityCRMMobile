@@ -39,19 +39,29 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   const [totalPages, setTotalPages] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  const extractList = (d: any): (School | SchoolWithPriority)[] => {
+    if (Array.isArray(d)) return d;
+    if (d?.schools) return d.schools;
+    if (d?.items) return d.items;
+    return [];
+  };
+
+  const extractPages = (d: any): number => d?.totalPages ?? (Math.ceil((d?.total || 0) / 20) || 1);
+
   const fetchSchools = useCallback(async (pg = 1, reset = false) => {
     try {
       let items: (School | SchoolWithPriority)[] = [];
       let pages = 1;
+      const params = { page: pg, pageSize: 20, limit: 20, search: search || undefined };
       if (filter === 'Priority') {
-        const res = await schoolsApi.getPriority({ page: pg, pageSize: 20, search: search || undefined });
-        items = (res.data as any)?.items ?? res.data ?? [];
-        pages = (res.data as any)?.totalPages ?? 1;
+        const res = await schoolsApi.getPriority(params);
+        items = extractList(res.data);
+        pages = extractPages(res.data);
       } else {
         const status = filter !== 'All' ? filter : undefined;
-        const res = await schoolsApi.getAll({ page: pg, pageSize: 20, search: search || undefined, status });
-        items = (res.data as any)?.items ?? res.data ?? [];
-        pages = (res.data as any)?.totalPages ?? 1;
+        const res = await schoolsApi.getAll({ ...params, status });
+        items = extractList(res.data);
+        pages = extractPages(res.data);
       }
       if (reset) setSchools(items);
       else setSchools(prev => [...prev, ...items]);

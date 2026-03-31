@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, LogOut, CheckCircle, XCircle, Users, TrendingUp, Clock, Target } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { dealsApi } from '../../api/deals';
 import { ZoneDashboardDto } from '../../types';
@@ -22,6 +23,22 @@ import { rf, getCardWidth } from '../../utils/responsive';
 
 const COLOR = ROLE_COLORS.ZH;
 
+const PIPELINE_STAGES = [
+  { stage: 'New/Contacted', count: 7 },
+  { stage: 'Qualified', count: 9 },
+  { stage: 'Demo', count: 6 },
+  { stage: 'Proposal', count: 4 },
+  { stage: 'Won', count: 2 },
+];
+
+const STAGE_COLORS: Record<string, string> = {
+  'New/Contacted': '#9CA3AF',
+  'Qualified': '#38BDF8',
+  'Demo': '#818CF8',
+  'Proposal': '#FBBF24',
+  'Won': '#14B8A6',
+};
+
 export const ZHDashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
@@ -30,6 +47,7 @@ export const ZHDashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [approving, setApproving] = useState<number | null>(null);
+  const [showLogout, setShowLogout] = useState(false);
 
   const fetch = useCallback(async () => {
     try {
@@ -94,7 +112,7 @@ export const ZHDashboard = ({ navigation }: any) => {
             <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')}>
               <Bell size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={logout}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -186,6 +204,25 @@ export const ZHDashboard = ({ navigation }: any) => {
           </Card>
         )}
 
+        {/* Zone Pipeline Funnel */}
+        <Card style={styles.section}>
+          <Text style={styles.sectionTitle}>📊 Zone Pipeline Funnel (All FOs)</Text>
+          <View style={styles.funnelContainer}>
+            {(data?.pipelineFunnel || PIPELINE_STAGES).map((item) => {
+              const maxCount = Math.max(...(data?.pipelineFunnel || PIPELINE_STAGES).map((s) => s.count), 1);
+              const barHeight = Math.max((item.count / maxCount) * 120, 8);
+              const color = STAGE_COLORS[item.stage] || '#9CA3AF';
+              return (
+                <View key={item.stage} style={styles.funnelBar}>
+                  <Text style={styles.funnelCount}>{item.count}</Text>
+                  <View style={[styles.funnelFill, { height: barHeight, backgroundColor: color }]} />
+                  <Text style={styles.funnelLabel} numberOfLines={2}>{item.stage}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+
         {/* FO Leaderboard */}
         {(data?.foPerformance?.length || 0) > 0 && (
           <Card style={styles.section}>
@@ -215,6 +252,7 @@ export const ZHDashboard = ({ navigation }: any) => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
     </SafeAreaView>
   );
 };
@@ -228,6 +266,7 @@ const DEMO_DATA: ZoneDashboardDto = {
   pendingApprovals: 3,
   winRate: 35,
   atRiskFOs: 1,
+  pipelineFunnel: PIPELINE_STAGES,
   foPerformance: [],
   pendingDeals: [],
 };
@@ -278,4 +317,34 @@ const styles = StyleSheet.create({
   foStats: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   foStat: { fontSize: rf(12), color: '#6B7280' },
   foDot: { color: '#D1D5DB' },
+  funnelContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    height: 160,
+    paddingTop: 8,
+  },
+  funnelBar: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  funnelCount: {
+    fontSize: rf(14),
+    fontWeight: '700',
+    color: '#111827',
+  },
+  funnelFill: {
+    width: '100%',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    minHeight: 8,
+  },
+  funnelLabel: {
+    fontSize: rf(10),
+    color: '#6B7280',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
 });

@@ -40,16 +40,28 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [schoolRes, contactsRes] = await Promise.all([
-          schoolsApi.getById(schoolId),
-          contactsApi.getBySchool(schoolId),
-        ]);
-        setSchool(schoolRes.data);
-        setContacts((contactsRes.data as any) ?? []);
+        const schoolRes = await schoolsApi.getById(schoolId);
+        const sd = schoolRes.data as any;
+        // Handle both direct object and nested { data: {...} } or { school: {...} }
+        setSchool(sd?.school ?? sd ?? null);
+
+        // Fetch contacts — try both endpoint patterns
+        try {
+          const contactsRes = await contactsApi.getBySchool(schoolId);
+          const cd = contactsRes.data as any;
+          setContacts(cd?.contacts ?? (Array.isArray(cd) ? cd : []));
+        } catch {
+          setContacts([]);
+        }
+
+        // Fetch visit history
         try {
           const visitsRes = await schoolsApi.getVisitHistory(schoolId);
-          setVisits((visitsRes.data as any) ?? []);
-        } catch {}
+          const vd = visitsRes.data as any;
+          setVisits(vd?.visits ?? (Array.isArray(vd) ? vd : []));
+        } catch {
+          setVisits([]);
+        }
       } catch {
         Alert.alert('Error', 'Failed to load school details');
       } finally {

@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, LogOut, TrendingUp, Users, Award, BarChart2 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { RegionDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -28,6 +29,7 @@ export const RHDashboard = ({ navigation }: any) => {
   const [data, setData] = useState<RegionDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
 
   const fetch = useCallback(async () => {
     try {
@@ -64,7 +66,7 @@ export const RHDashboard = ({ navigation }: any) => {
             <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')}>
               <Bell size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={logout}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -165,6 +167,7 @@ export const RHDashboard = ({ navigation }: any) => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
     </SafeAreaView>
   );
 };

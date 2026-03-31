@@ -44,6 +44,8 @@ export type PeriodType = 'Monthly' | 'Quarterly' | 'Annually';
 export interface UserDto {
   id: number;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   role: UserRole;
   avatar: string;
@@ -258,6 +260,7 @@ export interface ZoneDashboardDto {
   pendingApprovals: number;
   winRate: number;
   atRiskFOs: number;
+  pipelineFunnel?: { stage: string; count: number }[];
   foPerformance: FoPerformanceDto[];
   pendingDeals: DealDto[];
 }
@@ -536,8 +539,10 @@ export interface SchoolFilters {
   status?: string;
   board?: string;
   city?: string;
+  state?: string;
   page?: number;
   pageSize?: number;
+  limit?: number;
 }
 
 export interface School {

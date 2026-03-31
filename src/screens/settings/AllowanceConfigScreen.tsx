@@ -42,7 +42,8 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
   const loadConfigs = useCallback(async () => {
     try {
       const res = await allowanceConfigApi.getAll();
-      setConfigs((res.data as any) ?? []);
+      const d = res.data as any;
+      setConfigs(d?.configs ?? (Array.isArray(d) ? d : []));
     } catch {
       setConfigs([]);
     } finally {
@@ -135,7 +136,7 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
       <ScreenHeader
         title="Allowance Config"
         color={COLOR.primary}
-        onBack={() => navigation.goBack()}
+        onMenu={() => navigation.toggleDrawer()}
         rightAction={
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}

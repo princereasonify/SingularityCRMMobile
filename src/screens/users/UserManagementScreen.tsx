@@ -50,6 +50,23 @@ export const UserManagementScreen = ({ navigation }: any) => {
     zoneId: '' as any, regionId: '' as any,
   });
 
+  const extract = (d: any): any[] => {
+    if (Array.isArray(d)) return d;
+    if (d?.users) return d.users;
+    if (d?.items) return d.items;
+    if (d?.data && Array.isArray(d.data)) return d.data;
+    return [];
+  };
+
+  const extractList = (d: any): any[] => {
+    if (Array.isArray(d)) return d;
+    if (d?.regions) return d.regions;
+    if (d?.zones) return d.zones;
+    if (d?.items) return d.items;
+    if (d?.data && Array.isArray(d.data)) return d.data;
+    return [];
+  };
+
   const fetchData = useCallback(async () => {
     try {
       const promises: Promise<any>[] = [
@@ -59,11 +76,11 @@ export const UserManagementScreen = ({ navigation }: any) => {
       ];
       if (role === 'SCA') promises.push(authApi.getPendingUsers());
       const results = await Promise.all(promises);
-      setUsers(Array.isArray(results[0].data) ? results[0].data : (results[0].data as any)?.items ?? []);
-      setRegions(Array.isArray(results[1].data) ? results[1].data : (results[1].data as any)?.items ?? []);
-      setZones(Array.isArray(results[2].data) ? results[2].data : (results[2].data as any)?.items ?? []);
+      setUsers(extract(results[0].data));
+      setRegions(extractList(results[1].data));
+      setZones(extractList(results[2].data));
       if (role === 'SCA' && results[3]) {
-        setPendingUsers(Array.isArray(results[3].data) ? results[3].data : (results[3].data as any)?.items ?? []);
+        setPendingUsers(extract(results[3].data));
       }
     } catch {
       setUsers([]);
@@ -82,9 +99,10 @@ export const UserManagementScreen = ({ navigation }: any) => {
     setShowUserModal(true);
   };
 
-  const openEdit = (u: UserDto) => {
+  const openEdit = (u: any) => {
+    const uName = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || '';
     setEditingUser(u);
-    setForm({ name: u.name, email: u.email, password: '', role: u.role, zoneId: u.zoneId || '', regionId: u.regionId || '' });
+    setForm({ name: uName, email: u.email, password: '', role: u.role, zoneId: u.zoneId || '', regionId: u.regionId || '' });
     setShowUserModal(true);
   };
 
@@ -119,8 +137,9 @@ export const UserManagementScreen = ({ navigation }: any) => {
     }
   };
 
-  const handleDelete = (u: UserDto) => {
-    Alert.alert('Delete User', `Delete ${u.name}?`, [
+  const handleDelete = (u: any) => {
+    const uName = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'this user';
+    Alert.alert('Delete User', `Delete ${uName}?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
@@ -162,12 +181,14 @@ export const UserManagementScreen = ({ navigation }: any) => {
   const needsZone = ['FO', 'ZH'].includes(form.role);
   const needsRegion = ['ZH', 'RH', 'FO'].includes(form.role);
 
-  const renderUser = ({ item }: { item: UserDto }) => (
+  const renderUser = ({ item }: { item: any }) => {
+    const displayName = item.name || [item.firstName, item.lastName].filter(Boolean).join(' ') || '—';
+    return (
     <Card style={styles.userCard}>
       <View style={styles.userRow}>
-        <Avatar initials={item.avatar || item.name.charAt(0)} color={ROLE_COLORS[item.role]?.primary || '#6B7280'} size={44} />
+        <Avatar initials={item.avatar || displayName.charAt(0)} color={(ROLE_COLORS as any)[item.role]?.primary || '#6B7280'} size={44} />
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{item.name}</Text>
+          <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.userEmail}>{item.email}</Text>
           <View style={styles.userMeta}>
             <RoleBadge role={item.role} />
@@ -186,6 +207,7 @@ export const UserManagementScreen = ({ navigation }: any) => {
       </View>
     </Card>
   );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -224,12 +246,14 @@ export const UserManagementScreen = ({ navigation }: any) => {
         <FlatList
           data={pendingUsers}
           keyExtractor={(u) => String(u.id)}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const pName = item.name || [item.firstName, item.lastName].filter(Boolean).join(' ') || '—';
+            return (
             <Card style={styles.userCard}>
               <View style={styles.userRow}>
-                <Avatar initials={item.avatar || item.name?.charAt(0) || '?'} color="#F59E0B" size={44} />
+                <Avatar initials={item.avatar || pName.charAt(0)} color="#F59E0B" size={44} />
                 <View style={styles.userInfo}>
-                  <Text style={styles.userName}>{item.name}</Text>
+                  <Text style={styles.userName}>{pName}</Text>
                   <Text style={styles.userEmail}>{item.email}</Text>
                   <View style={styles.userMeta}>
                     <RoleBadge role={item.role} />
@@ -270,7 +294,8 @@ export const UserManagementScreen = ({ navigation }: any) => {
                 </View>
               </View>
             </Card>
-          )}
+          );
+          }}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             pendingUsers.length > 0 ? (
@@ -289,10 +314,7 @@ export const UserManagementScreen = ({ navigation }: any) => {
           data={users}
           keyExtractor={(u) => String(u.id)}
           renderItem={renderUser}
-          contentContainerStyle={styles.list}
-          key={tablet ? 'grid' : 'list'}
-          numColumns={tablet ? 2 : 1}
-          columnWrapperStyle={tablet ? { gap: 12 } : undefined}
+          contentContainerStyle={[styles.list, tablet && { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
           ListEmptyComponent={<EmptyState title="No users found" icon="👥" />}
         />
       ) : (

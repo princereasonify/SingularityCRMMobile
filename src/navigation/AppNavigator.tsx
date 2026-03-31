@@ -8,7 +8,7 @@ import {
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
   Building2, Settings, CreditCard, Monitor,
   ClipboardList, CalendarClock, CalendarDays,
-  Activity, Briefcase, Menu,
+  Activity, Briefcase, Menu, DollarSign, FileEdit,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
@@ -249,6 +249,8 @@ function SHDrawer() {
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
       <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Allowance" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
+      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );

@@ -21,6 +21,7 @@ import {
   School,
 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { FoDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +39,7 @@ const COLOR = ROLE_COLORS.FO;
 
 export const FODashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
+  const [showLogout, setShowLogout] = useState(false);
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
   const [data, setData] = useState<FoDashboardDto | null>(null);
@@ -90,7 +92,7 @@ export const FODashboard = ({ navigation }: any) => {
             >
               <Bell size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={logout}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -246,6 +248,7 @@ export const FODashboard = ({ navigation }: any) => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
     </SafeAreaView>
   );
 };

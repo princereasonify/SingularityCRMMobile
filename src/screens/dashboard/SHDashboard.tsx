@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, LogOut, TrendingUp, Building2, DollarSign, Target } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { NationalDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -28,6 +29,7 @@ export const SHDashboard = ({ navigation }: any) => {
   const [data, setData] = useState<NationalDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
   const [period, setPeriod] = useState<'MTD' | 'QTD' | 'FY'>('MTD');
 
   const fetch = useCallback(async () => {
@@ -65,7 +67,7 @@ export const SHDashboard = ({ navigation }: any) => {
             <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')}>
               <Bell size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={logout}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -131,20 +133,20 @@ export const SHDashboard = ({ navigation }: any) => {
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>🗺️ Regional Scorecard</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View>
-                <View style={[styles.tableHeader, { width: tablet ? '100%' : 560 }]}>
+              <View style={{ minWidth: tablet ? width - 80 : Math.max(width - 64, 560) }}>
+                <View style={styles.tableHeader}>
                   {['Region', 'Revenue', 'Target %', 'Schools', 'Win Rate', 'Health'].map((h, i) => (
-                    <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]}>{h}</Text>
+                    <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]} numberOfLines={1}>{h}</Text>
                   ))}
                 </View>
                 {(data?.regions || []).map((reg) => (
-                  <View key={reg.id} style={[styles.tableRow, { width: tablet ? '100%' : 560 }]}>
+                  <View key={reg.id} style={styles.tableRow}>
                     <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{reg.name}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{formatCurrency(reg.revenue)}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2, color: getProgressColor(reg.targetPct) }]}>{reg.targetPct}%</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.schools}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.winRate}%</Text>
-                    <View style={{ flex: 1.2 }}>
+                    <View style={{ flex: 1.2, alignItems: 'flex-start' }}>
                       <Badge label={reg.health} color={getStatusColor(reg.health)} size="sm" />
                     </View>
                   </View>
@@ -196,6 +198,7 @@ export const SHDashboard = ({ navigation }: any) => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
     </SafeAreaView>
   );
 };

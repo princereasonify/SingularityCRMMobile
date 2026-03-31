@@ -9,7 +9,7 @@ export const contactsApi = {
   update: (id: number, data: Partial<CreateContactRequest>) =>
     apiClient.put<Contact>(`/contacts/${id}`, data),
   getBySchool: (schoolId: number) =>
-    apiClient.get<Contact[]>(`/contacts/school/${schoolId}`),
+    apiClient.get<Contact[]>(`/schools/${schoolId}/contacts`),
 
   // Duplicate detection
   checkDuplicates: (name?: string, phone?: string, schoolId?: number) =>
