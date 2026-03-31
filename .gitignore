@@ -35,6 +35,10 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# Firebase - contains sensitive API keys, never commit these
+google-services.json
+GoogleService-Info.plist
+
 # node.js
 #
 node_modules/
