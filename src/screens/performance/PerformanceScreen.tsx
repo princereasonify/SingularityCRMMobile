@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { dashboardApi } from '../../api/dashboard';
 import { UserPerformanceDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -61,7 +62,10 @@ export const PerformanceScreen = ({ navigation }: any) => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <Text style={styles.headerTitle}>{LABEL_MAP[role] || 'Performance'}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <DrawerMenuButton />
+          <Text style={styles.headerTitle}>{LABEL_MAP[role] || 'Performance'}</Text>
+        </View>
       </View>
 
       <ScrollView

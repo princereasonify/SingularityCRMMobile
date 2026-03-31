@@ -180,6 +180,7 @@ export const ScaPaymentsScreen = ({ navigation }: any) => {
       <ScreenHeader
         title="SCA Payments"
         color={PRIMARY}
+        onMenu={() => navigation.toggleDrawer()}
         rightAction={
           mainTab === 'direct' ? (
             <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreateModal(true)}>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -788,6 +789,7 @@ const rgStyles = StyleSheet.create({
 // ─── Main LiveTrackingScreen ──────────────────────────────────────────────────
 
 export const LiveTrackingScreen = () => {
+  const nav = useNavigation();
   const { user } = useAuth();
   const rc = user?.role ? ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] : ROLE_COLORS.ZH;
 
@@ -949,7 +951,7 @@ export const LiveTrackingScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Live Tracking" subtitle={subtitle} color={rc.primary} />
+      <ScreenHeader title="Live Tracking" subtitle={subtitle} color={rc.primary} onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())} />
 
       {/* Tab bar */}
       <View style={styles.tabBar}>

@@ -4,7 +4,8 @@ import {
   useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, LogOut, TrendingUp, Users, Award, BarChart2, Menu } from 'lucide-react-native';
+import { Bell, LogOut, TrendingUp, Users, Award, BarChart2 } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { dashboardApi } from '../../api/dashboard';
 import { RegionDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -52,9 +53,7 @@ export const RHDashboard = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
-              <Menu size={20} color="#FFF" />
-            </TouchableOpacity>
+            <DrawerMenuButton />
             <Avatar initials={user?.avatar || 'RH'} color="#FFF" size={42} />
             <View>
               <Text style={styles.greeting}>Regional Head</Text>

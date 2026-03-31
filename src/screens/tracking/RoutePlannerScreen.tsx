@@ -159,7 +159,7 @@ export const RoutePlannerScreen = ({ navigation }: any) => {
       <ScreenHeader
         title="Route Planner"
         color={COLOR.primary}
-        onBack={() => navigation.goBack()}
+        onMenu={() => navigation.toggleDrawer()}
         rightAction={
           <TouchableOpacity style={[styles.saveBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]} onPress={savePlan} disabled={saving || stops.length === 0}>
             {saving

@@ -3,7 +3,8 @@ import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Edit2, Trash2, X, Globe } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { authApi } from '../../api/auth';
 import { UserDto, Region, Zone } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -31,8 +32,10 @@ export const UserManagementScreen = ({ navigation }: any) => {
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
 
-  const [tab, setTab] = useState<'users' | 'regions'>('users');
+  const [tab, setTab] = useState<'users' | 'regions' | 'pending'>('users');
   const [users, setUsers] = useState<UserDto[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<UserDto[]>([]);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,20 +51,25 @@ export const UserManagementScreen = ({ navigation }: any) => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [usersRes, regRes, zoneRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         authApi.getUsers(),
         authApi.getRegions(),
         authApi.getZones(),
-      ]);
-      setUsers(Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data as any)?.items ?? []);
-      setRegions(Array.isArray(regRes.data) ? regRes.data : (regRes.data as any)?.items ?? []);
-      setZones(Array.isArray(zoneRes.data) ? zoneRes.data : (zoneRes.data as any)?.items ?? []);
+      ];
+      if (role === 'SCA') promises.push(authApi.getPendingUsers());
+      const results = await Promise.all(promises);
+      setUsers(Array.isArray(results[0].data) ? results[0].data : (results[0].data as any)?.items ?? []);
+      setRegions(Array.isArray(results[1].data) ? results[1].data : (results[1].data as any)?.items ?? []);
+      setZones(Array.isArray(results[2].data) ? results[2].data : (results[2].data as any)?.items ?? []);
+      if (role === 'SCA' && results[3]) {
+        setPendingUsers(Array.isArray(results[3].data) ? results[3].data : (results[3].data as any)?.items ?? []);
+      }
     } catch {
       setUsers([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -122,6 +130,20 @@ export const UserManagementScreen = ({ navigation }: any) => {
     ]);
   };
 
+  const handleApprove = async (id: number) => {
+    setApprovingId(id);
+    try {
+      await authApi.approveUser(id);
+      setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+      fetchData();
+      Alert.alert('Success', 'User approved successfully!');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to approve user.');
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   const filteredZones = form.regionId ? zones.filter((z) => z.regionId === Number(form.regionId)) : zones;
   const needsZone = ['FO', 'ZH'].includes(form.role);
   const needsRegion = ['ZH', 'RH', 'FO'].includes(form.role);
@@ -155,26 +177,82 @@ export const UserManagementScreen = ({ navigation }: any) => {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerRow}>
+          <DrawerMenuButton />
           <Text style={styles.headerTitle}>Manage Users</Text>
           <TouchableOpacity style={styles.iconBtn} onPress={openCreate}>
             <Plus size={20} color="#FFF" />
           </TouchableOpacity>
         </View>
-        {role === 'SH' && (
+        {(role === 'SH' || role === 'SCA') && (
           <View style={styles.tabRow}>
-            {(['users', 'regions'] as const).map((t) => (
-              <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
-                <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                  {t === 'users' ? '👥 Users' : '🌍 Regions & Zones'}
+            <TouchableOpacity style={[styles.tab, tab === 'users' && styles.tabActive]} onPress={() => setTab('users')}>
+              <Text style={[styles.tabText, tab === 'users' && styles.tabTextActive]}>👥 Users</Text>
+            </TouchableOpacity>
+            {role === 'SCA' && (
+              <TouchableOpacity style={[styles.tab, tab === 'pending' && styles.tabActive]} onPress={() => setTab('pending')}>
+                <Text style={[styles.tabText, tab === 'pending' && styles.tabTextActive]}>
+                  🕐 Pending{pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}
                 </Text>
               </TouchableOpacity>
-            ))}
+            )}
+            {role === 'SH' && (
+              <TouchableOpacity style={[styles.tab, tab === 'regions' && styles.tabActive]} onPress={() => setTab('regions')}>
+                <Text style={[styles.tabText, tab === 'regions' && styles.tabTextActive]}>🌍 Regions</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
 
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} />
+      ) : tab === 'pending' ? (
+        <FlatList
+          data={pendingUsers}
+          keyExtractor={(u) => String(u.id)}
+          renderItem={({ item }) => (
+            <Card style={styles.userCard}>
+              <View style={styles.userRow}>
+                <Avatar initials={item.avatar || item.name?.charAt(0) || '?'} color="#F59E0B" size={44} />
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName}>{item.name}</Text>
+                  <Text style={styles.userEmail}>{item.email}</Text>
+                  <View style={styles.userMeta}>
+                    <RoleBadge role={item.role} />
+                    {item.phoneNumber && <Text style={styles.metaText}>{item.phoneNumber}</Text>}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.approveBtn}
+                  onPress={() => handleApprove(item.id)}
+                  disabled={approvingId === item.id}
+                  activeOpacity={0.7}
+                >
+                  {approvingId === item.id ? (
+                    <Text style={styles.approveBtnText}>...</Text>
+                  ) : (
+                    <>
+                      <UserCheck size={14} color="#FFF" />
+                      <Text style={styles.approveBtnText}>Approve</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Card>
+          )}
+          contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            pendingUsers.length > 0 ? (
+              <View style={styles.pendingHeader}>
+                <Clock size={16} color="#D97706" />
+                <Text style={styles.pendingHeaderText}>
+                  Users who signed up and are waiting for approval
+                </Text>
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={<EmptyState title="No pending approvals" subtitle="All signup requests have been reviewed" icon="✅" />}
+        />
       ) : tab === 'users' ? (
         <FlatList
           data={users}
@@ -304,4 +382,16 @@ const styles = StyleSheet.create({
   modalHandle: { width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
+  approveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#16A34A', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  approveBtnText: { fontSize: rf(12), fontWeight: '600', color: '#FFF' },
+  pendingHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFBEB', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8,
+  },
+  pendingHeaderText: { fontSize: rf(12), color: '#92400E', flex: 1 },
 });

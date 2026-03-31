@@ -25,7 +25,7 @@ const DEMO_CREDS = [
   { role: 'SCA', email: 'supersaleadmin@gmail.com', password: 'admin123', color: '#E11D48' },
 ];
 
-export const LoginScreen = () => {
+export const LoginScreen = ({ navigation }: any) => {
   const { login } = useAuth();
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
@@ -127,6 +127,14 @@ export const LoginScreen = () => {
               style={styles.loginBtn}
               size="lg"
             />
+
+            {/* Sign Up Link */}
+            <View style={styles.signupRow}>
+              <Text style={styles.signupText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+                <Text style={styles.signupLink}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Demo Credentials */}
             <View style={styles.demoSection}>
@@ -286,6 +294,21 @@ const styles = StyleSheet.create({
     fontSize: rf(12),
     fontWeight: '500',
     flex: 1,
+  },
+  signupRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  signupText: {
+    fontSize: rf(13),
+    color: '#6B7280',
+  },
+  signupLink: {
+    fontSize: rf(13),
+    color: '#0d9488',
+    fontWeight: '600',
   },
   footer: {
     fontSize: rf(11),

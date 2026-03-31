@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Info, Check } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { dealsApi } from '../../api/deals';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto } from '../../types';
@@ -100,9 +101,13 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={22} color="#FFF" />
-        </TouchableOpacity>
+        {navigation.canGoBack() ? (
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <ArrowLeft size={22} color="#FFF" />
+          </TouchableOpacity>
+        ) : (
+          <DrawerMenuButton />
+        )}
         <Text style={styles.headerTitle}>Create Deal</Text>
       </View>
 

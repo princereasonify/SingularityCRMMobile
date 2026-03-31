@@ -19,6 +19,7 @@ import { rf } from '../utils/responsive';
 
 // Auth
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { SignupScreen } from '../screens/auth/SignupScreen';
 
 // Dashboard
 import { FODashboard } from '../screens/dashboard/FODashboard';
@@ -100,7 +101,7 @@ const DrawerIcon =
     <IconComponent size={size} color={c} strokeWidth={focused ? 2.5 : 1.8} />;
 
 const drawerStyle = (primaryColor: string) => ({
-  headerShown: true,
+  headerShown: false,
   headerTitleStyle: { fontSize: rf(14), fontWeight: '700' as const },
   headerStyle: { backgroundColor: '#FFF' },
   headerTintColor: '#111827',
@@ -114,6 +115,8 @@ const drawerStyle = (primaryColor: string) => ({
   overlayColor: 'rgba(17,24,39,0.25)',
   sceneContainerStyle: { backgroundColor: '#F8FAFC' },
 });
+
+const withHeader = { headerShown: true as const };
 
 const withDrawerHeader =
   (primaryColor: string) =>
@@ -139,26 +142,14 @@ const withDrawerHeader =
 const navStyles = StyleSheet.create({
   headerLeftButton: {
     marginLeft: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#111827',
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: { elevation: 2 },
-      default: {},
-    }),
+    backgroundColor: 'transparent',
   },
-  headerLeftButtonPressed: { opacity: 0.85 },
+  headerLeftButtonPressed: { opacity: 0.6 },
   headerLeftIconWrap: { alignItems: 'center', justifyContent: 'center' },
 });
 
@@ -170,21 +161,21 @@ function FODrawer() {
       screenOptions={withDrawerHeader(C.primary)}
       initialRouteName="Dashboard"
     >
-      <Drawer.Screen name="Dashboard" component={FODashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Dashboard" component={FODashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Activity" component={ActivityLogScreen} options={{ drawerIcon: DrawerIcon(Activity) }} />
       <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
       <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Route Planner" component={RoutePlannerScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="My Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
       <Drawer.Screen name="My Stats" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
 }
@@ -194,21 +185,21 @@ function ZHDrawer() {
   const C = ROLE_COLORS.ZH;
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
       <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
       <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
       <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
 }
@@ -218,21 +209,21 @@ function RHDrawer() {
   const C = ROLE_COLORS.RH;
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
       <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
       <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
       <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
 }
@@ -242,21 +233,21 @@ function SHDrawer() {
   const C = ROLE_COLORS.SH;
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
       <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
       <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
       <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
 }
@@ -266,21 +257,21 @@ function SCADrawer() {
   const C = ROLE_COLORS.SCA;
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ headerShown: false, drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Gateway" component={ScaPaymentsScreen} options={{ drawerIcon: DrawerIcon(CreditCard) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
       <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
       <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
 }
@@ -328,7 +319,10 @@ export const AppNavigator = () => {
       <OfflineBanner />
       <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!user ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Signup" component={SignupScreen} options={{ animation: 'slide_from_bottom' }} />
+          </>
         ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs!} />

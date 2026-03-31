@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, ChevronRight } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { targetsApi } from '../../api/targets';
 import { TargetAssignmentDto, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -219,6 +220,7 @@ export const TargetsScreen = ({ navigation }: any) => {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerRow}>
+          <DrawerMenuButton />
           <Text style={styles.headerTitle}>Targets</Text>
           {role !== 'FO' && (
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowCreate(true)}>

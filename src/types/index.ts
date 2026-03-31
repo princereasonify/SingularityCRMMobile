@@ -51,6 +51,7 @@ export interface UserDto {
   zone?: string;
   regionId?: number;
   region?: string;
+  phoneNumber?: string;
   zonalHead?: string;
   regionalHead?: string;
 }

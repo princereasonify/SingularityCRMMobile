@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { activitiesApi } from '../../api/activities';
 import { leadsApi } from '../../api/leads';
 import { ActivityDto, LeadListDto } from '../../types';
@@ -198,6 +199,7 @@ export const ActivityLogScreen = ({ route, navigation }: any) => {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerRow}>
+          <DrawerMenuButton />
           <Text style={styles.headerTitle}>Activity Log</Text>
           {role === 'FO' && (
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowModal(true)}>

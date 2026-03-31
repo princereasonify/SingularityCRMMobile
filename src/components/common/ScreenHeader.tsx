@@ -7,7 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, Menu } from 'lucide-react-native';
 import { CS, Colors } from '../../theme';
 import { rf } from '../../utils/responsive';
 
@@ -16,6 +16,7 @@ interface ScreenHeaderProps {
   subtitle?: string;
   color?: string;
   onBack?: () => void;
+  onMenu?: () => void;
   rightAction?: React.ReactNode;
 }
 
@@ -24,6 +25,7 @@ export const ScreenHeader = ({
   subtitle,
   color = Colors.roles.FO.primary,
   onBack,
+  onMenu,
   rightAction,
 }: ScreenHeaderProps) => {
   const insets = useSafeAreaInsets();
@@ -32,6 +34,11 @@ export const ScreenHeader = ({
   return (
     <View style={[CS.headerContainer, { paddingTop: pt + 12, backgroundColor: color }]}>
       <View style={CS.headerRow}>
+        {onMenu && (
+          <TouchableOpacity style={CS.headerBackBtn} onPress={onMenu}>
+            <Menu size={22} color={Colors.textInverse} />
+          </TouchableOpacity>
+        )}
         {onBack && (
           <TouchableOpacity style={CS.headerBackBtn} onPress={onBack}>
             <ArrowLeft size={22} color={Colors.textInverse} />

@@ -11,6 +11,7 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import { ZoomIn, ZoomOut, Maximize } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -226,6 +227,7 @@ export const PipelineScreen = ({ navigation }: any) => {
         {/* ── Header ── */}
         <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
           <View style={styles.headerLeft}>
+            <DrawerMenuButton />
             <Text style={styles.headerTitle}>Pipeline</Text>
             <Text style={styles.headerSub}>
               {leads.length} leads • {formatCurrency(leads.reduce((s, l) => s + l.value, 0))}

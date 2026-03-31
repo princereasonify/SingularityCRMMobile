@@ -6,7 +6,20 @@ export const authApi = {
   login: (email: string, password: string, deviceInfo?: DeviceInfoPayload) =>
     apiClient.post<LoginResponse>('/auth/login', { email, password, deviceInfo }),
 
+  signup: (data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    phoneNumber: string;
+    role: string;
+  }) => apiClient.post('/auth/signup', data),
+
   logout: () => apiClient.post('/auth/logout'),
+
+  getPendingUsers: () => apiClient.get<UserDto[]>('/auth/pending-users'),
+
+  approveUser: (id: number) => apiClient.post(`/auth/approve-user/${id}`),
 
   createUser: (data: any) => apiClient.post<UserDto>('/auth/create-user', data),
 

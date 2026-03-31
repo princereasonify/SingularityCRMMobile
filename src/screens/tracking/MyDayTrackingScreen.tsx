@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
+
 import {
   View,
   Text,
@@ -55,6 +57,7 @@ const PING_INTERVAL_MS = 30000; // 30 seconds
 // Kept imported via shim for the headless-task infrastructure on Android.
 
 export const MyDayTrackingScreen = () => {
+  const nav = useNavigation();
   const { user } = useAuth();
   const COLOR = user?.role ? ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] : ROLE_COLORS.FO;
 
@@ -636,7 +639,7 @@ export const MyDayTrackingScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="My Day Tracking" subtitle={user?.zone || user?.name || 'Tracking'} color={COLOR.primary} />
+      <ScreenHeader title="My Day Tracking" subtitle={user?.zone || user?.name || 'Tracking'} color={COLOR.primary} onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())} />
 
       <ScrollView
         style={styles.scroll}

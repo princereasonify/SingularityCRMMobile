@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Eye, EyeOff, Key, ShieldAlert, X, Plus, Pencil, ChevronDown } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { onboardingApi } from '../../api/onboarding';
 import { subscriptionsApi } from '../../api/subscriptions';
 import { schoolProfilesApi } from '../../api/schoolProfiles';
@@ -436,7 +437,10 @@ export const OnboardListScreen = ({ navigation }: any) => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <Text style={styles.headerTitle}>Onboarding & Subscriptions</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <DrawerMenuButton />
+          <Text style={styles.headerTitle}>Onboarding & Subscriptions</Text>
+        </View>
 
         {/* Main Tabs */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 10 }} contentContainerStyle={{ flexDirection: 'row', gap: 6 }}>

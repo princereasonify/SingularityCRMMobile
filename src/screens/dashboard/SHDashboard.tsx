@@ -4,7 +4,8 @@ import {
   useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, LogOut, TrendingUp, Building2, DollarSign, Target, Menu } from 'lucide-react-native';
+import { Bell, LogOut, TrendingUp, Building2, DollarSign, Target } from 'lucide-react-native';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { dashboardApi } from '../../api/dashboard';
 import { NationalDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -53,9 +54,7 @@ export const SHDashboard = ({ navigation }: any) => {
       <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
-              <Menu size={20} color="#FFF" />
-            </TouchableOpacity>
+            <DrawerMenuButton />
             <Avatar initials={user?.avatar || 'SH'} color="#FFF" size={42} />
             <View>
               <Text style={styles.greeting}>Sales Head</Text>
