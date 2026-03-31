@@ -21,6 +21,8 @@ export const authApi = {
 
   approveUser: (id: number) => apiClient.post(`/auth/approve-user/${id}`),
 
+  rejectUser: (id: number) => apiClient.post(`/auth/reject-user/${id}`),
+
   createUser: (data: any) => apiClient.post<UserDto>('/auth/create-user', data),
 
   getUsers: () => apiClient.get<UserDto[]>('/auth/users'),

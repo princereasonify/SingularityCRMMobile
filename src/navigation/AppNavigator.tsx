@@ -11,6 +11,7 @@ import {
   Activity, Briefcase, Menu,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
+import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
 
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -159,6 +160,7 @@ function FODrawer() {
   return (
     <Drawer.Navigator
       screenOptions={withDrawerHeader(C.primary)}
+      drawerContent={CustomDrawerContent}
       initialRouteName="Dashboard"
     >
       <Drawer.Screen name="Dashboard" component={FODashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
@@ -184,7 +186,7 @@ function FODrawer() {
 function ZHDrawer() {
   const C = ROLE_COLORS.ZH;
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
@@ -208,7 +210,7 @@ function ZHDrawer() {
 function RHDrawer() {
   const C = ROLE_COLORS.RH;
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
@@ -232,7 +234,7 @@ function RHDrawer() {
 function SHDrawer() {
   const C = ROLE_COLORS.SH;
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
@@ -256,7 +258,7 @@ function SHDrawer() {
 function SCADrawer() {
   const C = ROLE_COLORS.SCA;
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} initialRouteName="Dashboard">
+    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />

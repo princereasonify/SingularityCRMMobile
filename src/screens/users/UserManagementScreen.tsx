@@ -36,6 +36,7 @@ export const UserManagementScreen = ({ navigation }: any) => {
   const [users, setUsers] = useState<UserDto[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserDto[]>([]);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +145,19 @@ export const UserManagementScreen = ({ navigation }: any) => {
     }
   };
 
+  const handleReject = async (id: number) => {
+    setRejectingId(id);
+    try {
+      await authApi.rejectUser(id);
+      setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+      Alert.alert('Success', 'User rejected and removed successfully!');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to reject user.');
+    } finally {
+      setRejectingId(null);
+    }
+  };
+
   const filteredZones = form.regionId ? zones.filter((z) => z.regionId === Number(form.regionId)) : zones;
   const needsZone = ['FO', 'ZH'].includes(form.role);
   const needsRegion = ['ZH', 'RH', 'FO'].includes(form.role);
@@ -222,21 +236,38 @@ export const UserManagementScreen = ({ navigation }: any) => {
                     {item.phoneNumber && <Text style={styles.metaText}>{item.phoneNumber}</Text>}
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={styles.approveBtn}
-                  onPress={() => handleApprove(item.id)}
-                  disabled={approvingId === item.id}
-                  activeOpacity={0.7}
-                >
-                  {approvingId === item.id ? (
-                    <Text style={styles.approveBtnText}>...</Text>
-                  ) : (
-                    <>
-                      <UserCheck size={14} color="#FFF" />
-                      <Text style={styles.approveBtnText}>Approve</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.pendingActions}>
+                  <TouchableOpacity
+                    style={styles.approveBtn}
+                    onPress={() => handleApprove(item.id)}
+                    disabled={approvingId === item.id || rejectingId === item.id}
+                    activeOpacity={0.7}
+                  >
+                    {approvingId === item.id ? (
+                      <Text style={styles.approveBtnText}>...</Text>
+                    ) : (
+                      <>
+                        <UserCheck size={14} color="#FFF" />
+                        <Text style={styles.approveBtnText}>Approve</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rejectBtn}
+                    onPress={() => handleReject(item.id)}
+                    disabled={approvingId === item.id || rejectingId === item.id}
+                    activeOpacity={0.7}
+                  >
+                    {rejectingId === item.id ? (
+                      <Text style={styles.rejectBtnText}>...</Text>
+                    ) : (
+                      <>
+                        <X size={14} color="#FFF" />
+                        <Text style={styles.rejectBtnText}>Reject</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </Card>
           )}
@@ -394,4 +425,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8,
   },
   pendingHeaderText: { fontSize: rf(12), color: '#92400E', flex: 1 },
+  pendingActions: { flexDirection: 'row', gap: 6 },
+  rejectBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#EF4444', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  rejectBtnText: { fontSize: rf(12), fontWeight: '600', color: '#FFF' },
 });
