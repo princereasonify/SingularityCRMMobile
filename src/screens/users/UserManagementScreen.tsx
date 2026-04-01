@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock, Eye, EyeOff } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { authApi } from '../../api/auth';
 import { UserDto, Region, Zone } from '../../types';
@@ -43,6 +43,7 @@ export const UserManagementScreen = ({ navigation }: any) => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserDto | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
 
   const [form, setForm] = useState({
     name: '', email: '', password: '',
@@ -120,11 +121,14 @@ export const UserManagementScreen = ({ navigation }: any) => {
           regionId: form.regionId ? Number(form.regionId) : undefined,
         });
       } else {
+        // ZH auto-assigns their own zone/region
+        const zoneId = role === 'ZH' ? (user?.zoneId || undefined) : (form.zoneId ? Number(form.zoneId) : undefined);
+        const regionId = role === 'ZH' ? (user?.regionId || undefined) : (form.regionId ? Number(form.regionId) : undefined);
         await authApi.createUser({
           name: form.name, email: form.email, password: form.password,
           role: form.role,
-          zoneId: form.zoneId ? Number(form.zoneId) : undefined,
-          regionId: form.regionId ? Number(form.regionId) : undefined,
+          zoneId,
+          regionId,
         });
       }
       setShowUserModal(false);
@@ -360,7 +364,16 @@ export const UserManagementScreen = ({ navigation }: any) => {
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Input label="Full Name *" value={form.name} onChangeText={(v) => set('name', v)} placeholder="e.g. Arjun Mehta" accentColor={COLOR.primary} />
               <Input label="Email *" value={form.email} onChangeText={(v) => set('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="email@educrm.in" accentColor={COLOR.primary} />
-              <Input label={editingUser ? 'New Password (optional)' : 'Password *'} value={form.password} onChangeText={(v) => set('password', v)} secureTextEntry placeholder="••••••••" accentColor={COLOR.primary} />
+              <Input
+                label={editingUser ? 'New Password (optional)' : 'Password *'}
+                value={form.password}
+                onChangeText={(v) => set('password', v)}
+                secureTextEntry={!showPwd}
+                placeholder="••••••••"
+                accentColor={COLOR.primary}
+                rightIcon={showPwd ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />}
+                onRightIconPress={() => setShowPwd((v) => !v)}
+              />
               <SelectPicker
                 label="Role *"
                 options={(CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }))}
@@ -368,23 +381,36 @@ export const UserManagementScreen = ({ navigation }: any) => {
                 onChange={(v) => set('role', v)}
                 accentColor={COLOR.primary}
               />
-              {needsRegion && (
-                <SelectPicker
-                  label="Region"
-                  options={regions.map((r) => ({ label: r.name, value: r.id }))}
-                  value={form.regionId}
-                  onChange={(v) => { set('regionId', v); set('zoneId', ''); }}
-                  accentColor={COLOR.primary}
-                />
-              )}
-              {needsZone && (
-                <SelectPicker
-                  label="Zone"
-                  options={filteredZones.map((z) => ({ label: z.name, value: z.id }))}
-                  value={form.zoneId}
-                  onChange={(v) => set('zoneId', v)}
-                  accentColor={COLOR.primary}
-                />
+              {role === 'ZH' && !editingUser ? (
+                <View style={styles.autoZoneBox}>
+                  <Text style={styles.autoZoneLabel}>
+                    <Text style={styles.autoZoneBold}>Zone: </Text>
+                    {user?.zone || 'Your zone'}
+                    {user?.region ? `  (${user.region})` : ''}
+                  </Text>
+                  <Text style={styles.autoZoneHint}>New user will be assigned to your zone automatically.</Text>
+                </View>
+              ) : (
+                <>
+                  {needsRegion && (
+                    <SelectPicker
+                      label="Region"
+                      options={regions.map((r) => ({ label: r.name, value: r.id }))}
+                      value={form.regionId}
+                      onChange={(v) => { set('regionId', v); set('zoneId', ''); }}
+                      accentColor={COLOR.primary}
+                    />
+                  )}
+                  {needsZone && (
+                    <SelectPicker
+                      label="Zone"
+                      options={filteredZones.map((z) => ({ label: z.name, value: z.id }))}
+                      value={form.zoneId}
+                      onChange={(v) => set('zoneId', v)}
+                      accentColor={COLOR.primary}
+                    />
+                  )}
+                </>
               )}
               <Button title={editingUser ? 'Update User' : 'Create User'} onPress={handleSave} loading={formLoading} color={COLOR.primary} size="lg" style={{ marginTop: 8, marginBottom: 32 }} />
             </ScrollView>
@@ -454,4 +480,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8,
   },
   rejectBtnText: { fontSize: rf(12), fontWeight: '600', color: '#FFF' },
+  autoZoneBox: {
+    backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
+    borderRadius: 12, padding: 12, marginBottom: 12,
+  },
+  autoZoneLabel: { fontSize: rf(13), color: '#6B7280' },
+  autoZoneBold: { fontWeight: '700', color: '#374151' },
+  autoZoneHint: { fontSize: rf(11), color: '#9CA3AF', marginTop: 4 },
 });

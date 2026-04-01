@@ -8,7 +8,7 @@ import {
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
   Building2, Settings, CreditCard, Monitor,
   ClipboardList, CalendarClock, CalendarDays,
-  Activity, Briefcase, Menu, DollarSign, FileEdit,
+  Activity, Briefcase, Menu, DollarSign, FileEdit, Home,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
@@ -21,6 +21,7 @@ import { rf } from '../utils/responsive';
 // Auth
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
+import { DeleteAccountScreen } from '../screens/auth/DeleteAccountScreen';
 
 // Dashboard
 import { FODashboard } from '../screens/dashboard/FODashboard';
@@ -86,6 +87,7 @@ import { DashboardCustomizeScreen } from '../screens/settings/DashboardCustomize
 import { UserManualScreen } from '../screens/settings/UserManualScreen';
 import { AllowanceConfigScreen } from '../screens/settings/AllowanceConfigScreen';
 import { VisitFieldConfigScreen } from '../screens/settings/VisitFieldConfigScreen';
+import { HomeLocationScreen } from '../screens/settings/HomeLocationScreen';
 
 // Audit History
 import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
@@ -177,6 +179,7 @@ function FODrawer() {
       <Drawer.Screen name="My Stats" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
       <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -201,6 +204,7 @@ function ZHDrawer() {
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
       <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -225,6 +229,7 @@ function RHDrawer() {
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
       <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -251,6 +256,7 @@ function SHDrawer() {
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="Allowance" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
       <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -275,6 +281,9 @@ function SCADrawer() {
       <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
       <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Allowance" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
+      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -326,6 +335,7 @@ export const AppNavigator = () => {
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ animation: 'slide_from_bottom' }} />
           </>
         ) : (
           <>

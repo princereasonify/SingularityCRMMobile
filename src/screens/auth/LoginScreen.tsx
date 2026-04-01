@@ -163,6 +163,14 @@ export const LoginScreen = ({ navigation }: any) => {
             </View>
           </View>
 
+          {/* Delete Account */}
+          <View style={styles.deleteRow}>
+            <Text style={styles.deleteText}>Want to delete your account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('DeleteAccount')}>
+              <Text style={styles.deleteLink}>Delete Account</Text>
+            </TouchableOpacity>
+          </View>
+
           <Text style={styles.footer}>
             EduCRM • EdTech Sales Platform{'\n'}© 2026 All rights reserved
           </Text>
@@ -308,6 +316,21 @@ const styles = StyleSheet.create({
   signupLink: {
     fontSize: rf(13),
     color: '#0d9488',
+    fontWeight: '600',
+  },
+  deleteRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  deleteText: {
+    fontSize: rf(12),
+    color: 'rgba(255,255,255,0.5)',
+  },
+  deleteLink: {
+    fontSize: rf(12),
+    color: '#EF4444',
     fontWeight: '600',
   },
   footer: {

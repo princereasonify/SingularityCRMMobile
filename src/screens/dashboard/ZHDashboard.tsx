@@ -130,7 +130,7 @@ export const ZHDashboard = ({ navigation }: any) => {
           <KPICard
             title="Zone Revenue MTD"
             value={formatCurrency(data?.revenueMTD || 0)}
-            subtitle={`${data?.targetPct || 0}% of target`}
+            subtitle={`${data?.targetPct || 0}% of ${formatCurrency(data?.revenueTarget || 0)} target`}
             progress={data?.targetPct || 0}
             progressColor={COLOR.primary}
             icon={<TrendingUp size={16} color={COLOR.primary} />}
@@ -140,7 +140,7 @@ export const ZHDashboard = ({ navigation }: any) => {
           <KPICard
             title="Active Pipeline"
             value={String(data?.activePipeline || 0)}
-            subtitle="Leads in progress"
+            subtitle="Leads across all FOs"
             icon={<Users size={16} color="#3B82F6" />}
             iconBg="#EFF6FF"
             style={{ width: cardW }}
@@ -148,16 +148,18 @@ export const ZHDashboard = ({ navigation }: any) => {
           <KPICard
             title="Pending Approvals"
             value={String(data?.pendingApprovals || 0)}
-            subtitle="Action required"
+            subtitle={(data?.pendingDeals?.length || 0) > 0 ? 'Action required' : 'All clear'}
             icon={<Clock size={16} color="#F59E0B" />}
             iconBg="#FFFBEB"
             valueColor={data?.pendingApprovals ? '#F59E0B' : '#111827'}
             style={{ width: cardW }}
           />
           <KPICard
-            title="Win Rate"
+            title="Zone Win Rate"
             value={`${data?.winRate || 0}%`}
-            subtitle={`${data?.atRiskFOs || 0} at-risk FOs`}
+            subtitle="Month to date"
+            progress={data?.winRate || 0}
+            progressColor="#14B8A6"
             icon={<Target size={16} color="#22C55E" />}
             iconBg="#F0FDF4"
             style={{ width: cardW }}
@@ -236,7 +238,9 @@ export const ZHDashboard = ({ navigation }: any) => {
                   <View style={styles.foStats}>
                     <Text style={styles.foStat}>{formatCurrency(fo.revenue)}</Text>
                     <Text style={styles.foDot}>•</Text>
-                    <Text style={styles.foStat}>{fo.visitsWeek} visits/wk</Text>
+                    <Text style={[styles.foStat, { fontWeight: '700', color: fo.targetPct >= 70 ? '#14B8A6' : fo.targetPct >= 40 ? '#F59E0B' : '#EF4444' }]}>{fo.targetPct}%</Text>
+                    <Text style={styles.foDot}>•</Text>
+                    <Text style={[styles.foStat, { color: fo.visitsWeek >= 15 ? '#14B8A6' : fo.visitsWeek >= 10 ? '#F59E0B' : '#EF4444' }]}>{fo.visitsWeek} visits/wk</Text>
                   </View>
                   <ProgressBar value={fo.targetPct} height={4} style={{ marginTop: 4 }} />
                 </View>

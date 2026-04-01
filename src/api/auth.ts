@@ -50,4 +50,13 @@ export const authApi = {
     apiClient.put<Zone>(`/auth/zones/${id}`, { name, regionId }),
 
   deleteZone: (id: number) => apiClient.delete(`/auth/zones/${id}`),
+
+  // Delete account request (unauthenticated)
+  deleteAccountRequest: (email: string, password: string) =>
+    apiClient.post('/auth/delete-account-request', { email, password }),
+
+  // Home location
+  getHomeLocation: () => apiClient.get('/auth/home-location'),
+  setHomeLocation: (latitude: number, longitude: number) =>
+    apiClient.post('/auth/home-location', { latitude, longitude }),
 };
