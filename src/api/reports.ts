@@ -1,8 +1,8 @@
 import { apiClient } from './client';
 
 export interface ReportFilters {
-  from?: string;
-  to?: string;
+  dateFrom?: string;
+  dateTo?: string;
   zoneId?: number;
   regionId?: number;
   foId?: number;

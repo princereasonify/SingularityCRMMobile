@@ -151,8 +151,8 @@ export const ReportsScreen = (_: any) => {
   const [activeTab, setActiveTab] = useState('User Performance');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
-  const [dateFrom] = useState(thirtyDaysAgo);
-  const [dateTo] = useState(todayStr);
+  const [dateFrom, setDateFrom] = useState(thirtyDaysAgo());
+  const [dateTo, setDateTo] = useState(todayStr());
 
   // AI report states
   const [aiReports, setAiReports] = useState<any[]>([]);
@@ -166,7 +166,7 @@ export const ReportsScreen = (_: any) => {
   const fetchReport = useCallback(async (tab: string) => {
     setLoading(true);
     setData(null);
-    const filters: ReportFilters = { from: dateFrom, to: dateTo };
+    const filters: ReportFilters = { dateFrom, dateTo };
     try {
       let res: any;
       if (tab === 'User Performance') res = await reportsApi.getUserPerformance(filters);

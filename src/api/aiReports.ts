@@ -5,4 +5,8 @@ export const aiReportsApi = {
     apiClient.get<any[]>('/ai-reports', { params: filters }),
   getReport: (id: number) =>
     apiClient.get<any>(`/ai-reports/${id}`),
+  generateMyDaily: (date?: string) =>
+    apiClient.post<any>('/ai-reports/generate-my-daily', { date }),
+  generateManagement: (dateFrom?: string, dateTo?: string) =>
+    apiClient.post<any>('/ai-reports/generate-management', { dateFrom, dateTo }),
 };
