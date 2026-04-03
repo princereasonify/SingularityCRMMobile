@@ -9,7 +9,7 @@ interface KPICardProps {
   title: string;
   value: string;
   subtitle?: string;
-  progress?: number;
+  progress?: number; 
   progressColor?: string;
   icon?: React.ReactNode;
   iconBg?: string;

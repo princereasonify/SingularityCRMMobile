@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { SelectPicker } from '../../components/common/SelectPicker';
+import { DateInput } from '../../components/common/DateInput';
 import { Card } from '../../components/common/Card';
 import { ROLE_COLORS, CONTRACT_DURATIONS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
@@ -201,9 +202,11 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
             <View style={styles.half}>
               <SelectPicker label="Contract Duration" options={CONTRACT_DURATIONS.map((d) => ({ label: d, value: d }))} value={form.duration} onChange={(v) => set('duration', v)} accentColor={COLOR.primary} />
             </View>
-            <Input label="Start Date" value={form.contractStartDate} onChangeText={(v) => set('contractStartDate', v)} placeholder="YYYY-MM-DD" accentColor={COLOR.primary} containerStyle={styles.half} />
+            <View style={styles.half}>
+              <DateInput label="Start Date" value={form.contractStartDate} onChange={(v) => set('contractStartDate', v)} accentColor={COLOR.primary} />
+            </View>
           </View>
-          <Input label="End Date" value={form.contractEndDate} onChangeText={(v) => set('contractEndDate', v)} placeholder="YYYY-MM-DD" accentColor={COLOR.primary} />
+          <DateInput label="End Date" value={form.contractEndDate} onChange={(v) => set('contractEndDate', v)} accentColor={COLOR.primary} />
         </Card>
 
         {/* Approval Level */}
