@@ -1,7 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, TouchableOpacity } from 'react-native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+export const navigationRef = createNavigationContainerRef<any>();
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import {
   LayoutDashboard, Contact2, GitBranch,
@@ -12,6 +14,8 @@ import {
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
+import messaging from '@react-native-firebase/messaging';
+import { requestFCMPermission } from '../services/pushNotificationService';
 
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -329,6 +333,60 @@ const bannerStyles = StyleSheet.create({
   text: { color: '#FFF', fontSize: 12, fontWeight: '600' },
 });
 
+// ─── Notification Permission Banner ──────────────────────────────────────────
+function NotifPermBanner() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    messaging().hasPermission().then((status) => {
+      const granted =
+        status === messaging.AuthorizationStatus.AUTHORIZED ||
+        status === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!granted) setVisible(true);
+    }).catch(() => {});
+  }, []);
+
+  if (!visible) return null;
+
+  const handleEnable = async () => {
+    try {
+      await requestFCMPermission();
+    } catch {}
+    setVisible(false);
+  };
+
+  return (
+    <View style={notifBannerStyles.bar}>
+      <Text style={notifBannerStyles.text} numberOfLines={2}>
+        Enable push notifications to stay updated on leads, deals, and approvals
+      </Text>
+      <View style={notifBannerStyles.actions}>
+        <TouchableOpacity style={notifBannerStyles.enableBtn} onPress={handleEnable}>
+          <Text style={notifBannerStyles.enableText}>Enable</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setVisible(false)} hitSlop={8}>
+          <Text style={notifBannerStyles.dismissText}>✕</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+const notifBannerStyles = StyleSheet.create({
+  bar: {
+    backgroundColor: '#0D9488',
+    paddingHorizontal: 16, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  text: { flex: 1, color: '#FFF', fontSize: rf(12), fontWeight: '500' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  enableBtn: {
+    backgroundColor: '#FFF', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 5,
+  },
+  enableText: { color: '#0D9488', fontSize: rf(12), fontWeight: '700' },
+  dismissText: { color: '#FFF', fontSize: rf(14), fontWeight: '600' },
+});
+
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export const AppNavigator = () => {
   const { user, isLoading } = useAuth();
@@ -338,8 +396,9 @@ export const AppNavigator = () => {
   const MainTabs = user ? getRoleNavigator(user.role) : null;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <OfflineBanner />
+      {user && <NotifPermBanner />}
       <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!user ? (
           <>

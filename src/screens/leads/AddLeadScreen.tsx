@@ -58,12 +58,35 @@ export const AddLeadScreen = ({ navigation }: any) => {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: '' }));
   };
 
+  // Section key → which form fields live inside it (for auto-expand on error)
+  const SECTION_FIELDS: Record<string, string[]> = {
+    school: ['school', 'board', 'type'],
+    location: ['city', 'state'],
+    contact: ['contactName', 'contactPhone', 'contactEmail'],
+    deal: ['value', 'closeDate'],
+    extra: ['notes'],
+  };
+
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.school.trim()) e.school = 'School name is required';
     if (!form.city.trim()) e.city = 'City is required';
+    if (!form.contactName.trim()) e.contactName = 'Contact name is required';
     if (!form.contactPhone.trim()) e.contactPhone = 'Phone is required';
+    if (role !== 'FO' && !form.foId) e.foId = 'Please select a Field Officer';
     setErrors(e);
+
+    // Auto-expand any section that contains an error field
+    if (Object.keys(e).length > 0) {
+      setCollapsed((prev) => {
+        const next = { ...prev };
+        Object.entries(SECTION_FIELDS).forEach(([sKey, fields]) => {
+          if (fields.some((f) => e[f])) next[sKey] = false;
+        });
+        return next;
+      });
+    }
+
     return Object.keys(e).length === 0;
   };
 
@@ -71,12 +94,25 @@ export const AddLeadScreen = ({ navigation }: any) => {
     if (!validate()) return;
     setLoading(true);
     try {
-      const isDuplicate = await leadsApi.checkDuplicate(form.school.trim(), form.city.trim());
-      if (isDuplicate.data) {
-        Alert.alert('Duplicate Lead', `A lead for ${form.school} in ${form.city} already exists.`, [
-          { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-          { text: 'Create Anyway', onPress: () => submitLead() },
-        ]);
+      // Check duplicate — wrap in its own try/catch so a backend error never
+      // blocks submission (web's AddLead.jsx does not call checkDuplicate at all)
+      let isDuplicate = false;
+      try {
+        const res = await leadsApi.checkDuplicate(form.school.trim(), form.city.trim());
+        isDuplicate = res.data === true;
+      } catch {
+        // endpoint unavailable — skip duplicate check, proceed with create
+      }
+
+      if (isDuplicate) {
+        Alert.alert(
+          'Duplicate Lead',
+          `A lead for ${form.school} in ${form.city} already exists.`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+            { text: 'Create Anyway', onPress: () => submitLead() },
+          ],
+        );
         return;
       }
       await submitLead();
@@ -88,22 +124,26 @@ export const AddLeadScreen = ({ navigation }: any) => {
 
   const submitLead = async () => {
     try {
+      // Match web payload format exactly:
+      // - numbers: 0 when empty (not undefined)
+      // - text: empty string when empty (not undefined)
+      // - dates/ids: null when empty (not undefined)
       await leadsApi.createLead({
         school: form.school.trim(),
         board: form.board,
         type: form.type,
-        students: form.students ? parseInt(form.students, 10) : undefined,
+        students: form.students ? parseInt(form.students, 10) : 0,
         city: form.city.trim(),
-        state: form.state.trim() || undefined,
+        state: form.state.trim(),
         contactName: form.contactName.trim(),
-        contactDesignation: form.contactDesignation.trim() || undefined,
+        contactDesignation: form.contactDesignation.trim(),
         contactPhone: form.contactPhone.trim(),
-        contactEmail: form.contactEmail.trim() || undefined,
+        contactEmail: form.contactEmail.trim(),
         source: form.source,
-        value: form.value ? parseFloat(form.value) : undefined,
-        closeDate: form.closeDate || undefined,
-        notes: form.notes.trim() || undefined,
-        foId: form.foId ? Number(form.foId) : undefined,
+        value: form.value ? parseFloat(form.value) : 0,
+        closeDate: (form.closeDate || null) as any,
+        notes: form.notes.trim(),
+        foId: (role !== 'FO' && form.foId ? Number(form.foId) : null) as any,
       });
       Alert.alert('Success', 'Lead created successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
@@ -137,12 +177,13 @@ export const AddLeadScreen = ({ navigation }: any) => {
           <Card style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>👤 Assign to FO</Text>
             <SelectPicker
-              label="Select Field Officer"
+              label="Select Field Officer *"
               options={foList.map((fo) => ({ label: fo.name, value: fo.id }))}
               value={form.foId}
               onChange={(v) => set('foId', v)}
               accentColor={COLOR.primary}
             />
+            {errors.foId ? <Text style={styles.fieldError}>{errors.foId}</Text> : null}
           </Card>
         )}
 
@@ -177,7 +218,7 @@ export const AddLeadScreen = ({ navigation }: any) => {
                 )}
                 {sec.key === 'contact' && (
                   <>
-                    <Input label="Contact Name" value={form.contactName} onChangeText={(v) => set('contactName', v)} placeholder="e.g. Mrs. Sharma" accentColor={COLOR.primary} />
+                    <Input label="Contact Name *" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" accentColor={COLOR.primary} />
                     <Input label="Designation" value={form.contactDesignation} onChangeText={(v) => set('contactDesignation', v)} placeholder="e.g. Principal" accentColor={COLOR.primary} />
                     <Input label="Phone *" value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" accentColor={COLOR.primary} />
                     <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" accentColor={COLOR.primary} />
@@ -226,4 +267,5 @@ const styles = StyleSheet.create({
   footerActionsTablet: { justifyContent: 'flex-end' },
   cancelBtn: { flex: 1 },
   submitBtn: { flex: 2 },
+  fieldError: { fontSize: rf(12), color: '#DC2626', marginTop: 4 },
 });

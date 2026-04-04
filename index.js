@@ -9,6 +9,10 @@ import App from './App';
 import { name as appName } from './app.json';
 import BackgroundFetch from 'react-native-background-fetch';
 import { sendLocationPing } from './src/services/locationPingService';
+import { registerBackgroundHandler } from './src/services/pushNotificationService';
+
+// Register FCM background handler — must be called before AppRegistry
+registerBackgroundHandler();
 
 // ─── Headless Background Fetch Task ──────────────────────────────────────────
 // This runs even when the app is completely killed by the user.

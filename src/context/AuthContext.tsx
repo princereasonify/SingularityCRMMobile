@@ -11,6 +11,7 @@ import { authApi } from '../api/auth';
 import { setUnauthorizedHandler } from '../api/client';
 import { UserDto } from '../types';
 import { getDeviceInfo } from '../utils/deviceInfo';
+import { requestFCMPermission } from '../services/pushNotificationService';
 
 interface AuthContextType {
   user: UserDto | null;
@@ -45,6 +46,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (savedToken && savedUser) {
           setToken(savedToken);
           setUser(JSON.parse(savedUser));
+          // Re-register FCM token on every app start (token can rotate)
+          requestFCMPermission().catch(() => {});
         }
       } catch (_) {}
       setIsLoading(false);
@@ -66,6 +69,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await AsyncStorage.setItem('auth_user', JSON.stringify(user));
     setToken(token);
     setUser(user);
+    // Register FCM device token with backend — same as web's handleLogin
+    requestFCMPermission().catch(() => {});
   };
 
   return (

@@ -4,10 +4,10 @@ import {
   Alert, Linking, useWindowDimensions, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Phone, Mail, User, History, X } from 'lucide-react-native';
+import { ArrowLeft, Phone, Mail, User, History, X, UserCheck, Navigation } from 'lucide-react-native';
 import { leadsApi } from '../../api/leads';
 import { aiApi } from '../../api/ai';
-import { LeadDto, LeadStage, LeadScoreBreakdown } from '../../types';
+import { LeadDto, LeadStage, LeadScoreBreakdown, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Badge, StageBadge } from '../../components/common/Badge';
@@ -34,6 +34,33 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [scoreBreakdown, setScoreBreakdown] = useState<LeadScoreBreakdown | null>(null);
   const [showScoreModal, setShowScoreModal] = useState(false);
+
+  // Reassign modal (managers only)
+  const isManager = role !== 'FO';
+  const [fos, setFos] = useState<UserDto[]>([]);
+  const [showAssign, setShowAssign] = useState(false);
+  const [selectedFoId, setSelectedFoId] = useState<string | number>('');
+  const [assigning, setAssigning] = useState(false);
+
+  useEffect(() => {
+    if (isManager) {
+      leadsApi.getAssignableFOs().then((r) => setFos(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
+    }
+  }, [isManager]);
+
+  const handleAssign = async () => {
+    if (!selectedFoId) return;
+    setAssigning(true);
+    try {
+      const res = await leadsApi.assignLead(leadId, Number(selectedFoId));
+      setLead(res.data);
+      setShowAssign(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to reassign lead');
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const fetch = useCallback(async () => {
     try {
@@ -75,7 +102,7 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
   if (!lead) return null;
 
   const stageIdx = STAGE_ORDER.indexOf(lead.stage as any);
-  const canCreateDeal = role === 'FO' && !['Won', 'Lost'].includes(lead.stage);
+  const canCreateDeal = ['DemoDone', 'ProposalSent', 'Negotiation', 'ContractSent', 'Won'].includes(lead.stage);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -292,6 +319,12 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
                   <View style={styles.actHeader}>
                     <Badge label={act.type} color={ACTIVITY_COLORS[act.type]} size="sm" />
                     <Badge label={act.outcome} color={OUTCOME_COLORS[act.outcome]} size="sm" />
+                    {act.gpsVerified && (
+                      <View style={styles.gpsBadge}>
+                        <Navigation size={10} color="#0D9488" />
+                        <Text style={styles.gpsBadgeText}>GPS Verified</Text>
+                      </View>
+                    )}
                     <Text style={styles.actDate}>{formatRelativeDate(act.date)}</Text>
                   </View>
                   {act.notes && <Text style={styles.actNotes} numberOfLines={2}>{act.notes}</Text>}
@@ -306,6 +339,14 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
 
         {/* Actions */}
         <View style={styles.actions}>
+          {isManager && (
+            <Button
+              title="Reassign Lead"
+              onPress={() => { setShowAssign(true); setSelectedFoId(''); }}
+              color="#7C3AED"
+              style={styles.actionBtn}
+            />
+          )}
           <Button
             title="Edit Lead"
             onPress={() => navigation.navigate('EditLead', { leadId })}
@@ -313,14 +354,12 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
             color={COLOR.primary}
             style={styles.actionBtn}
           />
-          {role === 'FO' && (
-            <Button
-              title="Log Activity"
-              onPress={() => navigation.navigate('Activities', { screen: 'ActivityLog', params: { leadId } })}
-              color={COLOR.primary}
-              style={styles.actionBtn}
-            />
-          )}
+          <Button
+            title="Log Activity"
+            onPress={() => navigation.navigate('Activities', { screen: 'ActivityLog', params: { leadId } })}
+            color={COLOR.primary}
+            style={styles.actionBtn}
+          />
           {canCreateDeal && (
             <Button
               title="Create Deal"
@@ -338,6 +377,49 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
             />
           )}
         </View>
+
+        {/* Reassign Modal */}
+        <Modal visible={showAssign} transparent animationType="slide" onRequestClose={() => setShowAssign(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Reassign Lead</Text>
+                <TouchableOpacity onPress={() => setShowAssign(false)}>
+                  <X size={20} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalSub}>
+                Currently assigned to: <Text style={styles.modalSubBold}>{lead.foName || '—'}</Text>
+              </Text>
+              <Text style={styles.modalSub}>Select a new Field Officer:</Text>
+              <View style={styles.foList}>
+                {fos.map((fo) => (
+                  <TouchableOpacity
+                    key={fo.id}
+                    style={[styles.foItem, selectedFoId === fo.id && styles.foItemSelected, fo.id === lead.foId && styles.foItemDisabled]}
+                    onPress={() => { if (fo.id !== lead.foId) setSelectedFoId(fo.id); }}
+                  >
+                    <Text style={[styles.foItemText, selectedFoId === fo.id && { color: '#7C3AED', fontWeight: '700' }]}>
+                      {fo.name}{(fo as any).zone ? ` (${(fo as any).zone})` : ''}{fo.id === lead.foId ? ' (Current)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAssign(false)}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalConfirmBtn, (!selectedFoId || assigning) && { opacity: 0.5 }]}
+                  onPress={handleAssign}
+                  disabled={!selectedFoId || assigning}
+                >
+                  <Text style={styles.modalConfirmText}>{assigning ? 'Reassigning...' : 'Reassign'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -433,4 +515,18 @@ const styles = StyleSheet.create({
   scoreModalLoading: { alignItems: 'center', paddingVertical: 20 },
   scoreModalLoadingText: { fontSize: rf(28), fontWeight: '800', color: '#111827' },
   scoreModalSub: { fontSize: rf(13), color: '#9CA3AF', marginTop: 6 },
+  gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#F0FDFA', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
+  gpsBadgeText: { fontSize: rf(10), color: '#0D9488', fontWeight: '600' },
+  modalSub: { fontSize: rf(13), color: '#6B7280', marginBottom: 6 },
+  modalSubBold: { fontWeight: '700', color: '#111827' },
+  foList: { marginVertical: 10, maxHeight: 220 },
+  foItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, marginBottom: 4, backgroundColor: '#F9FAFB' },
+  foItemSelected: { backgroundColor: '#F3E8FF', borderWidth: 1, borderColor: '#C4B5FD' },
+  foItemDisabled: { opacity: 0.4 },
+  foItemText: { fontSize: rf(14), color: '#374151' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  modalCancelBtn: { flex: 1, paddingVertical: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, alignItems: 'center' },
+  modalCancelText: { fontSize: rf(14), color: '#6B7280', fontWeight: '600' },
+  modalConfirmBtn: { flex: 1, paddingVertical: 12, backgroundColor: '#7C3AED', borderRadius: 12, alignItems: 'center' },
+  modalConfirmText: { fontSize: rf(14), color: '#FFF', fontWeight: '700' },
 });

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyCLS6VES8RRbvvZmkAv0PITy5PTCxuDLbE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>556077673063</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.singularity-crm</string>
+	<key>PROJECT_ID</key>
+	<string>n8ngujarati-465511</string>
+	<key>STORAGE_BUCKET</key>
+	<string>n8ngujarati-465511.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:556077673063:ios:8e4e0eca75a2ca4dfe42c2</string>
+</dict>
+</plist>

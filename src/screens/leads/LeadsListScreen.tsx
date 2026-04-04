@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, RefreshControl, useWindowDimensions, Alert,
+  TextInput, RefreshControl, useWindowDimensions, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Plus } from 'lucide-react-native';
+import { Search, UserCheck, X, Bell } from 'lucide-react-native';
+import messaging from '@react-native-firebase/messaging';
+import { requestFCMPermission } from '../../services/pushNotificationService';
 import { leadsApi } from '../../api/leads';
-import { LeadListDto } from '../../types';
+import { LeadListDto, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Badge, StageBadge } from '../../components/common/Badge';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { ProgressBar } from '../../components/common/ProgressBar';
+import { SelectPicker } from '../../components/common/SelectPicker';
 import { ROLE_COLORS, STAGE_COLORS, getScoreColor } from '../../utils/constants';
 import { formatCurrency, formatRelativeDate, isOverdue } from '../../utils/formatting';
 import { rf, isTablet } from '../../utils/responsive';
@@ -21,6 +24,7 @@ const FILTERS = ['All', 'Active', 'Hot', 'Won', 'Unassigned'];
 export const LeadsListScreen = ({ navigation }: any) => {
   const { user } = useAuth();
   const role = user?.role || 'FO';
+  const isManager = role !== 'FO';
   const COLOR = ROLE_COLORS[role];
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
@@ -33,6 +37,51 @@ export const LeadsListScreen = ({ navigation }: any) => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Notification permission banner
+  const [showNotifBanner, setShowNotifBanner] = useState(false);
+
+  useEffect(() => {
+    messaging().hasPermission().then((status) => {
+      const granted =
+        status === messaging.AuthorizationStatus.AUTHORIZED ||
+        status === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!granted) setShowNotifBanner(true);
+    }).catch(() => {});
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    try {
+      await requestFCMPermission();
+    } catch {}
+    setShowNotifBanner(false);
+  };
+
+  // Assign modal
+  const [fos, setFos] = useState<UserDto[]>([]);
+  const [assignModal, setAssignModal] = useState<{ leadId: number; school: string; currentFoId?: number } | null>(null);
+  const [selectedFoId, setSelectedFoId] = useState<string | number>('');
+  const [assigning, setAssigning] = useState(false);
+
+  useEffect(() => {
+    if (isManager) {
+      leadsApi.getAssignableFOs().then((r) => setFos(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
+    }
+  }, [isManager]);
+
+  const handleAssign = async () => {
+    if (!selectedFoId || !assignModal) return;
+    setAssigning(true);
+    try {
+      await leadsApi.assignLead(assignModal.leadId, Number(selectedFoId));
+      setAssignModal(null);
+      fetchLeads(page, true);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to assign lead');
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const fetchLeads = useCallback(async (pg = 1, reset = false) => {
     try {
@@ -81,7 +130,21 @@ export const LeadsListScreen = ({ navigation }: any) => {
             )}
             <Text style={styles.leadSchool} numberOfLines={2}>{item.school}</Text>
           </View>
-          <StageBadge stage={item.stage} />
+          <View style={styles.leadHeaderRight}>
+            <StageBadge stage={item.stage} />
+            {isManager && (
+              <TouchableOpacity
+                style={styles.assignIconBtn}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  setAssignModal({ leadId: item.id, school: item.school, currentFoId: item.foId ?? undefined });
+                  setSelectedFoId('');
+                }}
+              >
+                <UserCheck size={15} color="#7C3AED" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <View style={styles.leadMeta}>
           <Text style={styles.metaText}>{item.board}</Text>
@@ -93,7 +156,7 @@ export const LeadsListScreen = ({ navigation }: any) => {
         <View style={styles.leadFooter}>
           <View style={styles.footerLeft}>
             <Text style={styles.leadValue}>{formatCurrency(item.value)}</Text>
-            {item.foName && role !== 'FO' && (
+            {item.foName && isManager && (
               <Text style={styles.foName} numberOfLines={1}>👤 {item.foName}</Text>
             )}
           </View>
@@ -112,6 +175,41 @@ export const LeadsListScreen = ({ navigation }: any) => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
+      {/* Assign / Reassign Modal */}
+      <Modal visible={!!assignModal} transparent animationType="slide" onRequestClose={() => setAssignModal(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Assign / Reassign Lead</Text>
+              <TouchableOpacity onPress={() => setAssignModal(null)}>
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>
+              Assign <Text style={styles.modalSubBold}>{assignModal?.school}</Text> to a Field Officer:
+            </Text>
+            <SelectPicker
+              label="Select Field Officer"
+              options={fos.map((fo) => ({ label: `${fo.name}${(fo as any).zone ? ` (${(fo as any).zone})` : ''}${fo.id === assignModal?.currentFoId ? ' (Current)' : ''}`, value: fo.id }))}
+              value={selectedFoId}
+              onChange={(v) => setSelectedFoId(v)}
+              accentColor="#7C3AED"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setAssignModal(null)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, (!selectedFoId || assigning) && { opacity: 0.5 }]}
+                onPress={handleAssign}
+                disabled={!selectedFoId || assigning}
+              >
+                <Text style={styles.modalConfirmText}>{assigning ? 'Assigning...' : 'Assign'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} message="Loading leads..." />
       ) : (
@@ -124,6 +222,21 @@ export const LeadsListScreen = ({ navigation }: any) => {
           numColumns={tablet ? 2 : 1}
           columnWrapperStyle={tablet ? styles.columnWrapper : undefined}
           ListHeaderComponent={
+            <>
+            {showNotifBanner && (
+              <View style={styles.notifBanner}>
+                <Bell size={16} color="#FFF" />
+                <Text style={styles.notifBannerText} numberOfLines={2}>
+                  Enable push notifications to stay updated on leads, deals, and approvals
+                </Text>
+                <TouchableOpacity style={styles.notifEnableBtn} onPress={handleEnableNotifications}>
+                  <Text style={styles.notifEnableText}>Enable</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowNotifBanner(false)} hitSlop={8}>
+                  <X size={16} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.controlsCard}>
               <View style={styles.controlsTopRow}>
                 <View style={styles.searchBar}>
@@ -136,12 +249,6 @@ export const LeadsListScreen = ({ navigation }: any) => {
                     onChangeText={setSearch}
                   />
                 </View>
-                <TouchableOpacity
-                  style={[styles.addBtn, { backgroundColor: COLOR.primary }]}
-                  onPress={() => navigation.navigate('AddLead')}
-                >
-                  <Plus size={18} color="#FFF" />
-                </TouchableOpacity>
               </View>
               <View style={styles.filterRow}>
                 {FILTERS.map((f) => (
@@ -158,6 +265,7 @@ export const LeadsListScreen = ({ navigation }: any) => {
                 ))}
               </View>
             </View>
+            </>
           }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setPage(1); fetchLeads(1, true); }} colors={[COLOR.primary]} />}
           onEndReached={handleLoadMore}
@@ -186,7 +294,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   controlsTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F9FAFB',
@@ -211,6 +318,8 @@ const styles = StyleSheet.create({
   leadCard: { marginBottom: 2 },
   leadCardTablet: { flex: 1 },
   leadHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  leadHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  assignIconBtn: { padding: 5, backgroundColor: '#F3E8FF', borderRadius: 8 },
   leadTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginRight: 8 },
   overdueIndicator: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginTop: 5 },
   leadSchool: { flex: 1, fontSize: rf(15), fontWeight: '700', color: '#111827' },
@@ -225,4 +334,23 @@ const styles = StyleSheet.create({
   scorePill: { borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
   scoreText: { fontSize: rf(12), fontWeight: '700' },
   lastActivity: { fontSize: rf(11), color: '#9CA3AF' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
+  modalSub: { fontSize: rf(13), color: '#6B7280', marginBottom: 16 },
+  modalSubBold: { fontWeight: '700', color: '#111827' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  modalCancelBtn: { flex: 1, paddingVertical: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, alignItems: 'center' },
+  modalCancelText: { fontSize: rf(14), color: '#6B7280', fontWeight: '600' },
+  modalConfirmBtn: { flex: 1, paddingVertical: 12, backgroundColor: '#7C3AED', borderRadius: 12, alignItems: 'center' },
+  modalConfirmText: { fontSize: rf(14), color: '#FFF', fontWeight: '700' },
+  notifBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#0D9488', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10,
+  },
+  notifBannerText: { flex: 1, color: '#FFF', fontSize: rf(12), fontWeight: '500' },
+  notifEnableBtn: { backgroundColor: '#FFF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  notifEnableText: { color: '#0D9488', fontSize: rf(12), fontWeight: '700' },
 });

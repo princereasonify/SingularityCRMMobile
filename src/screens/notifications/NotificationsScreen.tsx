@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert, DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Check, Trash2, AlertTriangle, Clock, Sparkles, Bell, Info } from 'lucide-react-native';
@@ -21,6 +21,7 @@ const NotifIcon = ({ type }: { type: string }) => {
     case 'Reminder': return <Clock size={size} color={color} />;
     case 'Success': return <Sparkles size={size} color={color} />;
     case 'Warning': return <AlertTriangle size={size} color={color} />;
+    case 'Info': return <Info size={size} color={color} />;
     default: return <Bell size={size} color={color} />;
   }
 };
@@ -47,6 +48,12 @@ export const NotificationsScreen = ({ navigation }: any) => {
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  // Refresh list when a new FCM notification arrives in foreground
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('new-notification', fetch);
+    return () => sub.remove();
+  }, [fetch]);
 
   const markRead = async (id: number) => {
     try {
