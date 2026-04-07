@@ -168,6 +168,8 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
     if (!selectedSchool) { Alert.alert('Validation', 'Please select a school'); return; }
     if (!selectedUser) { Alert.alert('Validation', 'Please select a demo person to assign'); return; }
     if (!scheduledDate) { Alert.alert('Validation', 'Please enter the scheduled date (YYYY-MM-DD)'); return; }
+    const today = new Date().toISOString().split('T')[0];
+    if (scheduledDate < today) { Alert.alert('Validation', 'Demo date must be today or a future date.'); return; }
     if (!startTime || !endTime) { Alert.alert('Validation', 'Please enter start and end time'); return; }
 
     setSubmitting(true);
@@ -249,14 +251,14 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>SCHEDULE</Text>
 
-          <Text style={styles.fieldLabel}>Date * (YYYY-MM-DD)</Text>
+          <Text style={styles.fieldLabel}>Date * (YYYY-MM-DD) — Today or future only</Text>
           <View style={styles.inputRow}>
             <Calendar size={16} color="#9CA3AF" style={styles.inputIcon} />
             <TextInput
               style={styles.inputWithIcon}
               value={scheduledDate}
               onChangeText={setScheduledDate}
-              placeholder="2025-01-15"
+              placeholder={new Date().toISOString().split('T')[0]}
               placeholderTextColor="#9CA3AF"
               keyboardType="numbers-and-punctuation"
             />
@@ -366,7 +368,7 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
         title="Select Demo Person"
         items={users}
         labelKey="name"
-        sublabelKey="role"
+        sublabelKey="zone"
         onSelect={item => setSelectedUser(item)}
         onClose={() => setShowUserPicker(false)}
       />

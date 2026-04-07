@@ -44,7 +44,7 @@ export const SCADashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [showLogout, setShowLogout] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState<'MTD' | 'QTD' | 'FY'>('MTD');
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [directPayments, setDirectPayments] = useState<DirectPayment[]>([]);
 
   // Direct payment modal
@@ -58,9 +58,9 @@ export const SCADashboard = ({ navigation }: any) => {
   // AI generation
   const [generatingAi, setGeneratingAi] = useState<'daily' | 'management' | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
     const [dashRes, paymentsRes] = await Promise.allSettled([
-      dashboardApi.getScaDashboard(),
+      dashboardApi.getScaDashboard(p),
       paymentsApi.getDirectPayments(),
     ]);
     setData(dashRes.status === 'fulfilled' ? dashRes.value.data : DEMO_DATA);
@@ -72,7 +72,7 @@ export const SCADashboard = ({ navigation }: any) => {
     setRefreshing(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(period); }, [period]);
 
   const handleGenerateAi = (type: 'daily' | 'management') => {
     const title = type === 'daily' ? 'Generate Daily Reports' : 'Generate Management Reports';
@@ -154,13 +154,13 @@ export const SCADashboard = ({ navigation }: any) => {
           </View>
         </View>
         <View style={styles.periodRow}>
-          {(['MTD', 'QTD', 'FY'] as const).map((p) => (
+          {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
             <TouchableOpacity
               key={p}
               style={[styles.periodBtn, period === p && styles.periodBtnActive]}
               onPress={() => setPeriod(p)}
             >
-              <Text style={[styles.periodText, period === p && { color: COLOR.primary }]}>{p}</Text>
+              <Text style={[styles.periodText, period === p && { color: COLOR.primary }]}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -172,7 +172,7 @@ export const SCADashboard = ({ navigation }: any) => {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchData(); }}
+            onRefresh={() => { setRefreshing(true); fetchData(period); }}
             colors={[COLOR.primary]}
           />
         }
@@ -239,6 +239,15 @@ export const SCADashboard = ({ navigation }: any) => {
               subtitle="All FOs"
               icon={<Zap size={16} color="#F59E0B" />}
               iconBg="#FFFBEB"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Deals Lost"
+              value={String(data?.dealsLost || 0)}
+              subtitle="Stage = Lost"
+              icon={<MapPin size={16} color="#EF4444" />}
+              iconBg="#FEF2F2"
+              valueColor="#EF4444"
               style={{ width: cardW }}
             />
             <KPICard

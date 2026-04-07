@@ -13,13 +13,12 @@ import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ROLE_COLORS } from '../../utils/constants';
-import { formatDate, formatCurrency } from '../../utils/formatting';
+import { formatDate } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
-import { reportsApi, ReportFilters } from '../../api/reports';
 import { aiReportsApi } from '../../api/aiReports';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const REPORT_TABS = ['User Performance', 'School Visits', 'Pipeline', 'AI Daily (FO)', 'AI Management'];
+const REPORT_TABS = ['FO Daily', 'FO Weekly', 'FO Monthly', 'Management Weekly'];
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const thirtyDaysAgo = () => {
@@ -148,11 +147,10 @@ export const ReportsScreen = (_: any) => {
   const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
   const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(role);
 
-  const [activeTab, setActiveTab] = useState('User Performance');
+  const [activeTab, setActiveTab] = useState('FO Daily');
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any>(null);
-  const [dateFrom, setDateFrom] = useState(thirtyDaysAgo());
-  const [dateTo, setDateTo] = useState(todayStr());
+  const [dateFrom] = useState(thirtyDaysAgo());
+  const [dateTo] = useState(todayStr());
 
   // AI report states
   const [aiReports, setAiReports] = useState<any[]>([]);
@@ -160,41 +158,31 @@ export const ReportsScreen = (_: any) => {
   const [aiDetail, setAiDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const tabs = isManager ? REPORT_TABS : REPORT_TABS.filter(t => t !== 'AI Management');
+  const tabs = isManager ? REPORT_TABS : REPORT_TABS.filter(t => t !== 'Management Weekly');
 
-  // ─── Fetch standard reports ────────────────────────────────────────────────
-  const fetchReport = useCallback(async (tab: string) => {
-    setLoading(true);
-    setData(null);
-    const filters: ReportFilters = { dateFrom, dateTo };
-    try {
-      let res: any;
-      if (tab === 'User Performance') res = await reportsApi.getUserPerformance(filters);
-      else if (tab === 'School Visits') res = await reportsApi.getSchoolVisits(filters);
-      else if (tab === 'Pipeline') res = await reportsApi.getPipeline(filters);
-      if (res) {
-        const d = res.data?.data ?? res.data ?? res;
-        setData(d);
-      }
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo]);
+  // ─── Map tab name to reportType ───────────────────────────────────────────
+  const tabToReportType = (tab: string) => {
+    if (tab === 'FO Daily') return 'FoDaily';
+    if (tab === 'FO Weekly') return 'FoWeekly';
+    if (tab === 'FO Monthly') return 'FoMonthly';
+    if (tab === 'Management Weekly') return undefined; // fetch all management types
+    return undefined;
+  };
+
+  const isManagementTab = (tab: string) => tab === 'Management Weekly';
 
   // ─── Fetch AI reports ──────────────────────────────────────────────────────
   const fetchAiReports = useCallback(async (tab: string) => {
     setLoading(true);
     setAiReports([]);
     try {
+      const reportType = tabToReportType(tab);
       const filters: any = { dateFrom, dateTo };
-      if (tab === 'AI Daily (FO)') filters.reportType = 'FoDaily';
+      if (reportType) filters.reportType = reportType;
       const res = await aiReportsApi.getReports(filters);
       const d: any = res.data;
       const items = Array.isArray(d) ? d : d?.items ?? d?.reports ?? [];
-      // For management, exclude FoDaily
-      if (tab === 'AI Management') {
+      if (isManagementTab(tab)) {
         setAiReports(items.filter((r: any) => r.reportType !== 'FoDaily'));
       } else {
         setAiReports(items);
@@ -206,9 +194,9 @@ export const ReportsScreen = (_: any) => {
     }
   }, [dateFrom, dateTo]);
 
+  // All tabs are AI report tabs now
   useEffect(() => {
-    if (activeTab.startsWith('AI')) fetchAiReports(activeTab);
-    else fetchReport(activeTab);
+    fetchAiReports(activeTab);
   }, [activeTab]);
 
   // ─── View AI report detail ─────────────────────────────────────────────────
@@ -227,71 +215,6 @@ export const ReportsScreen = (_: any) => {
     }
   };
 
-  // ─── Render standard table ─────────────────────────────────────────────────
-  const renderStandardReport = () => {
-    if (!data) return (
-      <View style={s.emptyBox}><Text style={s.emptyIcon}>📊</Text><Text style={s.emptyText}>No data available</Text></View>
-    );
-
-    // User Performance / School Visits = array of rows
-    const rows: any[] = data.items || data.rows || data.users || data.schools || (Array.isArray(data) ? data : []);
-    // Pipeline = array of stage objects
-    const stages: any[] = data.stages || data.pipeline || [];
-
-    if (activeTab === 'Pipeline' && stages.length > 0) {
-      return (
-        <View style={s.pipelineGrid}>
-          {stages.map((stage: any, i: number) => (
-            <View key={i} style={s.pipelineCard}>
-              <Text style={s.pipelineStage}>{stage.stage || stage.name}</Text>
-              <View style={s.pipelineRow}>
-                <View style={s.pipelineStat}>
-                  <Text style={s.pipelineVal}>{stage.count ?? stage.deals ?? 0}</Text>
-                  <Text style={s.pipelineLabel}>Deals</Text>
-                </View>
-                <View style={s.pipelineStat}>
-                  <Text style={[s.pipelineVal, { color: '#16A34A' }]}>{formatCurrency(stage.totalValue ?? stage.value ?? 0)}</Text>
-                  <Text style={s.pipelineLabel}>Value</Text>
-                </View>
-                <View style={s.pipelineStat}>
-                  <Text style={s.pipelineVal}>{stage.avgAge ?? stage.avgDays ?? 0}d</Text>
-                  <Text style={s.pipelineLabel}>Avg Age</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      );
-    }
-
-    if (rows.length > 0) {
-      const keys = Object.keys(rows[0]).filter(k => !['id', 'userId', 'foId', 'schoolId'].includes(k));
-      return (
-        <View style={s.tableContainer}>
-          {rows.map((row: any, idx: number) => (
-            <View key={idx} style={[s.tableRow, idx % 2 === 0 && { backgroundColor: '#F9FAFB' }]}>
-              <Text style={s.tableIdx}>{idx + 1}</Text>
-              <View style={s.tableFields}>
-                {keys.slice(0, 6).map(k => (
-                  <View key={k} style={s.tableField}>
-                    <Text style={s.tableKey}>{k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}</Text>
-                    <Text style={s.tableVal} numberOfLines={1}>
-                      {typeof row[k] === 'number' && (k.toLowerCase().includes('revenue') || k.toLowerCase().includes('amount') || k.toLowerCase().includes('allowance'))
-                        ? formatCurrency(row[k])
-                        : String(row[k] ?? '—')}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ))}
-        </View>
-      );
-    }
-
-    return <View style={s.emptyBox}><Text style={s.emptyIcon}>📊</Text><Text style={s.emptyText}>No records found</Text></View>;
-  };
-
   // ─── Render AI report list ─────────────────────────────────────────────────
   const renderAiReportCard = ({ item: report }: { item: any }) => {
     const rc = ratingBg(report.overallRating || '');
@@ -308,7 +231,12 @@ export const ReportsScreen = (_: any) => {
               {report.reportType === 'FoDaily'
                 ? <Clock size={12} color="#6B7280" />
                 : <Users size={12} color="#6B7280" />}
-              <Text style={s.aiMetaText}>{report.reportType === 'FoDaily' ? 'Daily Report' : 'Bi-Weekly'}</Text>
+              <Text style={s.aiMetaText}>{
+                report.reportType === 'FoDaily' ? 'Daily' :
+                report.reportType === 'FoWeekly' ? 'FO Weekly' :
+                report.reportType === 'FoMonthly' ? 'FO Monthly' :
+                report.reportType?.replace('Weekly', ' Weekly') ?? 'Report'
+              }</Text>
               <Text style={s.aiMetaText}>{formatDate(report.reportDate)}</Text>
             </View>
           </View>
@@ -358,7 +286,12 @@ export const ReportsScreen = (_: any) => {
                 <View style={{ flex: 1 }}>
                   <Text style={s.aiDetailName}>{report.userName}</Text>
                   <Text style={s.aiDetailMeta}>
-                    {report.userRole} · {report.reportType === 'FoDaily' ? 'Daily' : 'Bi-Weekly'} · {formatDate(report.reportDate)}
+                    {report.userRole} · {
+                      report.reportType === 'FoDaily' ? 'Daily' :
+                      report.reportType === 'FoWeekly' ? 'FO Weekly' :
+                      report.reportType === 'FoMonthly' ? 'FO Monthly' :
+                      report.reportType?.replace('Weekly', ' Weekly') ?? 'Report'
+                    } · {formatDate(report.reportDate)}
                   </Text>
                 </View>
                 <View style={[s.aiRatingBadgeLg, { backgroundColor: ratingBg(report.overallRating || '').bg }]}>
@@ -477,7 +410,7 @@ export const ReportsScreen = (_: any) => {
     <SafeAreaView style={s.safe} edges={['bottom']}>
       {loading ? (
         <LoadingSpinner fullScreen color={COLOR.primary} message="Loading report..." />
-      ) : activeTab.startsWith('AI') ? (
+      ) : (
         <FlatList
           data={aiReports}
           keyExtractor={item => String(item.id)}
@@ -485,8 +418,8 @@ export const ReportsScreen = (_: any) => {
           contentContainerStyle={[s.listContent, aiReports.length === 0 && { flex: 1 }]}
           ListHeaderComponent={
             <View style={s.controlsCard}>
-              <Text style={s.controlsTitle}>Reports</Text>
-              <Text style={s.controlsSub}>Generate and view performance reports</Text>
+              <Text style={s.controlsTitle}>AI Reports</Text>
+              <Text style={s.controlsSub}>AI-generated performance reports</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
                 {tabs.map(tab => (
                   <TouchableOpacity
@@ -507,28 +440,6 @@ export const ReportsScreen = (_: any) => {
             <View style={s.emptyBox}><Text style={s.emptyIcon}>🤖</Text><Text style={s.emptyText}>No AI reports found for this period</Text></View>
           }
         />
-      ) : (
-        <ScrollView contentContainerStyle={s.listContent}>
-          <View style={s.controlsCard}>
-            <Text style={s.controlsTitle}>Reports</Text>
-            <Text style={s.controlsSub}>Generate and view performance reports</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabContent}>
-              {tabs.map(tab => (
-                <TouchableOpacity
-                  key={tab}
-                  style={[
-                    s.tabChip,
-                    activeTab === tab && { backgroundColor: COLOR.primary, borderColor: COLOR.primary },
-                  ]}
-                  onPress={() => setActiveTab(tab)}
-                >
-                  <Text style={[s.tabText, activeTab === tab && { color: '#FFF' }]}>{tab}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-          {renderStandardReport()}
-        </ScrollView>
       )}
 
       {renderAiDetail()}

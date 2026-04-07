@@ -47,6 +47,7 @@ import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { ROLE_COLORS } from '../../utils/constants';
 import { formatCurrency, formatDate, formatTime, toISODate, toISTISOString } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
+import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
@@ -80,6 +81,8 @@ export const MyDayTrackingScreen = () => {
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [locationChecked, setLocationChecked] = useState(false);
+  const [showBgDisclosure, setShowBgDisclosure] = useState(false);
+  const bgPermissionResolveRef = React.useRef<((accepted: boolean) => void) | null>(null);
 
   // iOS: JS-level ping interval ref (Android uses native Kotlin service instead)
   const iosPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -156,26 +159,23 @@ export const MyDayTrackingScreen = () => {
         }
 
         // Step 2: Background location (Android 10+)
+        // Google Play REQUIRES a Prominent Disclosure dialog BEFORE requesting
+        // ACCESS_BACKGROUND_LOCATION. A simple Alert.alert() does NOT comply.
         if (Platform.Version >= 29) {
           const bgStatus = await PermissionsAndroid.check(
             PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
           );
           if (!bgStatus) {
-            Alert.alert(
-              'Background Location Needed',
-              'To track your location when the app is in background, please select "Allow all the time" on the next screen.',
-              [
-                { text: 'Cancel', style: 'cancel', onPress: () => {} },
-                {
-                  text: 'Continue',
-                  onPress: async () => {
-                    await PermissionsAndroid.request(
-                      PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-                    );
-                  },
-                },
-              ],
-            );
+            // Show the full-screen Prominent Disclosure and wait for user's choice
+            const accepted = await new Promise<boolean>((resolve) => {
+              bgPermissionResolveRef.current = resolve;
+              setShowBgDisclosure(true);
+            });
+            if (accepted) {
+              await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+              );
+            }
           }
         }
 
@@ -833,6 +833,21 @@ export const MyDayTrackingScreen = () => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+
+      {/* Prominent Disclosure modal — required by Google Play before background location request */}
+      <BackgroundLocationDisclosure
+        visible={showBgDisclosure}
+        onAccept={() => {
+          setShowBgDisclosure(false);
+          bgPermissionResolveRef.current?.(true);
+          bgPermissionResolveRef.current = null;
+        }}
+        onDecline={() => {
+          setShowBgDisclosure(false);
+          bgPermissionResolveRef.current?.(false);
+          bgPermissionResolveRef.current = null;
+        }}
+      />
     </SafeAreaView>
   );
 };

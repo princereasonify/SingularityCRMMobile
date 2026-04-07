@@ -262,6 +262,7 @@ export interface FoDashboardDto {
   hotLeads: LeadListDto[];
   todaysTasks: TaskItemDto[];
   recentActivities: ActivityDto[];
+  dealsLost?: number;
   // New fields from backend
   visitsTargetWeekly?: number;
   visitsTargetMonthly?: number;
@@ -284,6 +285,8 @@ export interface FoPerformanceDto {
   dealsWon: number;
   pipelineLeads: number;
   status: string;
+  zone?: string;
+  region?: string;
 }
 
 export interface ZoneDashboardDto {
@@ -298,6 +301,7 @@ export interface ZoneDashboardDto {
   pipelineFunnel?: { stage: string; count: number }[];
   foPerformance: FoPerformanceDto[];
   pendingDeals: DealDto[];
+  dealsLost?: number;
   // New fields
   pipelineValue?: number;
   totalFOs?: number;
@@ -336,6 +340,7 @@ export interface RegionDashboardDto {
   forecastAccuracy: number;
   zones: ZoneSummaryDto[];
   revenueChart: { label: string; value: number }[];
+  dealsLost?: number;
   // New fields
   pipelineValue?: number;
   totalFOs?: number;
@@ -372,6 +377,7 @@ export interface NationalDashboardDto {
   regions: RegionSummaryDto[];
   revenueChart: { label: string; value: number }[];
   lossReasons: { reason: string; count: number }[];
+  dealsLost?: number;
   // New fields
   activeLeads?: number;
   totalFOs?: number;

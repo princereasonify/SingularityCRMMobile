@@ -37,10 +37,11 @@ export const RHDashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
     try {
-      const res = await dashboardApi.getRegionDashboard();
+      const res = await dashboardApi.getRegionDashboard(p);
       setData(res.data);
     } catch {
       setData(DEMO_DATA);
@@ -48,9 +49,9 @@ export const RHDashboard = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [period]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetch(period); }, [period]);
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading region data..." />;
 
@@ -76,13 +77,26 @@ export const RHDashboard = ({ navigation }: any) => {
             </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.regionName}>{data?.regionName || user?.region || 'Region'}</Text>
+        <View style={styles.headerBottom}>
+          <Text style={styles.regionName}>{data?.regionName || user?.region || 'Region'}</Text>
+          <View style={styles.periodRow}>
+            {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                onPress={() => setPeriod(p)}
+              >
+                <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </View>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLOR.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(period); }} colors={[COLOR.primary]} />}
       >
         <View style={styles.kpiGrid}>
           <KPICard
@@ -154,6 +168,15 @@ export const RHDashboard = ({ navigation }: any) => {
               subtitle="Region-wide"
               icon={<Award size={16} color="#22C55E" />}
               iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Deals Lost"
+              value={String(data?.dealsLost || 0)}
+              subtitle="Stage = Lost"
+              icon={<AlertTriangle size={16} color="#EF4444" />}
+              iconBg="#FEF2F2"
+              valueColor="#EF4444"
               style={{ width: cardW }}
             />
           </View>
@@ -323,7 +346,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
+  headerBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   regionName: { fontSize: rf(13), color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+  periodRow: { flexDirection: 'row', gap: 4 },
+  periodBtn: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  periodBtnActive: { backgroundColor: '#FFF' },
+  periodText: { fontSize: rf(11), color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
+  periodTextActive: { color: COLOR.primary },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },

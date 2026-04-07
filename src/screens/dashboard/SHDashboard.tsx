@@ -37,11 +37,11 @@ export const SHDashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  const [period, setPeriod] = useState<'MTD' | 'QTD' | 'FY'>('MTD');
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
     try {
-      const res = await dashboardApi.getNationalDashboard();
+      const res = await dashboardApi.getNationalDashboard(p);
       setData(res.data);
     } catch {
       setData(DEMO_DATA);
@@ -49,9 +49,9 @@ export const SHDashboard = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [period]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetch(period); }, [period]);
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading national data..." />;
 
@@ -79,13 +79,13 @@ export const SHDashboard = ({ navigation }: any) => {
         </View>
         {/* Period Selector */}
         <View style={styles.periodRow}>
-          {(['MTD', 'QTD', 'FY'] as const).map((p) => (
+          {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
             <TouchableOpacity
               key={p}
               style={[styles.periodBtn, period === p && styles.periodBtnActive]}
               onPress={() => setPeriod(p)}
             >
-              <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{p}</Text>
+              <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -94,7 +94,7 @@ export const SHDashboard = ({ navigation }: any) => {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLOR.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(period); }} colors={[COLOR.primary]} />}
       >
         <View style={styles.kpiGrid}>
           <KPICard
@@ -166,6 +166,15 @@ export const SHDashboard = ({ navigation }: any) => {
               subtitle={`${data?.totalRegions || 0} regions`}
               icon={<DollarSign size={16} color="#22C55E" />}
               iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Deals Lost"
+              value={String(data?.dealsLost || 0)}
+              subtitle="Stage = Lost"
+              icon={<AlertTriangle size={16} color="#EF4444" />}
+              iconBg="#FEF2F2"
+              valueColor="#EF4444"
               style={{ width: cardW }}
             />
           </View>

@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Zap,
   School,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { NotificationBell } from '../../components/common/NotificationBell';
@@ -45,10 +46,11 @@ export const FODashboard = ({ navigation }: any) => {
   const [data, setData] = useState<FoDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
     try {
-      const res = await dashboardApi.getFODashboard();
+      const res = await dashboardApi.getFODashboard(p);
       setData(res.data);
     } catch {
       // Use placeholder data for demo
@@ -57,13 +59,17 @@ export const FODashboard = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [period]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetch(period); }, [period]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetch();
+    fetch(period);
+  };
+
+  const handlePeriodChange = (p: 'today' | 'week' | 'month') => {
+    setPeriod(p);
   };
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading dashboard..." />;
@@ -95,12 +101,25 @@ export const FODashboard = ({ navigation }: any) => {
             </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.roleTag}>
-          <Zap size={12} color={COLOR.primary} />
-          <Text style={[styles.roleText, { color: COLOR.primary }]}>Field Officer</Text>
-          {user?.zone && (
-            <Text style={styles.zoneText}> • {user.zone}</Text>
-          )}
+        <View style={styles.roleTagRow}>
+          <View style={styles.roleTag}>
+            <Zap size={12} color={COLOR.primary} />
+            <Text style={[styles.roleText, { color: COLOR.primary }]}>Field Officer</Text>
+            {user?.zone && (
+              <Text style={styles.zoneText}> • {user.zone}</Text>
+            )}
+          </View>
+          <View style={styles.periodRow}>
+            {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                onPress={() => handlePeriodChange(p)}
+              >
+                <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
 
@@ -144,6 +163,15 @@ export const FODashboard = ({ navigation }: any) => {
             subtitle={`${data?.demosThisMonth || 0} / ${data?.demosTargetMonthly || 8} target`}
             icon={<Monitor size={16} color="#F59E0B" />}
             iconBg="#FFFBEB"
+            style={{ width: cardW }}
+          />
+          <KPICard
+            title="Deals Lost"
+            value={String(data?.dealsLost || 0)}
+            subtitle="Stage = Lost"
+            icon={<AlertTriangle size={16} color="#EF4444" />}
+            iconBg="#FEF2F2"
+            valueColor="#EF4444"
             style={{ width: cardW }}
           />
         </View>
@@ -296,6 +324,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  roleTagRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   roleTag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,6 +337,15 @@ const styles = StyleSheet.create({
   },
   roleText: { fontSize: rf(12), fontWeight: '700' },
   zoneText: { fontSize: rf(12), color: '#6B7280' },
+  periodRow: { flexDirection: 'row', gap: 4 },
+  periodBtn: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  periodBtnActive: { backgroundColor: '#FFF' },
+  periodText: { fontSize: rf(11), color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
+  periodTextActive: { color: COLOR.primary },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14 },
   contentTablet: { padding: 24, gap: 20 },

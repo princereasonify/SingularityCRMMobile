@@ -7,7 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { AlertTriangle, ExternalLink, X, MapPin, Search, CheckCircle } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
-import { School, DuplicateMatch } from '../../types';
+import { leadsApi } from '../../api/leads';
+import { schoolAssignmentsApi } from '../../api/schoolAssignments';
+import { School, DuplicateMatch, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
@@ -168,6 +170,25 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // FO assignment fields
+  const [assignToSelf, setAssignToSelf] = useState(true);
+  const [zoneFOs, setZoneFOs] = useState<UserDto[]>([]);
+  const [selectedFO, setSelectedFO] = useState<UserDto | null>(null);
+  const [showFOPicker, setShowFOPicker] = useState(false);
+
+  // ── Load zone FOs for FO role ─────────────────────────────────────────────
+  useEffect(() => {
+    if (isFO && !isEdit) {
+      leadsApi.getAssignableFOs()
+        .then(res => {
+          const d: any = res.data;
+          const fos = Array.isArray(d) ? d : d?.items ?? d?.users ?? [];
+          setZoneFOs(fos.filter((f: UserDto) => f.id !== user?.id));
+        })
+        .catch(() => {});
+    }
+  }, [isFO, isEdit]);
+
   // ── Debounced autocomplete ───────────────────────────────────────────────
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -291,10 +312,15 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         const res = await schoolsApi.create(data);
         schoolId = (res.data as School).id;
       }
-      // FO self-assign
-      if (isFO && visitDate && schoolId && user?.id) {
+      // FO assignment — self or other FO in zone
+      if (isFO && visitDate && schoolId) {
         try {
-          await schoolsApi.bulkAssign({ userId: user.id, schoolIds: [schoolId], assignmentDate: visitDate });
+          const assignToUserId = assignToSelf ? user!.id : (selectedFO?.id ?? user!.id);
+          await schoolAssignmentsApi.bulkAssign({
+            userId: assignToUserId,
+            schoolIds: [schoolId],
+            assignmentDate: visitDate,
+          });
         } catch {}
       }
       navigation.goBack();
@@ -496,12 +522,49 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </View>
         </SectionCard>
 
-        {/* ── FO Plan Visit ─────────────────────────────────────────── */}
+        {/* ── FO Plan Visit & Assignment ─────────────────────────── */}
         {isFO && !isEdit && (
-          <SectionCard label="Plan Visit (Optional)">
+          <SectionCard label="Plan Visit & Assign (Optional)">
             <Text style={styles.visitHint}>
-              Select a date to add this school to your assigned schools for that day.
+              Select a date to assign this school and auto-create a lead.
             </Text>
+
+            {/* Assign toggle */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Assign To</Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[styles.chip, assignToSelf && { backgroundColor: COLOR.primary }]}
+                  onPress={() => { setAssignToSelf(true); setSelectedFO(null); }}
+                >
+                  <Text style={[styles.chipText, assignToSelf && { color: '#FFF' }]}>Myself</Text>
+                </TouchableOpacity>
+                {zoneFOs.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.chip, !assignToSelf && { backgroundColor: COLOR.primary }]}
+                    onPress={() => setAssignToSelf(false)}
+                  >
+                    <Text style={[styles.chipText, !assignToSelf && { color: '#FFF' }]}>Another FO</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* FO Picker */}
+            {!assignToSelf && (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Select FO *</Text>
+                <TouchableOpacity
+                  style={[styles.input, { justifyContent: 'center' }]}
+                  onPress={() => setShowFOPicker(true)}
+                >
+                  <Text style={{ fontSize: rf(14), color: selectedFO ? '#111827' : '#9CA3AF' }}>
+                    {selectedFO ? selectedFO.name : 'Tap to select FO…'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <FormField
               label="Visit Date"
               value={visitDate}
@@ -509,6 +572,32 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               placeholder="YYYY-MM-DD"
             />
           </SectionCard>
+        )}
+
+        {/* FO Picker Modal */}
+        {isFO && !isEdit && !assignToSelf && (
+          <Modal visible={showFOPicker} transparent animationType="slide" onRequestClose={() => setShowFOPicker(false)}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Select FO in Zone</Text>
+                  <TouchableOpacity onPress={() => setShowFOPicker(false)}>
+                    <X size={20} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+                {zoneFOs.map(fo => (
+                  <TouchableOpacity
+                    key={fo.id}
+                    style={styles.dupCard}
+                    onPress={() => { setSelectedFO(fo); setShowFOPicker(false); }}
+                  >
+                    <Text style={styles.dupName}>{fo.name}</Text>
+                    {fo.zone && <Text style={styles.dupReason}>{fo.zone}</Text>}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Modal>
         )}
 
         <Button

@@ -58,10 +58,11 @@ export const ZHDashboard = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [approving, setApproving] = useState<number | null>(null);
   const [showLogout, setShowLogout] = useState(false);
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
     try {
-      const res = await dashboardApi.getZoneDashboard();
+      const res = await dashboardApi.getZoneDashboard(p);
       setData(res.data);
     } catch {
       setData(DEMO_DATA);
@@ -69,9 +70,9 @@ export const ZHDashboard = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [period]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetch(period); }, [period]);
 
   const handleApprove = async (dealId: number, approved: boolean) => {
     if (approved) {
@@ -125,13 +126,26 @@ export const ZHDashboard = ({ navigation }: any) => {
             </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.zoneName}>{data?.zoneName || user?.zone || 'Zone'}</Text>
+        <View style={styles.headerBottom}>
+          <Text style={styles.zoneName}>{data?.zoneName || user?.zone || 'Zone'}</Text>
+          <View style={styles.periodRow}>
+            {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                onPress={() => setPeriod(p)}
+              >
+                <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </View>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLOR.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(period); }} colors={[COLOR.primary]} />}
       >
         {/* KPIs - Row 1 */}
         <View style={styles.kpiGrid}>
@@ -207,6 +221,15 @@ export const ZHDashboard = ({ navigation }: any) => {
               icon={<AlertTriangle size={16} color="#EF4444" />}
               iconBg="#FEF2F2"
               valueColor={data?.atRiskFOs ? '#EF4444' : '#111827'}
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Deals Lost"
+              value={String(data?.dealsLost || 0)}
+              subtitle="Stage = Lost"
+              icon={<AlertTriangle size={16} color="#EF4444" />}
+              iconBg="#FEF2F2"
+              valueColor="#EF4444"
               style={{ width: cardW }}
             />
           </View>
@@ -393,7 +416,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
+  headerBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   zoneName: { fontSize: rf(13), color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+  periodRow: { flexDirection: 'row', gap: 4 },
+  periodBtn: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  periodBtnActive: { backgroundColor: '#FFF' },
+  periodText: { fontSize: rf(11), color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
+  periodTextActive: { color: COLOR.primary },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
