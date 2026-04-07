@@ -34,5 +34,15 @@ target 'SingularityCRM' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Disable modular headers for pods that have non-modular includes
+    installer.pods_project.targets.each do |target|
+      if ['react-native-maps', 'RNGestureHandler'].include?(target.name)
+        target.build_configurations.each do |config|
+          config.build_settings['DEFINES_MODULE'] = 'NO'
+          config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        end
+      end
+    end
   end
 end

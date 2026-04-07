@@ -14,13 +14,13 @@ import {
   Users,
   MapPin,
   Monitor,
-  Bell,
   LogOut,
   ChevronRight,
   Zap,
   School,
 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { FoDashboardDto } from '../../types';
@@ -86,12 +86,10 @@ export const FODashboard = ({ navigation }: any) => {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity
+            <NotificationBell
               style={styles.iconBtn}
               onPress={() => navigation.navigate('Notifications')}
-            >
-              <Bell size={20} color="#FFF" />
-            </TouchableOpacity>
+            />
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>

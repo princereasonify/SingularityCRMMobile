@@ -6,10 +6,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Bell, LogOut, TrendingUp, Building2, DollarSign,
+  LogOut, TrendingUp, Building2, DollarSign,
   Users, Zap, Plus, X, MapPin, CreditCard,
 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
 import { dashboardApi } from '../../api/dashboard';
 import { paymentsApi } from '../../api/payments';
@@ -140,9 +141,7 @@ export const SCADashboard = ({ navigation }: any) => {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')}>
-              <Bell size={20} color="#FFF" />
-            </TouchableOpacity>
+            <NotificationBell style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')} />
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>

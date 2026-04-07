@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Trash2, AlertTriangle, Clock, Sparkles, Bell, Info } 
 import { notificationsApi } from '../../api/notifications';
 import { NotificationDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { Card } from '../../components/common/Card';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { ROLE_COLORS, NOTIFICATION_COLORS } from '../../utils/constants';
@@ -28,6 +29,7 @@ const NotifIcon = ({ type }: { type: string }) => {
 
 export const NotificationsScreen = ({ navigation }: any) => {
   const { user } = useAuth();
+  const { clearBadge, refreshUnreadCount } = useNotifications();
   const role = user?.role || 'FO';
   const COLOR = ROLE_COLORS[role];
 
@@ -46,6 +48,12 @@ export const NotificationsScreen = ({ navigation }: any) => {
       setRefreshing(false);
     }
   }, []);
+
+  // Clear badge when screen opens, refresh when leaving so bell stays accurate
+  useEffect(() => {
+    clearBadge();
+    return () => { refreshUnreadCount(); };
+  }, [clearBadge, refreshUnreadCount]);
 
   useEffect(() => { fetch(); }, [fetch]);
 

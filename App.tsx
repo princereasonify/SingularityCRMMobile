@@ -11,9 +11,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import { OfflineProvider } from './src/context/OfflineContext';
+import { NotificationProvider } from './src/context/NotificationContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import messaging from '@react-native-firebase/messaging';
-import { onForegroundMessage } from './src/services/pushNotificationService';
+import { onForegroundMessage, onNotifeeEvent } from './src/services/pushNotificationService';
 import { navigationRef } from './src/navigation/AppNavigator';
 
 const navigateToNotifications = () => {
@@ -35,7 +36,7 @@ function App() {
     return unsubscribe;
   }, []);
 
-  // Background tap — app was running in background, user tapped notification
+  // Background tap — app was running in background, user tapped FCM notification
   useEffect(() => {
     const unsubscribe = messaging().onNotificationOpenedApp(() => {
       navigateToNotifications();
@@ -54,6 +55,12 @@ function App() {
       });
   }, []);
 
+  // Notifee foreground banner press → navigate to notifications
+  useEffect(() => {
+    const unsubscribe = onNotifeeEvent(navigateToNotifications);
+    return unsubscribe;
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -61,7 +68,9 @@ function App() {
         <LanguageProvider>
           <OfflineProvider>
             <AuthProvider>
-              <AppNavigator />
+              <NotificationProvider>
+                <AppNavigator />
+              </NotificationProvider>
             </AuthProvider>
           </OfflineProvider>
         </LanguageProvider>
