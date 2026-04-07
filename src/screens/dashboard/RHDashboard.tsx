@@ -4,7 +4,7 @@ import {
   useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LogOut, TrendingUp, Users, Award, BarChart2 } from 'lucide-react-native';
+import { LogOut, TrendingUp, Users, Award, BarChart2, Clock, AlertTriangle } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
@@ -22,6 +22,12 @@ import { formatCurrency } from '../../utils/formatting';
 import { rf, getCardWidth } from '../../utils/responsive';
 
 const COLOR = ROLE_COLORS.RH;
+
+const RISK_COLORS: Record<string, string> = {
+  HIGH: '#EF4444',
+  MEDIUM: '#F59E0B',
+  LOW: '#22C55E',
+};
 
 export const RHDashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
@@ -115,6 +121,44 @@ export const RHDashboard = ({ navigation }: any) => {
           />
         </View>
 
+        {(data?.pipelineValue !== undefined || data?.pendingApprovals !== undefined) && (
+          <View style={styles.kpiGrid}>
+            <KPICard
+              title="Pipeline Value"
+              value={formatCurrency(data?.pipelineValue || 0)}
+              subtitle={`${data?.totalFOs || 0} FOs · ${data?.totalZones || 0} zones`}
+              icon={<TrendingUp size={16} color="#8B5CF6" />}
+              iconBg="#F5F3FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Pending Approvals"
+              value={String(data?.pendingApprovals || 0)}
+              subtitle="Action required"
+              icon={<Clock size={16} color="#F59E0B" />}
+              iconBg="#FFFBEB"
+              valueColor={data?.pendingApprovals ? '#F59E0B' : '#111827'}
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Visits This Month"
+              value={String(data?.visitsThisMonth || 0)}
+              subtitle="Region-wide"
+              icon={<Users size={16} color="#3B82F6" />}
+              iconBg="#EFF6FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Demos This Month"
+              value={String(data?.demosThisMonth || 0)}
+              subtitle="Region-wide"
+              icon={<Award size={16} color="#22C55E" />}
+              iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+          </View>
+        )}
+
         {/* Zone Comparison */}
         {(data?.zones?.length || 0) > 0 && (
           <Card style={styles.section}>
@@ -123,6 +167,7 @@ export const RHDashboard = ({ navigation }: any) => {
               <Text style={[styles.thCell, { flex: 2 }]}>Zone</Text>
               <Text style={[styles.thCell, { flex: 1.5 }]}>Revenue</Text>
               <Text style={[styles.thCell, { flex: 1 }]}>Target %</Text>
+              <Text style={[styles.thCell, { flex: 0.7 }]}>FOs</Text>
               <Text style={[styles.thCell, { flex: 1 }]}>Health</Text>
             </View>
             {(data?.zones || []).map((zone) => (
@@ -134,8 +179,56 @@ export const RHDashboard = ({ navigation }: any) => {
                     {zone.targetPct}%
                   </Text>
                 </View>
+                <Text style={[styles.tdCell, { flex: 0.7 }]}>{zone.foCount || '-'}</Text>
                 <View style={{ flex: 1 }}>
                   <Badge label={zone.health} color={getStatusColor(zone.health)} size="sm" />
+                </View>
+              </View>
+            ))}
+          </Card>
+        )}
+
+        {/* Conversion Funnel */}
+        {(data?.conversionFunnel?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📊 Conversion Funnel</Text>
+            <View style={styles.funnelContainer}>
+              {(data?.conversionFunnel || []).map((item) => {
+                const maxCount = Math.max(...(data?.conversionFunnel || []).map((s) => s.count), 1);
+                const barH = Math.max((item.count / maxCount) * 120, 8);
+                const STAGE_COLORS: Record<string, string> = {
+                  'New Lead': '#9CA3AF', 'Contacted': '#9CA3AF',
+                  'Qualified': '#38BDF8', 'Demo': '#818CF8',
+                  'Proposal': '#FBBF24', 'Negotiation': '#F97316', 'Won': '#14B8A6',
+                };
+                const color = STAGE_COLORS[item.stage] || '#9CA3AF';
+                return (
+                  <View key={item.stage} style={styles.funnelBar}>
+                    <Text style={styles.funnelCount}>{item.count}</Text>
+                    <View style={[styles.funnelFill, { height: barH, backgroundColor: color }]} />
+                    <Text style={styles.funnelLabel} numberOfLines={2}>{item.stage}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
+
+        {/* Aging Deals */}
+        {(data?.agingDeals?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>⏰ Aging Deals</Text>
+            {(data?.agingDeals || []).map((deal, idx) => (
+              <View key={idx} style={styles.agingRow}>
+                <View style={styles.agingInfo}>
+                  <Text style={styles.agingSchool} numberOfLines={1}>{deal.school}</Text>
+                  <Text style={styles.agingMeta}>{deal.stage} · {deal.daysInStage}d</Text>
+                </View>
+                <View style={styles.agingRight}>
+                  <Text style={styles.agingValue}>{formatCurrency(deal.value)}</Text>
+                  <View style={[styles.riskBadge, { backgroundColor: RISK_COLORS[deal.risk] + '22' }]}>
+                    <Text style={[styles.riskText, { color: RISK_COLORS[deal.risk] }]}>{deal.risk}</Text>
+                  </View>
                 </View>
               </View>
             ))}
@@ -164,6 +257,26 @@ export const RHDashboard = ({ navigation }: any) => {
           </Card>
         )}
 
+        {/* Loss Reasons */}
+        {(data?.lossReasons?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📉 Loss Reasons</Text>
+            {(data?.lossReasons || []).map((lr) => {
+              const total = (data?.lossReasons || []).reduce((s, r) => s + r.count, 0);
+              const pct = total > 0 ? (lr.count / total) * 100 : 0;
+              return (
+                <View key={lr.reason} style={styles.lossRow}>
+                  <Text style={styles.lossReason} numberOfLines={1}>{lr.reason}</Text>
+                  <View style={{ flex: 1, marginHorizontal: 10, height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
+                    <View style={{ width: `${pct}%` as any, height: 6, backgroundColor: '#EF4444', borderRadius: 3 }} />
+                  </View>
+                  <Text style={styles.lossCount}>{lr.count}</Text>
+                </View>
+              );
+            })}
+          </Card>
+        )}
+
         <View style={{ height: 24 }} />
       </ScrollView>
       <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
@@ -186,6 +299,15 @@ const DEMO_DATA: RegionDashboardDto = {
     { label: 'Dec', value: 11000000 }, { label: 'Jan', value: 16000000 },
     { label: 'Feb', value: 14000000 }, { label: 'Mar', value: 18500000 },
   ],
+  pipelineValue: 12000000,
+  totalFOs: 20,
+  totalZones: 4,
+  pendingApprovals: 3,
+  visitsThisMonth: 450,
+  demosThisMonth: 62,
+  conversionFunnel: [],
+  agingDeals: [],
+  lossReasons: [],
 };
 
 const styles = StyleSheet.create({
@@ -220,4 +342,20 @@ const styles = StyleSheet.create({
   bar: { width: '80%', borderRadius: 4, alignSelf: 'center', minHeight: 4 },
   barLabel: { fontSize: rf(10), color: '#9CA3AF', marginTop: 4 },
   barValue: { fontSize: rf(9), color: '#6B7280' },
+  funnelContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: 160, paddingTop: 8 },
+  funnelBar: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  funnelCount: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  funnelFill: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8, minHeight: 8 },
+  funnelLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '500', textAlign: 'center' },
+  agingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  agingInfo: { flex: 1 },
+  agingSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  agingMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  agingRight: { alignItems: 'flex-end', gap: 4 },
+  agingValue: { fontSize: rf(14), fontWeight: '700', color: '#374151' },
+  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  riskText: { fontSize: rf(11), fontWeight: '700' },
+  lossRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  lossReason: { fontSize: rf(13), color: '#374151', width: 110 },
+  lossCount: { fontSize: rf(13), fontWeight: '700', color: '#EF4444', width: 24, textAlign: 'right' },
 });

@@ -133,7 +133,7 @@ export const FODashboard = ({ navigation }: any) => {
           <KPICard
             title="Visits This Week"
             value={String(data?.visitsThisWeek || 0)}
-            subtitle="GPS verified"
+            subtitle={`${data?.visitsThisWeek || 0} / ${data?.visitsTargetWeekly || 15} target`}
             icon={<MapPin size={16} color="#8B5CF6" />}
             iconBg="#F5F3FF"
             style={{ width: cardW }}
@@ -141,7 +141,7 @@ export const FODashboard = ({ navigation }: any) => {
           <KPICard
             title="Demos This Month"
             value={String(data?.demosThisMonth || 0)}
-            subtitle={`${data?.dealsWon || 0} deals won`}
+            subtitle={`${data?.demosThisMonth || 0} / ${data?.demosTargetMonthly || 8} target`}
             icon={<Monitor size={16} color="#F59E0B" />}
             iconBg="#FFFBEB"
             style={{ width: cardW }}
@@ -262,6 +262,12 @@ const DEMO_DATA: FoDashboardDto = {
   hotLeads: [],
   todaysTasks: [],
   recentActivities: [],
+  visitsTargetWeekly: 15,
+  visitsTargetMonthly: 80,
+  demosTargetMonthly: 8,
+  followUpsTargetMonthly: 40,
+  dealsTargetMonthly: 5,
+  allowanceRatePerKm: 10,
 };
 
 const styles = StyleSheet.create({

@@ -29,6 +29,12 @@ import { rf, getCardWidth } from '../../utils/responsive';
 
 const COLOR = ROLE_COLORS.SCA;
 
+const RISK_COLORS: Record<string, string> = {
+  HIGH: '#EF4444',
+  MEDIUM: '#F59E0B',
+  LOW: '#22C55E',
+};
+
 export const SCADashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
@@ -209,6 +215,43 @@ export const SCADashboard = ({ navigation }: any) => {
           />
         </View>
 
+        {(data?.activeLeads !== undefined || data?.visitsThisMonth !== undefined) && (
+          <View style={styles.kpiGrid}>
+            <KPICard
+              title="Active Leads"
+              value={String(data?.activeLeads || 0)}
+              subtitle="Nationwide"
+              icon={<TrendingUp size={16} color="#3B82F6" />}
+              iconBg="#EFF6FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Visits This Month"
+              value={String(data?.visitsThisMonth || 0)}
+              subtitle="All FOs"
+              icon={<MapPin size={16} color="#8B5CF6" />}
+              iconBg="#F5F3FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Demos This Month"
+              value={String(data?.demosThisMonth || 0)}
+              subtitle="All FOs"
+              icon={<Zap size={16} color="#F59E0B" />}
+              iconBg="#FFFBEB"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Direct Payments"
+              value={formatCurrency(data?.directPaymentsTotal || 0)}
+              subtitle={`${data?.pendingAllowances || 0} pending`}
+              icon={<CreditCard size={16} color="#22C55E" />}
+              iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+          </View>
+        )}
+
         {/* ── AI Report Generation ─────────────────────────────────────────── */}
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>⚡ AI Report Generation</Text>
@@ -276,7 +319,7 @@ export const SCADashboard = ({ navigation }: any) => {
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ minWidth: tablet ? width - 80 : Math.max(width - 64, 560) }}>
                 <View style={styles.tableHeader}>
-                  {['Region', 'Revenue', 'Target %', 'Schools', 'Win Rate', 'Health'].map((h, i) => (
+                  {['Region', 'Revenue', 'Target %', 'Leads', 'Win Rate', 'Health'].map((h, i) => (
                     <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]} numberOfLines={1}>{h}</Text>
                   ))}
                 </View>
@@ -285,7 +328,7 @@ export const SCADashboard = ({ navigation }: any) => {
                     <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{reg.name}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{formatCurrency(reg.revenue)}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2, color: getProgressColor(reg.targetPct) }]}>{reg.targetPct}%</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.schools}</Text>
+                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.activeLeads ?? reg.schools}</Text>
                     <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.winRate}%</Text>
                     <View style={{ flex: 1.2, alignItems: 'flex-start' }}>
                       <Badge label={reg.health} color={getStatusColor(reg.health)} size="sm" />
@@ -294,6 +337,53 @@ export const SCADashboard = ({ navigation }: any) => {
                 ))}
               </View>
             </ScrollView>
+          </Card>
+        )}
+
+        {/* Conversion Funnel */}
+        {(data?.conversionFunnel?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📊 Conversion Funnel</Text>
+            <View style={styles.funnelContainer}>
+              {(data?.conversionFunnel || []).map((item) => {
+                const maxCount = Math.max(...(data?.conversionFunnel || []).map((s) => s.count), 1);
+                const barH = Math.max((item.count / maxCount) * 120, 8);
+                const FUNNEL_COLORS: Record<string, string> = {
+                  'New Lead': '#9CA3AF', 'Contacted': '#9CA3AF',
+                  'Qualified': '#38BDF8', 'Demo': '#818CF8',
+                  'Proposal': '#FBBF24', 'Negotiation': '#F97316', 'Won': '#14B8A6',
+                };
+                const color = FUNNEL_COLORS[item.stage] || '#9CA3AF';
+                return (
+                  <View key={item.stage} style={styles.funnelBar}>
+                    <Text style={styles.funnelCount}>{item.count}</Text>
+                    <View style={[styles.funnelFill, { height: barH, backgroundColor: color }]} />
+                    <Text style={styles.funnelLabel} numberOfLines={2}>{item.stage}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
+
+        {/* Aging Deals */}
+        {(data?.agingDeals?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>⏰ Aging Deals</Text>
+            {(data?.agingDeals || []).map((deal, idx) => (
+              <View key={idx} style={styles.agingRow}>
+                <View style={styles.agingInfo}>
+                  <Text style={styles.agingSchool} numberOfLines={1}>{deal.school}</Text>
+                  <Text style={styles.agingMeta}>{deal.stage} · {deal.daysInStage}d</Text>
+                </View>
+                <View style={styles.agingRight}>
+                  <Text style={styles.agingValue}>{formatCurrency(deal.value)}</Text>
+                  <View style={[styles.riskBadge, { backgroundColor: RISK_COLORS[deal.risk] + '22' }]}>
+                    <Text style={[styles.riskText, { color: RISK_COLORS[deal.risk] }]}>{deal.risk}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
           </Card>
         )}
 
@@ -316,6 +406,26 @@ export const SCADashboard = ({ navigation }: any) => {
                 );
               })}
             </View>
+          </Card>
+        )}
+
+        {/* Loss Reasons */}
+        {(data?.lossReasons?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📉 Loss Reasons</Text>
+            {(data?.lossReasons || []).map((lr) => {
+              const total = (data?.lossReasons || []).reduce((s, r) => s + r.count, 0);
+              const pct = total > 0 ? (lr.count / total) * 100 : 0;
+              return (
+                <View key={lr.reason} style={styles.lossRow}>
+                  <Text style={styles.lossReason} numberOfLines={1}>{lr.reason}</Text>
+                  <View style={{ flex: 1, marginHorizontal: 10, height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
+                    <View style={{ width: `${pct}%` as any, height: 6, backgroundColor: '#EF4444', borderRadius: 3 }} />
+                  </View>
+                  <Text style={styles.lossCount}>{lr.count}</Text>
+                </View>
+              );
+            })}
           </Card>
         )}
 
@@ -448,6 +558,11 @@ const DEMO_DATA: ScaDashboardDto = {
     { label: 'Feb', value: 52000000 }, { label: 'Mar', value: 68000000 },
   ],
   lossReasons: [],
+  activeLeads: 900,
+  visitsThisMonth: 3200,
+  demosThisMonth: 420,
+  conversionFunnel: [],
+  agingDeals: [],
 };
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -562,4 +677,21 @@ const styles = StyleSheet.create({
     alignItems: 'center', backgroundColor: '#F3F4F6',
   },
   typeChipText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
+
+  funnelContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: 160, paddingTop: 8 },
+  funnelBar: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  funnelCount: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  funnelFill: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8, minHeight: 8 },
+  funnelLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '500', textAlign: 'center' },
+  agingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  agingInfo: { flex: 1 },
+  agingSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  agingMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  agingRight: { alignItems: 'flex-end', gap: 4 },
+  agingValue: { fontSize: rf(14), fontWeight: '700', color: '#374151' },
+  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  riskText: { fontSize: rf(11), fontWeight: '700' },
+  lossRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  lossReason: { fontSize: rf(13), color: '#374151', width: 110 },
+  lossCount: { fontSize: rf(13), fontWeight: '700', color: '#EF4444', width: 24, textAlign: 'right' },
 });

@@ -223,6 +223,34 @@ export interface TaskItemDto {
 
 // ─── Dashboard DTOs ───────────────────────────────────────────────────────────
 
+export interface FunnelStage {
+  stage: string;
+  count: number;
+  value: number;
+}
+
+export interface AgingDeal {
+  school: string;
+  value: number;
+  stage: string;
+  daysInStage: number;
+  risk: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface TopPerformerDto {
+  foId: number;
+  name: string;
+  avatar: string;
+  revenue: number;
+  target: number;
+  targetPct: number;
+  visitsWeek: number;
+  demosMonth: number;
+  dealsWon: number;
+  pipelineLeads: number;
+  status: string;
+}
+
 export interface FoDashboardDto {
   revenue: number;
   revenueTarget: number;
@@ -234,6 +262,13 @@ export interface FoDashboardDto {
   hotLeads: LeadListDto[];
   todaysTasks: TaskItemDto[];
   recentActivities: ActivityDto[];
+  // New fields from backend
+  visitsTargetWeekly?: number;
+  visitsTargetMonthly?: number;
+  demosTargetMonthly?: number;
+  followUpsTargetMonthly?: number;
+  dealsTargetMonthly?: number;
+  allowanceRatePerKm?: number;
 }
 
 export interface FoPerformanceDto {
@@ -263,6 +298,18 @@ export interface ZoneDashboardDto {
   pipelineFunnel?: { stage: string; count: number }[];
   foPerformance: FoPerformanceDto[];
   pendingDeals: DealDto[];
+  // New fields
+  pipelineValue?: number;
+  totalFOs?: number;
+  visitsThisMonth?: number;
+  demosThisMonth?: number;
+  callsThisMonth?: number;
+  visitsTargetMonthly?: number;
+  demosTargetMonthly?: number;
+  callsTargetMonthly?: number;
+  conversionFunnel?: FunnelStage[];
+  agingDeals?: AgingDeal[];
+  revenueChart?: { label: string; value: number }[];
 }
 
 export interface ZoneSummaryDto {
@@ -274,6 +321,8 @@ export interface ZoneSummaryDto {
   winRate: number;
   pipeline: number;
   health: string;
+  foCount?: number;
+  dealsWon?: number;
 }
 
 export interface RegionDashboardDto {
@@ -287,6 +336,16 @@ export interface RegionDashboardDto {
   forecastAccuracy: number;
   zones: ZoneSummaryDto[];
   revenueChart: { label: string; value: number }[];
+  // New fields
+  pipelineValue?: number;
+  totalFOs?: number;
+  totalZones?: number;
+  pendingApprovals?: number;
+  visitsThisMonth?: number;
+  demosThisMonth?: number;
+  conversionFunnel?: FunnelStage[];
+  agingDeals?: AgingDeal[];
+  lossReasons?: { reason: string; count: number }[];
 }
 
 export interface RegionSummaryDto {
@@ -299,6 +358,8 @@ export interface RegionSummaryDto {
   winRate: number;
   forecast: number;
   health: string;
+  activeLeads?: number;
+  foCount?: number;
 }
 
 export interface NationalDashboardDto {
@@ -311,6 +372,17 @@ export interface NationalDashboardDto {
   regions: RegionSummaryDto[];
   revenueChart: { label: string; value: number }[];
   lossReasons: { reason: string; count: number }[];
+  // New fields
+  activeLeads?: number;
+  totalFOs?: number;
+  totalZones?: number;
+  totalRegions?: number;
+  pendingApprovals?: number;
+  visitsThisMonth?: number;
+  demosThisMonth?: number;
+  conversionFunnel?: FunnelStage[];
+  agingDeals?: AgingDeal[];
+  topPerformers?: TopPerformerDto[];
 }
 
 export interface ScaDashboardDto extends NationalDashboardDto {
@@ -320,6 +392,10 @@ export interface ScaDashboardDto extends NationalDashboardDto {
   totalZones?: number;
   directPaymentsTotal?: number;
   pendingAllowances?: number;
+  // New fields (some already inherited via NationalDashboardDto)
+  activeLeads?: number;
+  visitsThisMonth?: number;
+  demosThisMonth?: number;
 }
 
 export interface UserPerformanceDto {

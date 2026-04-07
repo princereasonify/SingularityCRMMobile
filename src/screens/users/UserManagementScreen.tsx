@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock, Eye, EyeOff } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock, Eye, EyeOff, Check } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { authApi } from '../../api/auth';
 import { UserDto, Region, Zone } from '../../types';
@@ -24,6 +24,20 @@ const CREATABLE_ROLES: Record<string, string[]> = {
   RH:  ['ZH', 'FO'],
   ZH:  ['FO'],
 };
+
+const isPasswordValid = (pwd: string) => (
+  pwd.length >= 8 &&
+  /[A-Z]/.test(pwd) &&
+  /[0-9]/.test(pwd) &&
+  /[^A-Za-z0-9]/.test(pwd)
+);
+
+const getPasswordRules = (pwd: string) => [
+  { label: '8+ characters', met: pwd.length >= 8 },
+  { label: 'Uppercase', met: /[A-Z]/.test(pwd) },
+  { label: 'Number', met: /[0-9]/.test(pwd) },
+  { label: 'Special char', met: /[^A-Za-z0-9]/.test(pwd) },
+];
 
 export const UserManagementScreen = ({ navigation }: any) => {
   const { user } = useAuth();
@@ -110,6 +124,10 @@ export const UserManagementScreen = ({ navigation }: any) => {
   const handleSave = async () => {
     if (!form.name || !form.email) { Alert.alert('Error', 'Name and email are required'); return; }
     if (!editingUser && !form.password) { Alert.alert('Error', 'Password is required for new users'); return; }
+    if (form.password && !isPasswordValid(form.password)) {
+      Alert.alert('Error', 'Password must be at least 8 characters with uppercase, number, and special character.');
+      return;
+    }
     setFormLoading(true);
     try {
       if (editingUser) {
@@ -374,6 +392,18 @@ export const UserManagementScreen = ({ navigation }: any) => {
                 rightIcon={showPwd ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />}
                 onRightIconPress={() => setShowPwd((v) => !v)}
               />
+              {form.password.length > 0 && (
+                <View style={styles.pwdRules}>
+                  {getPasswordRules(form.password).map((rule) => (
+                    <View key={rule.label} style={styles.pwdRuleRow}>
+                      <Check size={11} color={rule.met ? '#16A34A' : '#D1D5DB'} />
+                      <Text style={[styles.pwdRuleText, rule.met && { color: '#16A34A' }]}>
+                        {rule.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
               <SelectPicker
                 label="Role *"
                 options={(CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }))}
@@ -487,4 +517,7 @@ const styles = StyleSheet.create({
   autoZoneLabel: { fontSize: rf(13), color: '#6B7280' },
   autoZoneBold: { fontWeight: '700', color: '#374151' },
   autoZoneHint: { fontSize: rf(11), color: '#9CA3AF', marginTop: 4 },
+  pwdRules: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4, marginBottom: 8, paddingHorizontal: 4 },
+  pwdRuleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pwdRuleText: { fontSize: rf(11), color: '#9CA3AF' },
 });

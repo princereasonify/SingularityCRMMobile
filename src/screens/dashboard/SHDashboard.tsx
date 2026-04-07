@@ -4,7 +4,7 @@ import {
   useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LogOut, TrendingUp, Building2, DollarSign, Target } from 'lucide-react-native';
+import { LogOut, TrendingUp, Building2, DollarSign, Target, AlertTriangle } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
@@ -22,6 +22,12 @@ import { formatCurrency } from '../../utils/formatting';
 import { rf, getCardWidth } from '../../utils/responsive';
 
 const COLOR = ROLE_COLORS.SH;
+
+const RISK_COLORS: Record<string, string> = {
+  HIGH: '#EF4444',
+  MEDIUM: '#F59E0B',
+  LOW: '#22C55E',
+};
 
 export const SHDashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
@@ -127,6 +133,44 @@ export const SHDashboard = ({ navigation }: any) => {
           />
         </View>
 
+        {(data?.activeLeads !== undefined || data?.pendingApprovals !== undefined) && (
+          <View style={styles.kpiGrid}>
+            <KPICard
+              title="Active Leads"
+              value={String(data?.activeLeads || 0)}
+              subtitle="National pipeline"
+              icon={<TrendingUp size={16} color="#3B82F6" />}
+              iconBg="#EFF6FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Pending Approvals"
+              value={String(data?.pendingApprovals || 0)}
+              subtitle="Action needed"
+              icon={<Target size={16} color="#F59E0B" />}
+              iconBg="#FFFBEB"
+              valueColor={data?.pendingApprovals ? '#F59E0B' : '#111827'}
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Visits This Month"
+              value={String(data?.visitsThisMonth || 0)}
+              subtitle={`${data?.totalFOs || 0} FOs nationwide`}
+              icon={<Building2 size={16} color="#8B5CF6" />}
+              iconBg="#F5F3FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Demos This Month"
+              value={String(data?.demosThisMonth || 0)}
+              subtitle={`${data?.totalRegions || 0} regions`}
+              icon={<DollarSign size={16} color="#22C55E" />}
+              iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+          </View>
+        )}
+
         {/* Regional Scorecard */}
         {(data?.regions?.length || 0) > 0 && (
           <Card style={styles.section}>
@@ -134,24 +178,74 @@ export const SHDashboard = ({ navigation }: any) => {
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ minWidth: tablet ? width - 80 : Math.max(width - 64, 560) }}>
                 <View style={styles.tableHeader}>
-                  {['Region', 'Revenue', 'Target %', 'Schools', 'Win Rate', 'Health'].map((h, i) => (
-                    <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]} numberOfLines={1}>{h}</Text>
-                  ))}
+                  <Text style={[styles.thCell, { flex: 2 }]}>Region</Text>
+                  <Text style={[styles.thCell, { flex: 1.3 }]}>Revenue</Text>
+                  <Text style={[styles.thCell, { flex: 1 }]}>Target %</Text>
+                  <Text style={[styles.thCell, { flex: 1 }]}>Leads</Text>
+                  <Text style={[styles.thCell, { flex: 1 }]}>Win Rate</Text>
+                  <Text style={[styles.thCell, { flex: 1 }]}>Health</Text>
                 </View>
                 {(data?.regions || []).map((reg) => (
                   <View key={reg.id} style={styles.tableRow}>
                     <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{reg.name}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{formatCurrency(reg.revenue)}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2, color: getProgressColor(reg.targetPct) }]}>{reg.targetPct}%</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.schools}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.winRate}%</Text>
-                    <View style={{ flex: 1.2, alignItems: 'flex-start' }}>
+                    <Text style={[styles.tdCell, { flex: 1.3 }]}>{formatCurrency(reg.revenue)}</Text>
+                    <Text style={[styles.tdCell, { flex: 1, color: getProgressColor(reg.targetPct) }]}>{reg.targetPct}%</Text>
+                    <Text style={[styles.tdCell, { flex: 1 }]}>{reg.activeLeads ?? reg.schools}</Text>
+                    <Text style={[styles.tdCell, { flex: 1 }]}>{reg.winRate}%</Text>
+                    <View style={{ flex: 1, alignItems: 'flex-start' }}>
                       <Badge label={reg.health} color={getStatusColor(reg.health)} size="sm" />
                     </View>
                   </View>
                 ))}
               </View>
             </ScrollView>
+          </Card>
+        )}
+
+        {/* Conversion Funnel */}
+        {(data?.conversionFunnel?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📊 Conversion Funnel</Text>
+            <View style={styles.funnelContainer}>
+              {(data?.conversionFunnel || []).map((item) => {
+                const maxCount = Math.max(...(data?.conversionFunnel || []).map((s) => s.count), 1);
+                const barH = Math.max((item.count / maxCount) * 120, 8);
+                const FUNNEL_COLORS: Record<string, string> = {
+                  'New Lead': '#9CA3AF', 'Contacted': '#9CA3AF',
+                  'Qualified': '#38BDF8', 'Demo': '#818CF8',
+                  'Proposal': '#FBBF24', 'Negotiation': '#F97316', 'Won': '#14B8A6',
+                };
+                const color = FUNNEL_COLORS[item.stage] || '#9CA3AF';
+                return (
+                  <View key={item.stage} style={styles.funnelBar}>
+                    <Text style={styles.funnelCount}>{item.count}</Text>
+                    <View style={[styles.funnelFill, { height: barH, backgroundColor: color }]} />
+                    <Text style={styles.funnelLabel} numberOfLines={2}>{item.stage}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
+
+        {/* Aging Deals */}
+        {(data?.agingDeals?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>⏰ Aging Deals</Text>
+            {(data?.agingDeals || []).map((deal, idx) => (
+              <View key={idx} style={styles.agingRow}>
+                <View style={styles.agingInfo}>
+                  <Text style={styles.agingSchool} numberOfLines={1}>{deal.school}</Text>
+                  <Text style={styles.agingMeta}>{deal.stage} · {deal.daysInStage}d</Text>
+                </View>
+                <View style={styles.agingRight}>
+                  <Text style={styles.agingValue}>{formatCurrency(deal.value)}</Text>
+                  <View style={[styles.riskBadge, { backgroundColor: RISK_COLORS[deal.risk] + '22' }]}>
+                    <Text style={[styles.riskText, { color: RISK_COLORS[deal.risk] }]}>{deal.risk}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
           </Card>
         )}
 
@@ -195,6 +289,33 @@ export const SHDashboard = ({ navigation }: any) => {
           </Card>
         )}
 
+        {/* Top Performers */}
+        {(data?.topPerformers?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>🏆 Top Performers</Text>
+            {(data?.topPerformers || []).map((fo, idx) => (
+              <View key={fo.foId} style={styles.foRow}>
+                <Text style={styles.foRank}>{idx < 3 ? ['🥇', '🥈', '🥉'][idx] : `${idx + 1}`}</Text>
+                <Avatar initials={fo.avatar} color={COLOR.primary} size={36} />
+                <View style={styles.foInfo}>
+                  <Text style={styles.foName}>{fo.name}</Text>
+                  <View style={styles.foStats}>
+                    <Text style={styles.foStat}>{formatCurrency(fo.revenue)}</Text>
+                    <Text style={styles.foDot}>·</Text>
+                    <Text style={[styles.foStat, { fontWeight: '700', color: fo.targetPct >= 70 ? '#14B8A6' : fo.targetPct >= 40 ? '#F59E0B' : '#EF4444' }]}>{fo.targetPct}%</Text>
+                    <Text style={styles.foDot}>·</Text>
+                    <Text style={styles.foStat}>{fo.dealsWon} deals</Text>
+                  </View>
+                  <View style={{ height: 4, backgroundColor: '#F3F4F6', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+                    <View style={{ width: `${Math.min(fo.targetPct, 100)}%` as any, height: 4, backgroundColor: COLOR.primary, borderRadius: 2 }} />
+                  </View>
+                </View>
+                <Badge label={fo.status} color={fo.targetPct >= 70 ? '#16A34A' : fo.targetPct >= 40 ? '#D97706' : '#DC2626'} size="sm" />
+              </View>
+            ))}
+          </Card>
+        )}
+
         <View style={{ height: 24 }} />
       </ScrollView>
       <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
@@ -219,6 +340,16 @@ const DEMO_DATA: NationalDashboardDto = {
     { reason: 'Price', count: 12 }, { reason: 'Competitor', count: 8 },
     { reason: 'No Decision', count: 6 }, { reason: 'No Fit', count: 4 },
   ],
+  activeLeads: 450,
+  totalFOs: 80,
+  totalZones: 16,
+  totalRegions: 5,
+  pendingApprovals: 7,
+  visitsThisMonth: 1800,
+  demosThisMonth: 240,
+  conversionFunnel: [],
+  agingDeals: [],
+  topPerformers: [],
 };
 
 const styles = StyleSheet.create({
@@ -264,4 +395,24 @@ const styles = StyleSheet.create({
   lossRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   lossReason: { fontSize: rf(13), color: '#374151', width: 100 },
   lossCount: { fontSize: rf(13), fontWeight: '700', color: '#EF4444', width: 24, textAlign: 'right' },
+  funnelContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: 160, paddingTop: 8 },
+  funnelBar: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  funnelCount: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  funnelFill: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8, minHeight: 8 },
+  funnelLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '500', textAlign: 'center' },
+  agingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  agingInfo: { flex: 1 },
+  agingSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  agingMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  agingRight: { alignItems: 'flex-end', gap: 4 },
+  agingValue: { fontSize: rf(14), fontWeight: '700', color: '#374151' },
+  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  riskText: { fontSize: rf(11), fontWeight: '700' },
+  foRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  foRank: { fontSize: rf(16), width: 28, textAlign: 'center' },
+  foInfo: { flex: 1 },
+  foName: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  foStats: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  foStat: { fontSize: rf(12), color: '#6B7280' },
+  foDot: { color: '#D1D5DB' },
 });

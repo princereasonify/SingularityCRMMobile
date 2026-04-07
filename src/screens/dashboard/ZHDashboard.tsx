@@ -4,7 +4,7 @@ import {
   useWindowDimensions, TouchableOpacity, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LogOut, CheckCircle, XCircle, Users, TrendingUp, Clock, Target } from 'lucide-react-native';
+import { LogOut, CheckCircle, XCircle, Users, TrendingUp, Clock, Target, MapPin, Monitor, AlertTriangle, BarChart2 } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
@@ -33,11 +33,20 @@ const PIPELINE_STAGES = [
 ];
 
 const STAGE_COLORS: Record<string, string> = {
+  'New Lead': '#9CA3AF',
   'New/Contacted': '#9CA3AF',
+  'Contacted': '#9CA3AF',
   'Qualified': '#38BDF8',
   'Demo': '#818CF8',
   'Proposal': '#FBBF24',
+  'Negotiation': '#F97316',
   'Won': '#14B8A6',
+};
+
+const RISK_COLORS: Record<string, string> = {
+  HIGH: '#EF4444',
+  MEDIUM: '#F59E0B',
+  LOW: '#22C55E',
 };
 
 export const ZHDashboard = ({ navigation }: any) => {
@@ -124,12 +133,12 @@ export const ZHDashboard = ({ navigation }: any) => {
         contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLOR.primary]} />}
       >
-        {/* KPIs */}
+        {/* KPIs - Row 1 */}
         <View style={styles.kpiGrid}>
           <KPICard
             title="Zone Revenue MTD"
             value={formatCurrency(data?.revenueMTD || 0)}
-            subtitle={`${data?.targetPct || 0}% of ${formatCurrency(data?.revenueTarget || 0)} target`}
+            subtitle={`${data?.targetPct || 0}% of ${formatCurrency(data?.revenueTarget || 0)}`}
             progress={data?.targetPct || 0}
             progressColor={COLOR.primary}
             icon={<TrendingUp size={16} color={COLOR.primary} />}
@@ -137,9 +146,9 @@ export const ZHDashboard = ({ navigation }: any) => {
             style={{ width: cardW }}
           />
           <KPICard
-            title="Active Pipeline"
-            value={String(data?.activePipeline || 0)}
-            subtitle="Leads across all FOs"
+            title="Pipeline Value"
+            value={formatCurrency(data?.pipelineValue || data?.activePipeline || 0)}
+            subtitle={`${data?.activePipeline || 0} active leads`}
             icon={<Users size={16} color="#3B82F6" />}
             iconBg="#EFF6FF"
             style={{ width: cardW }}
@@ -164,6 +173,44 @@ export const ZHDashboard = ({ navigation }: any) => {
             style={{ width: cardW }}
           />
         </View>
+        {/* Activity Row */}
+        {(data?.visitsThisMonth !== undefined || data?.demosThisMonth !== undefined) && (
+          <View style={styles.kpiGrid}>
+            <KPICard
+              title="Visits This Month"
+              value={String(data?.visitsThisMonth || 0)}
+              subtitle={`/ ${data?.visitsTargetMonthly || 0} target`}
+              icon={<MapPin size={16} color="#8B5CF6" />}
+              iconBg="#F5F3FF"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Demos This Month"
+              value={String(data?.demosThisMonth || 0)}
+              subtitle={`/ ${data?.demosTargetMonthly || 0} target`}
+              icon={<Monitor size={16} color="#F59E0B" />}
+              iconBg="#FFFBEB"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="Total FOs"
+              value={String(data?.totalFOs || 0)}
+              subtitle="In your zone"
+              icon={<Users size={16} color="#22C55E" />}
+              iconBg="#F0FDF4"
+              style={{ width: cardW }}
+            />
+            <KPICard
+              title="At Risk FOs"
+              value={String(data?.atRiskFOs || 0)}
+              subtitle="Need attention"
+              icon={<AlertTriangle size={16} color="#EF4444" />}
+              iconBg="#FEF2F2"
+              valueColor={data?.atRiskFOs ? '#EF4444' : '#111827'}
+              style={{ width: cardW }}
+            />
+          </View>
+        )}
 
         {/* Pending Deal Approvals */}
         {(data?.pendingDeals?.length || 0) > 0 && (
@@ -209,8 +256,9 @@ export const ZHDashboard = ({ navigation }: any) => {
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>📊 Zone Pipeline Funnel (All FOs)</Text>
           <View style={styles.funnelContainer}>
-            {(data?.pipelineFunnel || PIPELINE_STAGES).map((item) => {
-              const maxCount = Math.max(...(data?.pipelineFunnel || PIPELINE_STAGES).map((s) => s.count), 1);
+            {(data?.conversionFunnel || data?.pipelineFunnel || PIPELINE_STAGES).map((item) => {
+              const funnelData = data?.conversionFunnel || data?.pipelineFunnel || PIPELINE_STAGES;
+              const maxCount = Math.max(...funnelData.map((s) => s.count), 1);
               const barHeight = Math.max((item.count / maxCount) * 120, 8);
               const color = STAGE_COLORS[item.stage] || '#9CA3AF';
               return (
@@ -253,6 +301,49 @@ export const ZHDashboard = ({ navigation }: any) => {
           </Card>
         )}
 
+        {/* Revenue Trend */}
+        {(data?.revenueChart?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>📈 Revenue Trend</Text>
+            <View style={styles.chartArea}>
+              {(data?.revenueChart || []).map((point) => {
+                const maxVal = Math.max(...(data?.revenueChart || []).map((p) => p.value));
+                const pct = maxVal > 0 ? (point.value / maxVal) * 100 : 0;
+                return (
+                  <View key={point.label} style={styles.barWrap}>
+                    <Text style={styles.barValue}>{formatCurrency(point.value)}</Text>
+                    <View style={styles.barContainer}>
+                      <View style={[styles.bar, { height: `${pct}%` as any, backgroundColor: COLOR.primary }]} />
+                    </View>
+                    <Text style={styles.barLabel}>{point.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
+
+        {/* Aging Deals */}
+        {(data?.agingDeals?.length || 0) > 0 && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>⏰ Aging Deals</Text>
+            {(data?.agingDeals || []).map((deal, idx) => (
+              <View key={idx} style={styles.agingRow}>
+                <View style={styles.agingInfo}>
+                  <Text style={styles.agingSchool} numberOfLines={1}>{deal.school}</Text>
+                  <Text style={styles.agingMeta}>{deal.stage} · {deal.daysInStage} days</Text>
+                </View>
+                <View style={styles.agingRight}>
+                  <Text style={styles.agingValue}>{formatCurrency(deal.value)}</Text>
+                  <View style={[styles.riskBadge, { backgroundColor: RISK_COLORS[deal.risk] + '22' }]}>
+                    <Text style={[styles.riskText, { color: RISK_COLORS[deal.risk] }]}>{deal.risk}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </Card>
+        )}
+
         <View style={{ height: 24 }} />
       </ScrollView>
       <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
@@ -272,6 +363,21 @@ const DEMO_DATA: ZoneDashboardDto = {
   pipelineFunnel: PIPELINE_STAGES,
   foPerformance: [],
   pendingDeals: [],
+  pipelineValue: 2500000,
+  totalFOs: 5,
+  visitsThisMonth: 120,
+  demosThisMonth: 18,
+  callsThisMonth: 340,
+  visitsTargetMonthly: 400,
+  demosTargetMonthly: 140,
+  callsTargetMonthly: 1000,
+  conversionFunnel: [],
+  agingDeals: [],
+  revenueChart: [
+    { label: 'Nov', value: 1200000 }, { label: 'Dec', value: 1800000 },
+    { label: 'Jan', value: 2400000 }, { label: 'Feb', value: 2100000 },
+    { label: 'Mar', value: 2700000 }, { label: 'Apr', value: 800000 },
+  ],
 };
 
 const styles = StyleSheet.create({
@@ -350,4 +456,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
+  chartArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120, marginTop: 8 },
+  barWrap: { flex: 1, alignItems: 'center' },
+  barContainer: { width: '100%', height: 80, justifyContent: 'flex-end' },
+  bar: { width: '70%', borderRadius: 4, alignSelf: 'center', minHeight: 4 },
+  barLabel: { fontSize: rf(10), color: '#9CA3AF', marginTop: 4 },
+  barValue: { fontSize: rf(9), color: '#6B7280', marginBottom: 2 },
+  agingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  agingInfo: { flex: 1 },
+  agingSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  agingMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  agingRight: { alignItems: 'flex-end', gap: 4 },
+  agingValue: { fontSize: rf(14), fontWeight: '700', color: '#374151' },
+  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  riskText: { fontSize: rf(11), fontWeight: '700' },
 });

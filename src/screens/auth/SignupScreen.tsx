@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, EyeOff, BookOpen, ArrowLeft, CheckCircle } from 'lucide-react-native';
+import { Eye, EyeOff, BookOpen, ArrowLeft, CheckCircle, Check } from 'lucide-react-native';
 import { authApi } from '../../api/auth';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
@@ -25,6 +25,20 @@ const ROLE_OPTIONS = [
 ];
 
 const ACCENT = '#0d9488';
+
+const isPasswordValid = (pwd: string) => (
+  pwd.length >= 8 &&
+  /[A-Z]/.test(pwd) &&
+  /[0-9]/.test(pwd) &&
+  /[^A-Za-z0-9]/.test(pwd)
+);
+
+const getPasswordRules = (pwd: string) => [
+  { label: 'At least 8 characters', met: pwd.length >= 8 },
+  { label: 'One uppercase letter', met: /[A-Z]/.test(pwd) },
+  { label: 'One number', met: /[0-9]/.test(pwd) },
+  { label: 'One special character', met: /[^A-Za-z0-9]/.test(pwd) },
+];
 
 export const SignupScreen = ({ navigation }: any) => {
   const { width } = useWindowDimensions();
@@ -54,7 +68,7 @@ export const SignupScreen = ({ navigation }: any) => {
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email format';
     if (!form.password) e.password = 'Password is required';
-    else if (form.password.length < 4) e.password = 'Password too short';
+    else if (!isPasswordValid(form.password)) e.password = 'Password does not meet requirements';
     if (!form.phoneNumber.trim()) e.phoneNumber = 'Phone number is required';
     else if (!/^\d{10}$/.test(form.phoneNumber.trim())) e.phoneNumber = 'Phone number must be exactly 10 digits';
     if (!form.role) e.role = 'Please select a role';
@@ -215,6 +229,19 @@ export const SignupScreen = ({ navigation }: any) => {
               onRightIconPress={() => setShowPwd((v) => !v)}
             />
 
+            {form.password.length > 0 && (
+              <View style={styles.pwdRules}>
+                {getPasswordRules(form.password).map((rule) => (
+                  <View key={rule.label} style={styles.pwdRuleRow}>
+                    <Check size={12} color={rule.met ? '#16A34A' : '#D1D5DB'} />
+                    <Text style={[styles.pwdRuleText, { color: rule.met ? '#16A34A' : '#9CA3AF' }]}>
+                      {rule.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             <Input
               label="Phone Number"
               value={form.phoneNumber}
@@ -249,6 +276,7 @@ export const SignupScreen = ({ navigation }: any) => {
               color={ACCENT}
               style={styles.signupBtn}
               size="lg"
+              disabled={form.password.length > 0 && !isPasswordValid(form.password)}
             />
           </View>
 
@@ -388,4 +416,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     lineHeight: 18,
   },
+  pwdRules: { backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12, marginTop: -8, marginBottom: 8, gap: 6 },
+  pwdRuleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pwdRuleText: { fontSize: rf(12) },
 });
