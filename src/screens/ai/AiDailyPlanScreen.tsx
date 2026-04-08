@@ -88,7 +88,7 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading your plan..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="AI Daily Plan"
         subtitle={today}

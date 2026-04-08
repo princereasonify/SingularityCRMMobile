@@ -132,7 +132,7 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading config..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Allowance Config"
         color={COLOR.primary}

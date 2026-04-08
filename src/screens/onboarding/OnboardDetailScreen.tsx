@@ -76,7 +76,7 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
   if (!item) return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="Onboarding" color={COLOR.primary} onBack={() => navigation.goBack()} />
       <EmptyState title="Not found" icon="📋" />
     </SafeAreaView>

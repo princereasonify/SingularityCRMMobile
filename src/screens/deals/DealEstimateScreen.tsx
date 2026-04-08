@@ -135,7 +135,7 @@ export const DealEstimateScreen = ({ navigation }: any) => {
   );
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView style={s.safe} edges={['bottom']}>
       <ScreenHeader title="Deal Estimate" color={COLOR.primary} onMenu={() => navigation.toggleDrawer()} />
 
       <ScrollView

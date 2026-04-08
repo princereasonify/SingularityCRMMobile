@@ -112,7 +112,7 @@ export const PaymentsScreen = ({ navigation }: any) => {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Payments"
         color={COLOR.primary}

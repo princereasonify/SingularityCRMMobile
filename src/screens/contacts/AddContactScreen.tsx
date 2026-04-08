@@ -97,7 +97,7 @@ export const AddContactScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title={isEdit ? 'Edit Contact' : 'Add Contact'}
         color={COLOR.primary}

@@ -196,7 +196,7 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="Assign Demo" subtitle="Schedule a product demo" color={COLOR.primary} onBack={() => navigation.goBack()} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

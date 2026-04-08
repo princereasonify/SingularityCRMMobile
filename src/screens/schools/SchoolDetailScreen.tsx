@@ -73,7 +73,7 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
   if (!school) return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="School" color={COLOR.primary} onBack={() => navigation.goBack()} />
       <EmptyState title="School not found" icon="🏫" />
     </SafeAreaView>

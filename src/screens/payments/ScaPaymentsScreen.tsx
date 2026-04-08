@@ -176,7 +176,7 @@ export const ScaPaymentsScreen = ({ navigation }: any) => {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="SCA Payments"
         color={PRIMARY}

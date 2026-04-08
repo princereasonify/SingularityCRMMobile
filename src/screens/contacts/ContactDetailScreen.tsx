@@ -38,7 +38,7 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
   if (!contact) return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="Contact" color={COLOR.primary} onBack={() => navigation.goBack()} />
       <EmptyState title="Contact not found" icon="👤" />
     </SafeAreaView>

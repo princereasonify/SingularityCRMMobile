@@ -638,7 +638,7 @@ export const MyDayTrackingScreen = () => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading tracking..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="My Day Tracking" subtitle={user?.zone || user?.name || 'Tracking'} color={COLOR.primary} onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())} />
 
       <ScrollView

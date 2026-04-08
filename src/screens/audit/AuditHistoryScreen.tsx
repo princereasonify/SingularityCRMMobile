@@ -100,7 +100,7 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Change History"
         subtitle={title ?? `${entityType} #${entityId}`}

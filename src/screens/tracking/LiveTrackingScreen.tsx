@@ -281,7 +281,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
   const hasLiveLocation = isToday && liveData.latitude && liveData.longitude;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#111827' }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#111827' }} edges={['bottom']}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={ivStyles.header}>
         <TouchableOpacity

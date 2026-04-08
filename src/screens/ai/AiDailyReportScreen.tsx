@@ -39,7 +39,7 @@ export const AiDailyReportScreen = ({ navigation }: any) => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading report..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="Daily Report" subtitle={today} color={COLOR.primary} onBack={() => navigation.goBack()} />
       <ScrollView
         style={styles.scroll}

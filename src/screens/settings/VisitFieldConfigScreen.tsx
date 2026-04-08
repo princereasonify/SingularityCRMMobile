@@ -159,7 +159,7 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading fields..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Visit Field Config"
         color={COLOR.primary}

@@ -155,7 +155,7 @@ export const RoutePlannerScreen = ({ navigation }: any) => {
   const visitedCount = stops.filter(s => s.visited).length;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Route Planner"
         color={COLOR.primary}

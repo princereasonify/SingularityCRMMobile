@@ -66,7 +66,7 @@ export const AiInsightsScreen = ({ navigation }: any) => {
   const hasAny = teamInsights.length + pipelineInsights.length + recommendations.length > 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="AI Insights" subtitle="Updated daily" color={COLOR.primary} onBack={() => navigation.goBack()} />
       <ScrollView
         style={styles.scroll}

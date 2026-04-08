@@ -108,7 +108,7 @@ export const DashboardCustomizeScreen = ({ navigation }: any) => {
   const visibleCount = widgets.filter(w => w.visible).length;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Customize Dashboard"
         subtitle={`${visibleCount} of ${widgets.length} widgets visible`}

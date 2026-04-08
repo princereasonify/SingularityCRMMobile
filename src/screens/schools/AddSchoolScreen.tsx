@@ -340,7 +340,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title={isEdit ? 'Edit School' : 'Add School'}
         color={COLOR.primary}

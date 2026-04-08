@@ -152,7 +152,7 @@ export const HomeLocationScreen = ({ navigation }: any) => {
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="Home Location"
         color={COLOR.primary}

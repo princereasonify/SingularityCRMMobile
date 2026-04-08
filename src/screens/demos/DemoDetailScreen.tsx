@@ -112,7 +112,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
   if (!demo) return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader title="Demo" color={COLOR.primary} onBack={() => navigation.goBack()} />
       <EmptyState title="Demo not found" icon="🖥️" />
     </SafeAreaView>

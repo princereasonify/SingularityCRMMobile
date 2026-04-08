@@ -879,7 +879,7 @@ export const UserManualScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title="User Manual"
         subtitle="SingularityCRM v1.0.0"
