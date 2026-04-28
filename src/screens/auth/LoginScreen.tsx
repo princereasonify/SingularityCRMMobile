@@ -17,14 +17,6 @@ import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { rf } from '../../utils/responsive';
 
-const DEMO_CREDS = [
-  { role: 'FO',  email: 'arjun@educrm.in',  password: 'fo123',  color: '#0d9488' },
-  { role: 'ZH',  email: 'priya@educrm.in',  password: 'zh123',  color: '#7c3aed' },
-  { role: 'RH',  email: 'rajesh@educrm.in', password: 'rh123',  color: '#ea580c' },
-  { role: 'SH',  email: 'anita@educrm.in',  password: 'sh123',  color: '#2563eb' },
-  { role: 'SCA', email: 'supersaleadmin@gmail.com', password: 'admin123', color: '#E11D48' },
-];
-
 export const LoginScreen = ({ navigation }: any) => {
   const { login } = useAuth();
   const { width } = useWindowDimensions();
@@ -56,12 +48,6 @@ export const LoginScreen = ({ navigation }: any) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillCreds = (cred: (typeof DEMO_CREDS)[0]) => {
-    setEmail(cred.email);
-    setPassword(cred.password);
-    setErrors({});
   };
 
   return (
@@ -136,31 +122,6 @@ export const LoginScreen = ({ navigation }: any) => {
               </TouchableOpacity>
             </View>
 
-            {/* Demo Credentials */}
-            <View style={styles.demoSection}>
-              <View style={styles.divider}>
-                <View style={styles.divLine} />
-                <Text style={styles.divText}>Quick Login (Demo)</Text>
-                <View style={styles.divLine} />
-              </View>
-              <View style={styles.demoGrid}>
-                {DEMO_CREDS.map((c) => (
-                  <TouchableOpacity
-                    key={c.role}
-                    style={[styles.demoChip, { borderColor: c.color + '44', backgroundColor: c.color + '0D' }]}
-                    onPress={() => fillCreds(c)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.demoRolePill, { backgroundColor: c.color }]}>
-                      <Text style={styles.demoRoleText}>{c.role}</Text>
-                    </View>
-                    <Text style={[styles.demoEmail, { color: c.color }]} numberOfLines={1}>
-                      {c.email.split('@')[0]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
           </View>
 
           {/* Delete Account */}
@@ -254,54 +215,6 @@ const styles = StyleSheet.create({
   },
   loginBtn: {
     marginTop: 4,
-  },
-  demoSection: {
-    marginTop: 24,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  divLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  divText: {
-    fontSize: rf(12),
-    color: '#9CA3AF',
-    marginHorizontal: 12,
-  },
-  demoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  demoChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 100,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    gap: 6,
-    width: '48%',
-  },
-  demoRolePill: {
-    borderRadius: 100,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  demoRoleText: {
-    fontSize: rf(11),
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  demoEmail: {
-    fontSize: rf(12),
-    fontWeight: '500',
-    flex: 1,
   },
   signupRow: {
     flexDirection: 'row',

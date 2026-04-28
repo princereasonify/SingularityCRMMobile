@@ -81,10 +81,11 @@ export const trackingApi = {
     return res;
   },
 
-  getAllowances: async (from: string, to: string) => {
-    const payload = { from, to };
-    log('getAllowances', payload);
-    const res = await apiClient.get('/tracking/allowances', { params: { from, to } });
+  getAllowances: async (from: string, to: string, userId?: string) => {
+    const params: any = { from, to };
+    if (userId) params.userId = userId;
+    log('getAllowances', params);
+    const res = await apiClient.get('/tracking/allowances', { params });
     log('getAllowances', undefined, res.data);
     return res;
   },
@@ -93,6 +94,13 @@ export const trackingApi = {
     log('approveAllowance', { id, ...payload });
     const res = await apiClient.patch(`/tracking/allowances/${id}`, payload);
     log('approveAllowance', undefined, res.data);
+    return res;
+  },
+
+  bulkApproveAllowances: async (payload: { ids: number[]; approved: boolean }) => {
+    log('bulkApproveAllowances', payload);
+    const res = await apiClient.post('/tracking/allowances/bulk-approve', payload);
+    log('bulkApproveAllowances', undefined, res.data);
     return res;
   },
 

@@ -25,4 +25,5 @@ export const dashboardApi = {
   getTeamPerformance: () => apiClient.get<FoPerformanceDto[]>('/dashboard/team-performance'),
   getPerformanceTracking: () =>
     apiClient.get<UserPerformanceDto[]>('/dashboard/performance-tracking'),
+  getReportableUsers: () => apiClient.get<any[]>('/dashboard/reportable-users'),
 };

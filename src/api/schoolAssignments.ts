@@ -36,4 +36,7 @@ export const schoolAssignmentsApi = {
 
   deleteAssignment: (id: number) =>
     apiClient.delete(`/school-assignments/${id}`),
+
+  reassignSchool: (data: { schoolId: number; newUserId: number; assignmentDate: string; notes?: string }) =>
+    apiClient.post('/school-assignments/reassign', data),
 };

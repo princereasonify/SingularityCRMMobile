@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,16 +28,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserDto | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isLoggingOut = useRef(false);
 
+  // clearSession: wipes local state only — safe to call from 401 handler
+  const clearSession = useCallback(async () => {
+    if (isLoggingOut.current) return;
+    isLoggingOut.current = true;
+    await AsyncStorage.multiRemove(['auth_token', 'auth_user']);
+    setToken(null);
+    setUser(null);
+    isLoggingOut.current = false;
+  }, []);
+
+  // logout: user-initiated — also tells the server
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
     } catch (_) {}
-    await AsyncStorage.removeItem('auth_token');
-    await AsyncStorage.removeItem('auth_user');
-    setToken(null);
-    setUser(null);
-  }, []);
+    await clearSession();
+  }, [clearSession]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -53,8 +63,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(false);
     };
     bootstrap();
-    setUnauthorizedHandler(() => logout());
-  }, [logout]);
+    // 401 handler skips server call — token is already invalid
+    setUnauthorizedHandler(() => clearSession());
+  }, [clearSession]);
 
   const login = async (email: string, password: string) => {
     let deviceInfo;

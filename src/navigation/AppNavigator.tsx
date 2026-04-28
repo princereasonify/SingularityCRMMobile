@@ -11,6 +11,7 @@ import {
   Building2, Settings, CreditCard, Monitor,
   ClipboardList, CalendarClock, CalendarDays,
   Activity, Briefcase, Menu, DollarSign, FileEdit, Home, Calculator,
+  CalendarOff, Wallet, Map, Library, Users,
 } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
 import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
@@ -100,6 +101,13 @@ import { AuditHistoryScreen } from '../screens/audit/AuditHistoryScreen';
 // Weekly Plan
 import { WeeklyPlanScreen } from '../screens/weeklyPlan/WeeklyPlanScreen';
 
+// New feature screens
+import { LeaveManagementScreen } from '../screens/leaves/LeaveManagementScreen';
+import { AllowancesScreen } from '../screens/allowances/AllowancesScreen';
+import { RegionsZonesScreen } from '../screens/regionsZones/RegionsZonesScreen';
+import { ReportsLibraryScreen } from '../screens/reports/ReportsLibraryScreen';
+import { TeamManagementScreen } from '../screens/team/TeamManagementScreen';
+
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -173,19 +181,21 @@ function FODrawer() {
       <Drawer.Screen name="Dashboard" component={FODashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="Activity" component={ActivityLogScreen} options={{ drawerIcon: DrawerIcon(Activity) }} />
-      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Activity Log" component={ActivityLogScreen} options={{ drawerIcon: DrawerIcon(Activity) }} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
       <Drawer.Screen name="Route Planner" component={RoutePlannerScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="My Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="My Stats" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="My Performance" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="My Tracking" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -197,22 +207,23 @@ function ZHDrawer() {
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
+      <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
-      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -224,22 +235,24 @@ function RHDrawer() {
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
-      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
+      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Map) }} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -251,24 +264,28 @@ function SHDrawer() {
   return (
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="My Day" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
-      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Allowance" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
-      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
+      <Drawer.Screen name="Payments" component={PaymentsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CreditCard) }} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
+      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
+      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
+      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Map) }} />
+      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Library) }} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
+      <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -281,23 +298,25 @@ function SCADrawer() {
     <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
       <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
       <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="New Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Onboard" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
       <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
       <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Gateway" component={ScaPaymentsScreen} options={{ drawerIcon: DrawerIcon(CreditCard) }} />
+      <Drawer.Screen name="Deal Payments" component={ScaPaymentsScreen} options={{ drawerIcon: DrawerIcon(CreditCard) }} />
       <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Team" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="Live" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Week Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Allowance" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
-      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
+      <Drawer.Screen name="Performance" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
       <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
+      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
+      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Map) }} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
     </Drawer.Navigator>
   );
@@ -468,6 +487,13 @@ export const AppNavigator = () => {
 
             {/* Weekly Plan */}
             <Stack.Screen name="WeeklyPlanScreen" component={WeeklyPlanScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* New feature screens */}
+            <Stack.Screen name="LeaveManagement" component={LeaveManagementScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="AllowancesScreen" component={AllowancesScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="RegionsZones" component={RegionsZonesScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="ReportsLibrary" component={ReportsLibraryScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="TeamManagement" component={TeamManagementScreen} options={{ animation: 'slide_from_right' }} />
           </>
         )}
       </Stack.Navigator>

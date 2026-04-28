@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, Pressable, ScrollView, useWindowDimensions,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, Pressable, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, Edit2, Trash2, X, Globe, UserCheck, Clock, Eye, EyeOff, Check } from 'lucide-react-native';
@@ -369,17 +369,24 @@ export const UserManagementScreen = ({ navigation }: any) => {
       )}
 
       {/* User Create/Edit Modal */}
-      <Modal visible={showUserModal} animationType="slide" transparent>
-        <Pressable style={styles.overlay} onPress={() => setShowUserModal(false)}>
-          <Pressable style={[styles.modalSheet, tablet && styles.modalTablet]} onPress={() => {}}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingUser ? 'Edit User' : 'Create User'}</Text>
-              <TouchableOpacity onPress={() => setShowUserModal(false)}>
-                <X size={22} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <Modal visible={showUserModal} animationType="fade" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <Pressable style={styles.overlay} onPress={() => setShowUserModal(false)}>
+            <Pressable style={[styles.modalSheet, tablet && styles.modalTablet]} onPress={() => {}}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editingUser ? 'Edit User' : 'Create User'}</Text>
+                <TouchableOpacity onPress={() => setShowUserModal(false)}>
+                  <X size={22} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 0 }}>
+              <SelectPicker
+                label="Role *"
+                options={(CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }))}
+                value={form.role}
+                onChange={(v) => set('role', v)}
+                accentColor={COLOR.primary}
+              />
               <Input label="Full Name *" value={form.name} onChangeText={(v) => set('name', v)} placeholder="e.g. Arjun Mehta" accentColor={COLOR.primary} />
               <Input label="Email *" value={form.email} onChangeText={(v) => set('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="email@educrm.in" accentColor={COLOR.primary} />
               <Input
@@ -404,13 +411,6 @@ export const UserManagementScreen = ({ navigation }: any) => {
                   ))}
                 </View>
               )}
-              <SelectPicker
-                label="Role *"
-                options={(CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }))}
-                value={form.role}
-                onChange={(v) => set('role', v)}
-                accentColor={COLOR.primary}
-              />
               {role === 'ZH' && !editingUser ? (
                 <View style={styles.autoZoneBox}>
                   <Text style={styles.autoZoneLabel}>
@@ -442,10 +442,11 @@ export const UserManagementScreen = ({ navigation }: any) => {
                   )}
                 </>
               )}
-              <Button title={editingUser ? 'Update User' : 'Create User'} onPress={handleSave} loading={formLoading} color={COLOR.primary} size="lg" style={{ marginTop: 8, marginBottom: 32 }} />
-            </ScrollView>
+              <Button title={editingUser ? 'Update User' : 'Create User'} onPress={handleSave} loading={formLoading} color={COLOR.primary} size="lg" style={{ marginTop: 8, marginBottom: 8 }} />
+              </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -483,12 +484,11 @@ const styles = StyleSheet.create({
   regionName: { flex: 1, fontSize: rf(14), fontWeight: '600', color: '#111827' },
   regionZones: { fontSize: rf(12), color: '#9CA3AF' },
   zoneIcon: { fontSize: 16 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 20 },
   modalSheet: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '90%',
+    backgroundColor: '#FFF', borderRadius: 20, padding: 20, width: '100%', alignSelf: 'center',
   },
-  modalTablet: { maxWidth: 600, alignSelf: 'center', borderRadius: 24, marginBottom: 40 },
-  modalHandle: { width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  modalTablet: { maxWidth: 500 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
   approveBtn: {

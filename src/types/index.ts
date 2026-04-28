@@ -990,8 +990,10 @@ export interface AuditFilters {
 
 export interface AllowanceConfig {
   id: number;
-  scope: 'Global' | 'Region' | 'Zone' | 'User';
+  scope: 'Global' | 'Region' | 'Zone' | 'User' | 'Role';
   scopeId?: number;
+  targetRole?: string;
+  vehicleType?: string;
   ratePerKm: number;
   maxDailyAllowance?: number;
   minDistanceKm?: number;
@@ -1002,8 +1004,10 @@ export interface AllowanceConfig {
 }
 
 export interface CreateAllowanceConfigRequest {
-  scope: 'Global' | 'Region' | 'Zone' | 'User';
+  scope: 'Global' | 'Region' | 'Zone' | 'User' | 'Role';
   scopeId?: number;
+  targetRole?: string;
+  vehicleType?: string;
   ratePerKm: number;
   maxDailyAllowance?: number;
   minDistanceKm?: number;
