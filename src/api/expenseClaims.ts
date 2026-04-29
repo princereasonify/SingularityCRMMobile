@@ -8,6 +8,11 @@ export const expenseClaimsApi = {
     description?: string;
   }) => apiClient.post<any>('/expense-claims', payload),
 
+  createClaimWithBill: (formData: FormData) =>
+    apiClient.post<any>('/expense-claims', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+
   getMyClaims: (params?: { status?: string; category?: string; from?: string; to?: string }) =>
     apiClient.get<any[]>('/expense-claims/my', { params }),
 

@@ -483,6 +483,7 @@ export const AppNavigator = () => {
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="Activities" component={ActivityLogScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="SchoolsList" component={SchoolsListScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="LeadsList" component={LeadsListScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="Calendar" component={CalendarScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Weekly Plan */}

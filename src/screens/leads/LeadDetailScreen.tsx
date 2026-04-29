@@ -354,12 +354,6 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
             color={COLOR.primary}
             style={styles.actionBtn}
           />
-          <Button
-            title="Log Activity"
-            onPress={() => navigation.navigate('Activities', { screen: 'ActivityLog', params: { leadId } })}
-            color={COLOR.primary}
-            style={styles.actionBtn}
-          />
           {canCreateDeal && (
             <Button
               title="Create Deal"

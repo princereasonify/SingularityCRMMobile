@@ -539,6 +539,7 @@ export interface LiveLocationDto {
   userId: number;
   name: string;
   role: string;
+  avatar?: string;
   zoneId?: number;
   zoneName?: string;
   regionId?: number;

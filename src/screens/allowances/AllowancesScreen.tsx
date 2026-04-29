@@ -1,10 +1,20 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
-  TextInput, ActivityIndicator, FlatList, Pressable,
+  TextInput, ActivityIndicator, FlatList, Pressable, Image, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, X, Plus, Send, AlertTriangle, DollarSign, Square, CheckSquare } from 'lucide-react-native';
+import { Check, X, Plus, Send, AlertTriangle, DollarSign, Square, CheckSquare, Paperclip, ExternalLink } from 'lucide-react-native';
+// Lazy-load image picker so the app compiles before the package is installed
+type _PickerAsset = { uri?: string; fileName?: string };
+type _PickerResponse = { assets?: _PickerAsset[] };
+type _PickerOptions = { mediaType: string; quality: number };
+const launchCamera = (opts: _PickerOptions, cb: (r: _PickerResponse) => void) => {
+  try { require('react-native-image-picker').launchCamera(opts, cb); } catch { cb({}); }
+};
+const launchImageLibrary = (opts: _PickerOptions, cb: (r: _PickerResponse) => void) => {
+  try { require('react-native-image-picker').launchImageLibrary(opts, cb); } catch { cb({}); }
+};
 import { useAuth } from '../../context/AuthContext';
 import { trackingApi } from '../../api/tracking';
 import { expenseClaimsApi } from '../../api/expenseClaims';
@@ -57,12 +67,36 @@ function fmtDate(d: string) {
 
 function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
   const [form, setForm] = useState({ expenseDate: '', category: 'HotelStay', amount: '', description: '' });
+  const [billUri, setBillUri] = useState<string | null>(null);
+  const [billName, setBillName] = useState<string | null>(null);
 
-  const reset = () => setForm({ expenseDate: '', category: 'HotelStay', amount: '', description: '' });
+  const reset = () => {
+    setForm({ expenseDate: '', category: 'HotelStay', amount: '', description: '' });
+    setBillUri(null);
+    setBillName(null);
+  };
+
+  const handlePickBill = () => {
+    Alert.alert('Attach Bill', 'Choose source', [
+      {
+        text: 'Camera',
+        onPress: () => launchCamera({ mediaType: 'photo', quality: 0.8 }, res => {
+          if (res.assets?.[0]) { setBillUri(res.assets[0].uri ?? null); setBillName(res.assets[0].fileName ?? 'bill.jpg'); }
+        }),
+      },
+      {
+        text: 'Photo Library',
+        onPress: () => launchImageLibrary({ mediaType: 'photo', quality: 0.8 }, res => {
+          if (res.assets?.[0]) { setBillUri(res.assets[0].uri ?? null); setBillName(res.assets[0].fileName ?? 'bill.jpg'); }
+        }),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const handle = () => {
     if (!form.expenseDate || !form.amount) { Alert.alert('Error', 'Date and amount are required'); return; }
-    onSubmit({ ...form, amount: Number(form.amount) });
+    onSubmit({ ...form, amount: Number(form.amount), billUri, billName });
   };
 
   return (
@@ -105,6 +139,18 @@ function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
             placeholder="Brief description"
             placeholderTextColor="#9CA3AF"
           />
+
+          {/* Upload Bill */}
+          <Text style={[ef.label, { marginTop: 12 }]}>Upload Bill (optional)</Text>
+          <TouchableOpacity style={ef.billBtn} onPress={handlePickBill}>
+            <Paperclip size={16} color="#7C3AED" />
+            <Text style={ef.billBtnText}>{billName ? billName : 'Attach receipt / bill'}</Text>
+            {billUri && <X size={14} color="#9CA3AF" onPress={(e: any) => { e.stopPropagation?.(); setBillUri(null); setBillName(null); }} />}
+          </TouchableOpacity>
+          {billUri && (
+            <Image source={{ uri: billUri }} style={ef.billPreview} resizeMode="cover" />
+          )}
+
           <TouchableOpacity
             style={[ef.submitBtn, submitting && { opacity: 0.6 }]}
             onPress={handle}
@@ -127,6 +173,9 @@ const ef = StyleSheet.create({
   input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', marginBottom: 4 },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, marginTop: 20 },
   submitText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
+  billBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FAFAFA', borderStyle: 'dashed' },
+  billBtnText: { flex: 1, fontSize: rf(13), color: '#6B7280' },
+  billPreview: { width: '100%', height: 160, borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: '#E5E7EB' },
 });
 
 // ─── Reject Modal ────────────────────────────────────────────────────────────
@@ -270,6 +319,12 @@ function ExpenseCard({ item, isTeam, isManager, onApprove, onReject }: any) {
           <Text style={ec.date}>{fmtDate(item.expenseDate)}</Text>
           {item.description ? <Text style={ec.desc}>{item.description}</Text> : null}
           {item.rejectionReason ? <Text style={ec.rejection}>Rejected: {item.rejectionReason}</Text> : null}
+          {item.billUrl ? (
+            <TouchableOpacity style={ec.billLink} onPress={() => Linking.openURL(item.billUrl)}>
+              <ExternalLink size={12} color="#7C3AED" />
+              <Text style={ec.billLinkText}>View Bill</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         <View style={ec.right}>
           <Text style={ec.amount}>{fmtCurrency(item.amount)}</Text>
@@ -300,6 +355,8 @@ const ec = StyleSheet.create({
   date: { fontSize: rf(12), color: '#6B7280' },
   desc: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
   rejection: { fontSize: rf(11), color: '#DC2626', marginTop: 2 },
+  billLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  billLinkText: { fontSize: rf(12), color: '#7C3AED', fontWeight: '600' },
   right: { alignItems: 'flex-end', gap: 6 },
   amount: { fontSize: rf(16), fontWeight: '800', color: '#111827' },
   actionBtns: { flexDirection: 'row', gap: 4 },
@@ -471,7 +528,17 @@ export const AllowancesScreen = () => {
   const handleSubmitExpense = async (form: any) => {
     setExpSubmitting(true);
     try {
-      await expenseClaimsApi.createClaim(form);
+      if (form.billUri) {
+        const fd = new FormData();
+        fd.append('expenseDate', form.expenseDate);
+        fd.append('category', form.category);
+        fd.append('amount', String(form.amount));
+        if (form.description) fd.append('description', form.description);
+        fd.append('bill', { uri: form.billUri, type: 'image/jpeg', name: form.billName || 'bill.jpg' } as any);
+        await expenseClaimsApi.createClaimWithBill(fd);
+      } else {
+        await expenseClaimsApi.createClaim({ expenseDate: form.expenseDate, category: form.category, amount: form.amount, description: form.description });
+      }
       Alert.alert('Success', 'Expense claim submitted');
       setShowExpForm(false);
       fetchExpenses();

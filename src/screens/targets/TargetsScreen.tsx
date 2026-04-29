@@ -13,6 +13,7 @@ import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
+import { DateInput } from '../../components/common/DateInput';
 import { SelectPicker } from '../../components/common/SelectPicker';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
@@ -288,8 +289,12 @@ export const TargetsScreen = ({ navigation }: any) => {
               </View>
               <SelectPicker label="Period Type" options={[{ label: 'Monthly', value: 'Monthly' }, { label: 'Quarterly', value: 'Quarterly' }, { label: 'Annually', value: 'Annually' }]} value={form.periodType} onChange={(v) => set('periodType', v)} accentColor={COLOR.primary} />
               <View style={styles.row}>
-                <Input label="Start Date *" value={form.startDate} onChangeText={(v) => set('startDate', v)} placeholder="YYYY-MM-DD" accentColor={COLOR.primary} containerStyle={styles.half} />
-                <Input label="End Date *" value={form.endDate} onChangeText={(v) => set('endDate', v)} placeholder="YYYY-MM-DD" accentColor={COLOR.primary} containerStyle={styles.half} />
+                <View style={styles.half}>
+                  <DateInput label="Start Date *" value={form.startDate} onChange={(v) => set('startDate', v)} placeholder="Select start date" accentColor={COLOR.primary} />
+                </View>
+                <View style={styles.half}>
+                  <DateInput label="End Date *" value={form.endDate} onChange={(v) => set('endDate', v)} placeholder="Select end date" accentColor={COLOR.primary} />
+                </View>
               </View>
               <Button title="Assign Target" onPress={handleCreate} loading={createLoading} color={COLOR.primary} size="lg" style={{ marginTop: 8, marginBottom: 32 }} />
             </ScrollView>

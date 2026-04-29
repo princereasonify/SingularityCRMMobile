@@ -21,13 +21,14 @@ import { rf, isTablet } from '../../utils/responsive';
 
 const FILTERS = ['All', 'Active', 'Hot', 'Won', 'Unassigned'];
 
-export const LeadsListScreen = ({ navigation }: any) => {
+export const LeadsListScreen = ({ navigation, route }: any) => {
   const { user } = useAuth();
   const role = user?.role || 'FO';
   const isManager = role !== 'FO';
   const COLOR = ROLE_COLORS[role];
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
+  const foIdFilter: number | undefined = route?.params?.foId ? Number(route.params.foId) : undefined;
 
   const [leads, setLeads] = useState<LeadListDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +87,7 @@ export const LeadsListScreen = ({ navigation }: any) => {
   const fetchLeads = useCallback(async (pg = 1, reset = false) => {
     try {
       const stage = filter === 'Won' ? 'Won' : undefined;
-      const res = await leadsApi.getLeads({ page: pg, pageSize: 20, search: search || undefined, stage });
+      const res = await leadsApi.getLeads({ page: pg, pageSize: 20, search: search || undefined, stage, foId: foIdFilter });
       const items = res.data?.items ?? [];
       let filtered = items;
       if (filter === 'Active') filtered = items.filter(l => !['Won', 'Lost'].includes(l.stage));
@@ -102,13 +103,13 @@ export const LeadsListScreen = ({ navigation }: any) => {
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [search, filter]);
+  }, [search, filter, foIdFilter]);
 
   useEffect(() => {
     setLoading(true);
     setPage(1);
     fetchLeads(1, true);
-  }, [search, filter]);
+  }, [search, filter, foIdFilter]);
 
   const handleLoadMore = () => {
     if (page < totalPages && !loadingMore) {

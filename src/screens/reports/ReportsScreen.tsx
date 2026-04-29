@@ -3,10 +3,12 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
   Modal, ActivityIndicator, FlatList,
 } from 'react-native';
+import { generatePDF } from 'react-native-html-to-pdf';
+import RNShare from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Eye, ChevronDown, ChevronUp, AlertTriangle, CheckCircle,
-  TrendingUp, ArrowLeft, Users, Clock, Target,
+  TrendingUp, ArrowLeft, Users, Clock, Target, Download,
 } from 'lucide-react-native';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
@@ -18,7 +20,25 @@ import { rf } from '../../utils/responsive';
 import { aiReportsApi } from '../../api/aiReports';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const REPORT_TABS = ['FO Daily', 'FO Weekly', 'FO Monthly', 'Management Weekly'];
+
+const REPORT_TYPE_MAP: Record<string, string> = {
+  'FO Daily':   'FoDaily',
+  'FO Weekly':  'FoWeekly',
+  'FO Monthly': 'FoMonthly',
+  'ZH Weekly':  'ZhWeekly',
+  'RH Weekly':  'RhWeekly',
+  'SH Weekly':  'ShWeekly',
+};
+
+const getTabsForRole = (role: string): string[] => {
+  switch (role) {
+    case 'ZH':  return ['FO Daily', 'FO Weekly', 'FO Monthly', 'ZH Weekly'];
+    case 'RH':  return ['FO Daily', 'FO Weekly', 'FO Monthly', 'ZH Weekly', 'RH Weekly'];
+    case 'SH':
+    case 'SCA': return ['FO Daily', 'FO Weekly', 'FO Monthly', 'ZH Weekly', 'RH Weekly', 'SH Weekly'];
+    default:    return ['FO Daily', 'FO Weekly', 'FO Monthly'];
+  }
+};
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const thirtyDaysAgo = () => {
@@ -145,7 +165,6 @@ export const ReportsScreen = (_: any) => {
   const { user } = useAuth();
   const role = user?.role || 'FO';
   const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
-  const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(role);
 
   const [activeTab, setActiveTab] = useState('FO Daily');
   const [loading, setLoading] = useState(false);
@@ -157,36 +176,22 @@ export const ReportsScreen = (_: any) => {
   const [viewingAi, setViewingAi] = useState<any>(null);
   const [aiDetail, setAiDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
 
-  const tabs = isManager ? REPORT_TABS : REPORT_TABS.filter(t => t !== 'Management Weekly');
-
-  // ─── Map tab name to reportType ───────────────────────────────────────────
-  const tabToReportType = (tab: string) => {
-    if (tab === 'FO Daily') return 'FoDaily';
-    if (tab === 'FO Weekly') return 'FoWeekly';
-    if (tab === 'FO Monthly') return 'FoMonthly';
-    if (tab === 'Management Weekly') return undefined; // fetch all management types
-    return undefined;
-  };
-
-  const isManagementTab = (tab: string) => tab === 'Management Weekly';
+  const tabs = getTabsForRole(role);
 
   // ─── Fetch AI reports ──────────────────────────────────────────────────────
   const fetchAiReports = useCallback(async (tab: string) => {
     setLoading(true);
     setAiReports([]);
     try {
-      const reportType = tabToReportType(tab);
+      const reportType = REPORT_TYPE_MAP[tab];
       const filters: any = { dateFrom, dateTo };
       if (reportType) filters.reportType = reportType;
       const res = await aiReportsApi.getReports(filters);
       const d: any = res.data;
       const items = Array.isArray(d) ? d : d?.items ?? d?.reports ?? [];
-      if (isManagementTab(tab)) {
-        setAiReports(items.filter((r: any) => r.reportType !== 'FoDaily'));
-      } else {
-        setAiReports(items);
-      }
+      setAiReports(items);
     } catch {
       setAiReports([]);
     } finally {
@@ -198,6 +203,215 @@ export const ReportsScreen = (_: any) => {
   useEffect(() => {
     fetchAiReports(activeTab);
   }, [activeTab]);
+
+  // ─── Download PDF ──────────────────────────────────────────────────────────
+  const downloadPDF = async (report: any) => {
+    setPdfLoadingId(report.id);
+    try {
+      const res = await aiReportsApi.getReport(report.id);
+      const d: any = res.data;
+      const output = safeParseJSON(d?.outputJson || report.outputJson) || {};
+      const sections = parseSections(output);
+      const redFlags = parseRedFlags(output);
+      const insights = parseInsights(output);
+      const summary = output.summary || output.executiveSummary || '';
+      const scoreBd = output.scoreBreakdown || {};
+      const teamRanking: any[] = output.teamRanking || [];
+
+      const sc = (v: number) => v >= 70 ? '#10B981' : v >= 50 ? '#F59E0B' : '#EF4444';
+      const rtBg = (r: string) => {
+        const l = (r || '').toLowerCase();
+        if (l.includes('good')) return { bg: '#D1FAE5', fg: '#059669' };
+        if (l.includes('average')) return { bg: '#FEF3C7', fg: '#D97706' };
+        if (l.includes('poor') || l.includes('bad')) return { bg: '#FEE2E2', fg: '#DC2626' };
+        return { bg: '#F3F4F6', fg: '#6B7280' };
+      };
+      const rc = rtBg(report.overallRating || '');
+      const typeName =
+        report.reportType === 'FoDaily' ? 'Daily Report' :
+        report.reportType === 'FoWeekly' ? 'FO Weekly Report' :
+        report.reportType === 'FoMonthly' ? 'FO Monthly Report' :
+        (report.reportType?.replace(/([A-Z])/g, ' $1').trim() ?? 'Report');
+
+      const scorePercent = Math.min(100, Math.max(0, report.overallScore || 0));
+      const circumference = 2 * Math.PI * 40;
+      const dashOffset = circumference - (scorePercent / 100) * circumference;
+
+      const sectionsHtml = sections.map(sec => `
+        <div class="section-item">
+          <div class="section-header">
+            <span class="section-title">${sec.title}</span>
+            ${sec.rating ? `<span class="badge" style="background:${rtBg(sec.rating).bg};color:${rtBg(sec.rating).fg}">${sec.rating}</span>` : ''}
+          </div>
+          ${sec.narrative ? `<p class="narrative">${sec.narrative}</p>` : ''}
+          ${sec.compliancePercent != null ? `
+            <div class="progress-row">
+              <div class="progress-bg"><div class="progress-fill" style="width:${sec.compliancePercent}%;background:${sc(sec.compliancePercent)}"></div></div>
+              <span class="progress-pct">${sec.compliancePercent}%</span>
+            </div>` : ''}
+          ${sec.flags?.length ? `<div class="flag-row">${sec.flags.map((f: string) => `<span class="flag-chip">${f}</span>`).join('')}</div>` : ''}
+        </div>`).join('');
+
+      const redFlagsHtml = redFlags.length ? `
+        <div class="card">
+          <div class="card-title" style="color:#DC2626">⚠ Red Flags (${redFlags.length})</div>
+          ${redFlags.map((f: any) => {
+            const sev = f.severity === 'HIGH' ? { bg: '#FEE2E2', fg: '#DC2626' } : f.severity === 'MEDIUM' ? { bg: '#FEF3C7', fg: '#D97706' } : { bg: '#DBEAFE', fg: '#2563EB' };
+            return `<div class="flag-card" style="border-left-color:${sev.fg}">
+              <div style="margin-bottom:4px"><span class="badge" style="background:${sev.bg};color:${sev.fg}">${f.severity || 'MEDIUM'}</span>${f.category ? ` <span style="color:#6B7280;font-size:12px">${f.category}</span>` : ''}</div>
+              <div style="font-weight:600;font-size:13px">${f.issue || ''}</div>
+              ${f.evidence ? `<div style="color:#6B7280;font-size:12px;margin-top:4px">${f.evidence}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>` : '';
+
+      const insightsHtml = (insights.strengths?.length || insights.problems?.length || insights.recommendations?.length) ? `
+        <div class="card">
+          <div class="card-title">AI Insights</div>
+          ${insights.strengths?.length ? `<div class="insight-group"><div class="insight-label" style="color:#059669">STRENGTHS</div>${insights.strengths.map((i: string) => `<div class="insight-row"><span style="color:#059669">✓</span> ${i}</div>`).join('')}</div>` : ''}
+          ${(insights.problems || insights.problemAreas)?.length ? `<div class="insight-group"><div class="insight-label" style="color:#DC2626">PROBLEMS</div>${(insights.problems || insights.problemAreas).map((i: string) => `<div class="insight-row"><span style="color:#DC2626">✗</span> ${i}</div>`).join('')}</div>` : ''}
+          ${insights.recommendations?.length ? `<div class="insight-group"><div class="insight-label" style="color:#2563EB">RECOMMENDATIONS</div>${insights.recommendations.map((i: string) => `<div class="insight-row"><span style="color:#2563EB">→</span> ${i}</div>`).join('')}</div>` : ''}
+        </div>` : '';
+
+      const scoreBdHtml = Object.keys(scoreBd).length ? `
+        <div class="card">
+          <div class="card-title">Score Breakdown</div>
+          ${Object.entries(scoreBd).map(([k, v]: [string, any]) => `
+            <div class="score-row">
+              <span class="score-key">${k.replace(/([A-Z])/g, ' $1').trim()}</span>
+              <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${Math.min(100, v)}%;background:${sc(v)}"></div></div>
+              <span class="score-val" style="color:${sc(v)}">${v}</span>
+            </div>`).join('')}
+        </div>` : '';
+
+      const rankHtml = teamRanking.length ? `
+        <div class="card">
+          <div class="card-title">Team Ranking</div>
+          <table class="rank-table">
+            <tr class="rank-header"><th>#</th><th>Name</th><th>Score</th><th>Observation</th></tr>
+            ${teamRanking.slice(0, 15).map((fo: any, i: number) => `
+              <tr class="${i % 2 === 0 ? 'rank-row-even' : ''}">
+                <td class="rank-num">${fo.rank || i + 1}</td>
+                <td class="rank-name">${fo.foName || ''}</td>
+                <td class="rank-score" style="color:${sc(fo.avgDailyScore || 0)}">${fo.avgDailyScore || 0}</td>
+                <td class="rank-obs">${fo.keyObservation || ''}</td>
+              </tr>`).join('')}
+          </table>
+        </div>` : '';
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, Arial, sans-serif; color:#111827; background:#F9FAFB; padding:24px; font-size:13px; }
+.header { background:${COLOR.primary}; color:#FFF; border-radius:12px; padding:20px 24px; margin-bottom:20px; display:flex; align-items:center; gap:20px; }
+.header-score { text-align:center; }
+.score-circle { position:relative; width:80px; height:80px; }
+.score-circle svg { transform:rotate(-90deg); }
+.score-num { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:22px; font-weight:800; color:${sc(scorePercent)}; }
+.header-info { flex:1; }
+.header-name { font-size:20px; font-weight:800; margin-bottom:4px; }
+.header-meta { font-size:12px; opacity:0.85; margin-bottom:8px; }
+.rating-badge { display:inline-block; padding:4px 12px; border-radius:100px; font-size:12px; font-weight:700; background:${rc.bg}; color:${rc.fg}; }
+.card { background:#FFF; border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.07); }
+.card-title { font-size:12px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+.summary { background:#FFF; border-radius:12px; padding:16px; margin-bottom:14px; font-size:13px; color:#374151; line-height:1.6; }
+.section-item { border:1px solid #F3F4F6; border-radius:10px; overflow:hidden; margin-bottom:8px; }
+.section-header { background:#FAFAFA; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; }
+.section-title { font-size:13px; font-weight:700; color:#111827; }
+.badge { display:inline-block; padding:2px 8px; border-radius:100px; font-size:11px; font-weight:700; }
+.narrative { padding:10px 14px; font-size:12px; color:#374151; line-height:1.5; }
+.progress-row { display:flex; align-items:center; gap:8px; padding:8px 14px; }
+.progress-bg { flex:1; height:6px; background:#E5E7EB; border-radius:3px; overflow:hidden; }
+.progress-fill { height:6px; border-radius:3px; }
+.progress-pct { font-size:12px; font-weight:600; color:#6B7280; min-width:32px; text-align:right; }
+.flag-row { padding:8px 14px; display:flex; flex-wrap:wrap; gap:6px; }
+.flag-chip { background:#FEF2F2; border:1px solid #FECACA; padding:2px 8px; border-radius:100px; font-size:11px; color:#DC2626; font-weight:600; }
+.flag-card { background:#FEF2F2; border-left:3px solid; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+.score-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.score-key { font-size:12px; color:#6B7280; text-transform:capitalize; width:120px; flex-shrink:0; }
+.score-bar-wrap { flex:1; height:6px; background:#E5E7EB; border-radius:3px; overflow:hidden; }
+.score-bar-fill { height:6px; border-radius:3px; }
+.score-val { font-size:13px; font-weight:700; min-width:28px; text-align:right; }
+.insight-group { margin-bottom:12px; }
+.insight-label { font-size:11px; font-weight:700; letter-spacing:0.5px; margin-bottom:6px; }
+.insight-row { font-size:12px; color:#374151; padding:2px 0; display:flex; gap:6px; line-height:1.5; }
+.rank-table { width:100%; border-collapse:collapse; }
+.rank-header th { font-size:11px; color:#9CA3AF; font-weight:700; text-transform:uppercase; padding:6px 8px; text-align:left; border-bottom:1px solid #F3F4F6; }
+.rank-row-even { background:#F9FAFB; }
+.rank-table td { padding:8px 8px; font-size:12px; vertical-align:middle; }
+.rank-num { font-weight:700; color:#9CA3AF; width:28px; }
+.rank-name { font-weight:600; color:#111827; max-width:100px; }
+.rank-score { font-weight:700; width:40px; }
+.rank-obs { color:#6B7280; font-size:11px; }
+.footer { text-align:center; color:#9CA3AF; font-size:11px; margin-top:24px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-score">
+    <div class="score-circle">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="6"/>
+        <circle cx="40" cy="40" r="32" fill="none" stroke="${sc(scorePercent)}" stroke-width="6"
+          stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"
+          stroke-linecap="round"/>
+      </svg>
+      <div class="score-num">${scorePercent}</div>
+    </div>
+  </div>
+  <div class="header-info">
+    <div class="header-name">${report.userName || 'Unknown'}</div>
+    <div class="header-meta">${report.userRole} · ${typeName} · ${report.reportDate || ''}</div>
+    <span class="rating-badge">${report.overallRating || 'N/A'}</span>
+  </div>
+</div>
+
+${summary ? `<div class="summary">${summary}</div>` : ''}
+
+${scoreBdHtml}
+
+${rankHtml}
+
+${sections.length ? `<div class="card"><div class="card-title">Detailed Analysis</div>${sectionsHtml}</div>` : ''}
+
+${redFlagsHtml}
+
+${insightsHtml}
+
+<div class="footer">Generated by SingularityCRM · ${new Date().toLocaleDateString('en-IN')}</div>
+</body>
+</html>`;
+
+      const safeName = (report.userName || 'Report').replace(/[^a-zA-Z0-9_]/g, '_');
+      const pdf = await generatePDF({
+        html,
+        fileName: `AI_Report_${safeName}_${report.reportDate || 'unknown'}`,
+        directory: 'Documents',
+        base64: false,
+        height: 842,
+        width: 595,
+      });
+
+      if (!pdf.filePath) throw new Error('PDF generation failed');
+
+      await RNShare.open({
+        url: `file://${pdf.filePath}`,
+        type: 'application/pdf',
+        filename: `Report_${safeName}_${report.reportDate}.pdf`,
+        failOnCancel: false,
+      });
+    } catch (err: any) {
+      if (err?.message !== 'User did not share') {
+        Alert.alert('Error', 'Failed to generate PDF report');
+      }
+    } finally {
+      setPdfLoadingId(null);
+    }
+  };
 
   // ─── View AI report detail ─────────────────────────────────────────────────
   const viewAiReport = async (report: any) => {
@@ -245,6 +459,17 @@ export const ReportsScreen = (_: any) => {
               <Text style={[s.aiRatingText, { color: rc.text }]}>{report.overallRating || 'N/A'}</Text>
             </View>
             {report.status === 'Completed' && <Eye size={16} color={COLOR.primary} />}
+            {report.status === 'Completed' && (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation?.(); downloadPDF(report); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                disabled={pdfLoadingId === report.id}
+              >
+                {pdfLoadingId === report.id
+                  ? <ActivityIndicator size="small" color="#6B7280" />
+                  : <Download size={16} color="#6B7280" />}
+              </TouchableOpacity>
+            )}
             {report.status === 'Generating' && <ActivityIndicator size="small" color="#F59E0B" />}
             {report.status === 'Failed' && <Text style={{ fontSize: rf(11), color: '#DC2626' }}>Failed</Text>}
           </View>

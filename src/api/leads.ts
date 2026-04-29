@@ -8,6 +8,7 @@ export const leadsApi = {
     search?: string;
     stage?: string;
     source?: string;
+    foId?: number;
   }) => apiClient.get<PaginatedResult<LeadListDto>>('/leads', { params }),
 
   getLead: (id: number) => apiClient.get<LeadDto>(`/leads/${id}`),

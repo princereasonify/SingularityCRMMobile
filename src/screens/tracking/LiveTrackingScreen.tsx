@@ -7,8 +7,15 @@ import {
   StyleSheet,
   RefreshControl,
   TouchableOpacity,
-  Alert,
   TextInput,
+  Alert,
+  AppState,
+  Platform,
+  PermissionsAndroid,
+  Linking,
+  Image,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -24,12 +31,24 @@ import {
   ChevronLeft,
   Activity,
   Radio,
+  Check,
+  AlertTriangle,
+  Wifi,
+  WifiOff,
+  DollarSign,
+  Calendar,
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Geolocation from '@react-native-community/geolocation';
+import BackgroundFetch from 'react-native-background-fetch';
+import { sendLocationPing } from '../../services/locationPingService';
+import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission } from '../../services/nativeLocationTracking';
+import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
+import { DateInput } from '../../components/common/DateInput';
 import { trackingApi } from '../../api/tracking';
-import { LiveLocationDto, AllowanceDto, RoutePointDto } from '../../types';
+import { LiveLocationDto, RoutePointDto, SessionResponseDto, TrackingSessionDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge, RoleBadge } from '../../components/common/Badge';
+import { RoleBadge } from '../../components/common/Badge';
 import { Button } from '../../components/common/Button';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
@@ -38,13 +57,17 @@ import {
   formatCurrency,
   formatDate,
   formatRelativeDate,
+  formatTime,
   toISODate,
 } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 
+const PING_QUEUE_KEY = 'tracking_ping_queue';
+const PING_INTERVAL_MS = 30000;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabKey = 'map' | 'team' | 'allowances';
+type TabKey = 'myDay' | 'map' | 'team';
 type StatusFilter = 'all' | 'active' | 'ended';
 
 interface ZoneGroup {
@@ -450,7 +473,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
             </View>
           </View>
 
-          {/* Bottom row: time + allowance + battery */}
+          {/* Bottom row: time + battery */}
           <View style={ivStyles.statsRowSecondary}>
             <View style={ivStyles.statPill}>
               <Text style={[ivStyles.statPillLabel, { color: '#16A34A' }]}>▶ {startTime}</Text>
@@ -462,10 +485,6 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
                 <Text style={ivStyles.statPillSub}>End</Text>
               </View>
             )}
-            <View style={ivStyles.statPill}>
-              <Text style={ivStyles.statPillLabel}>{formatCurrency(liveData.allowanceAmount)}</Text>
-              <Text style={ivStyles.statPillSub}>Allowance</Text>
-            </View>
             {liveData.batteryLevel != null && (
               <View style={ivStyles.statPill}>
                 <Text style={[ivStyles.statPillLabel, { color: liveData.batteryLevel < 0.2 ? '#DC2626' : '#6B7280' }]}>
@@ -593,9 +612,13 @@ const PersonRow = ({ user, indent = false, onPress }: PersonRowProps) => {
       activeOpacity={0.7}
     >
       <View style={prStyles.avatarWrap}>
-        <View style={[prStyles.avatar, { backgroundColor: c }]}>
-          <Text style={prStyles.avatarText}>{initials(user.name)}</Text>
-        </View>
+        {user.avatar && user.avatar.startsWith('http') ? (
+          <Image source={{ uri: user.avatar }} style={prStyles.avatar} />
+        ) : (
+          <View style={[prStyles.avatar, { backgroundColor: c }]}>
+            <Text style={prStyles.avatarText}>{initials(user.name)}</Text>
+          </View>
+        )}
         <View style={[prStyles.dot, { backgroundColor: active ? '#22C55E' : '#9CA3AF' }]} />
       </View>
 
@@ -792,10 +815,26 @@ export const LiveTrackingScreen = () => {
   const nav = useNavigation();
   const { user } = useAuth();
   const rc = user?.role ? ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] : ROLE_COLORS.ZH;
+  const isSCA = user?.role === 'SCA';
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabKey>('map');
+  const [activeTab, setActiveTab] = useState<TabKey>(isSCA ? 'map' : 'myDay');
+
+  // ── My Day state ────────────────────────────────────────────────────────────
+  const [daySession, setDaySession] = useState<TrackingSessionDto | null>(null);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [startEnabled, setStartEnabled] = useState(false);
+  const [endEnabled, setEndEnabled] = useState(false);
+  const [dayActionLoading, setDayActionLoading] = useState(false);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [locationChecked, setLocationChecked] = useState(false);
+  const [showBgDisclosure, setShowBgDisclosure] = useState(false);
+  const bgPermissionResolveRef = useRef<((accepted: boolean) => void) | null>(null);
+  const iosPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [historyDate, setHistoryDate] = useState(toISODate(new Date()));
+  const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Individual tracking — when set, shows IndividualTrackingView full-screen
   const [trackingPerson, setTrackingPerson] = useState<LiveLocationDto | null>(null);
@@ -807,18 +846,14 @@ export const LiveTrackingScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const mapRef = useRef<MapView>(null);
+
+  // Team tab: user picker + date filter
+  const [selectedTeamUser, setSelectedTeamUser] = useState<LiveLocationDto | null>(null);
+  const [teamDate, setTeamDate] = useState(toISODate(new Date()));
+  const [showTeamUserPicker, setShowTeamUserPicker] = useState(false);
+  const [teamUserSearch, setTeamUserSearch] = useState('');
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const didFitMap = useRef(false);
-
-  // Allowances state
-  const [allowances, setAllowances] = useState<AllowanceDto[]>([]);
-  const [allowancesLoading, setAllowancesLoading] = useState(false);
-  const [dateFrom, setDateFrom] = useState(() => {
-    const now = new Date();
-    return toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
-  });
-  const [dateTo, setDateTo] = useState(() => toISODate(new Date()));
-  const [approveLoading, setApproveLoading] = useState<number | null>(null);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -844,22 +879,9 @@ export const LiveTrackingScreen = () => {
     }
   }, []);
 
-  const fetchAllowances = useCallback(async () => {
-    setAllowancesLoading(true);
-    try {
-      const res = await trackingApi.getAllowances(dateFrom, dateTo);
-      const inner = res.data as { allowances: AllowanceDto[] };
-      setAllowances(inner.allowances || []);
-    } catch {
-      setAllowances([]);
-    } finally {
-      setAllowancesLoading(false);
-    }
-  }, [dateFrom, dateTo]);
-
   useEffect(() => {
-    Promise.all([fetchLive(), fetchAllowances()]).finally(() => setLoading(false));
-  }, [fetchLive, fetchAllowances]);
+    fetchLive().finally(() => setLoading(false));
+  }, [fetchLive]);
 
   useEffect(() => {
     autoRefreshRef.current = setInterval(fetchLive, LIVE_REFRESH_MS);
@@ -868,37 +890,196 @@ export const LiveTrackingScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    Promise.all([fetchLive(), fetchAllowances()]).finally(() => setRefreshing(false));
-  }, [fetchLive, fetchAllowances]);
+    fetchLive().finally(() => setRefreshing(false));
+  }, [fetchLive]);
 
   const handlePersonPress = useCallback((u: LiveLocationDto) => {
     setTrackingPerson(u);
   }, []);
 
-  const handleApprove = (id: number, approved: boolean) => {
-    Alert.alert(
-      `${approved ? 'Approve' : 'Reject'} Allowance`,
-      `Are you sure you want to ${approved ? 'approve' : 'reject'} this allowance?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: approved ? 'Approve' : 'Reject',
-          style: approved ? 'default' : 'destructive',
-          onPress: async () => {
-            setApproveLoading(id);
-            try {
-              await trackingApi.approveAllowance(id, { approved });
-              await fetchAllowances();
-            } catch {
-              Alert.alert('Error', `Failed to ${approved ? 'approve' : 'reject'} allowance.`);
-            } finally {
-              setApproveLoading(null);
-            }
-          },
-        },
-      ],
-    );
+  // ── My Day: permission + tracking engine ────────────────────────────────────
+
+  const showPermissionDeniedAlert = () => {
+    Alert.alert('Location Permission Required', 'Please enable location access in Settings.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Open Settings', onPress: () => Platform.OS === 'android' ? Linking.openSettings() : Linking.openURL('app-settings:') },
+    ]);
   };
+
+  const requestLocationPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      try {
+        const fineOk = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        if (!fineOk) {
+          const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, {
+            title: 'Location Permission', message: 'Needed for daily tracking.',
+            buttonNeutral: 'Ask Later', buttonNegative: 'Cancel', buttonPositive: 'Allow',
+          });
+          if (result !== PermissionsAndroid.RESULTS.GRANTED) { setLocationGranted(false); showPermissionDeniedAlert(); return false; }
+        }
+        if (Platform.Version >= 29) {
+          const bgOk = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+          if (!bgOk) {
+            const accepted = await new Promise<boolean>(resolve => { bgPermissionResolveRef.current = resolve; setShowBgDisclosure(true); });
+            if (accepted) await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+          }
+        }
+        setLocationGranted(true); return true;
+      } catch { setLocationGranted(false); return false; }
+    } else {
+      if (locationGranted) return true;
+      const status = await requestIOSLocationPermission();
+      if (status === 'granted' || status === 'whenInUse') { setLocationGranted(true); return true; }
+      setLocationGranted(false); showPermissionDeniedAlert(); return false;
+    }
+  };
+
+  const startDayTracking = useCallback(async () => {
+    if (Platform.OS === 'android') {
+      await startNativeTracking();
+      try {
+        BackgroundFetch.configure(
+          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+          (taskId) => { BackgroundFetch.finish(taskId); },
+        ).catch(() => {});
+      } catch {}
+    } else {
+      if (!iosPingRef.current) {
+        sendLocationPing();
+        iosPingRef.current = setInterval(() => sendLocationPing(), PING_INTERVAL_MS);
+      }
+      startNativeTracking().catch(() => {});
+      try {
+        BackgroundFetch.configure(
+          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+          (taskId) => { BackgroundFetch.finish(taskId); },
+        ).catch(() => {});
+      } catch {}
+    }
+  }, []);
+
+  const stopDayTracking = useCallback(async () => {
+    if (Platform.OS === 'android') { await stopNativeTracking(); }
+    else {
+      if (iosPingRef.current) { clearInterval(iosPingRef.current); iosPingRef.current = null; }
+      stopNativeTracking().catch(() => {});
+    }
+    try { BackgroundFetch.stop(); } catch {}
+  }, []);
+
+  // ── My Day: session fetch ───────────────────────────────────────────────────
+  const fetchDaySession = useCallback(async () => {
+    try {
+      const res = await trackingApi.getTodaySession();
+      const data = res.data as SessionResponseDto;
+      const s = data?.session ?? null;
+      setDaySession(s);
+      const isActive = s?.status === 'active';
+      setStartEnabled(!isActive);
+      setEndEnabled(isActive);
+    } catch {
+      setDaySession(null); setStartEnabled(true); setEndEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSCA) { setDayLoading(true); fetchDaySession().finally(() => setDayLoading(false)); }
+  }, [fetchDaySession, isSCA]);
+
+  // Sync GPS engine with session state
+  useEffect(() => {
+    if (daySession?.status === 'active' && locationGranted) startDayTracking();
+    else stopDayTracking();
+  }, [daySession?.status, locationGranted, startDayTracking, stopDayTracking]);
+
+  // Check permission on mount
+  useEffect(() => {
+    if (isSCA) return;
+    const check = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          const ok = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+          setLocationGranted(ok); setLocationChecked(true);
+        } else {
+          const status = await checkIOSPermission();
+          setLocationGranted(status === 'granted' || status === 'whenInUse'); setLocationChecked(true);
+        }
+      } catch { setLocationGranted(false); setLocationChecked(true); }
+    };
+    check();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        if (Platform.OS === 'android') PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION).then(ok => setLocationGranted(ok)).catch(() => {});
+        else checkIOSPermission().then(s => setLocationGranted(s === 'granted' || s === 'whenInUse')).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [isSCA]);
+
+  // ── My Day: actions ─────────────────────────────────────────────────────────
+  const handleStartDay = async () => {
+    if (dayActionLoading) return;
+    setDayActionLoading(true);
+    const hasPerm = await requestLocationPermission();
+    if (!hasPerm) { setDayActionLoading(false); return; }
+    const locOk = await new Promise<boolean>(resolve => {
+      Geolocation.getCurrentPosition(() => resolve(true), err => { if (err.code === 2) { Alert.alert('Location Disabled', 'Please turn on Location Services.'); resolve(false); } else resolve(true); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 });
+    });
+    if (!locOk) { setDayActionLoading(false); return; }
+    try {
+      const res = await trackingApi.startDay();
+      const data = res.data as SessionResponseDto;
+      setDaySession(data?.session ?? null); setStartEnabled(false); setEndEnabled(true);
+    } catch (err: any) {
+      const msg: string = err?.response?.data?.message ?? '';
+      if (err?.response?.status === 400 && msg.toLowerCase().includes('already')) { await fetchDaySession(); }
+      else Alert.alert('Error', msg || 'Failed to start day.');
+    } finally { setDayActionLoading(false); }
+  };
+
+  const handleEndDay = () => {
+    Alert.alert('End Day', 'This will stop tracking and calculate your allowance.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'End Day', style: 'destructive', onPress: async () => {
+        setDayActionLoading(true);
+        try {
+          await stopDayTracking();
+          const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
+          if (stored) { try { const q = JSON.parse(stored); if (Array.isArray(q) && q.length > 0) await trackingApi.sendBatchPings(q); } catch {} await AsyncStorage.removeItem(PING_QUEUE_KEY); }
+          const res = await trackingApi.endDay();
+          const data = res.data as SessionResponseDto;
+          setDaySession(data?.session ?? null); setStartEnabled(true); setEndEnabled(false);
+          await AsyncStorage.removeItem(PING_QUEUE_KEY);
+        } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to end day.'); }
+        finally { setDayActionLoading(false); }
+      }},
+    ]);
+  };
+
+  const handleHistoryDate = async (date: string) => {
+    if (!user) return;
+    setHistoryDate(date); setHistoryLoading(true);
+    try {
+      const res = await trackingApi.getRoute(user.id, date);
+      const data = res.data as any;
+      setHistorySession(data?.session ?? null);
+    } catch { setHistorySession(null); }
+    finally { setHistoryLoading(false); }
+  };
+
+  const getSessionDuration = (s: TrackingSessionDto): string => {
+    if (!s.startedAt) return '--';
+    const start = new Date(s.startedAt), end = s.endedAt ? new Date(s.endedAt) : new Date();
+    const diffMs = end.getTime() - start.getTime();
+    return `${Math.floor(diffMs / 3600000)}h ${Math.floor((diffMs % 3600000) / 60000)}m`;
+  };
+
+  const getStatusColor = (status?: string) => status === 'active' ? '#22C55E' : status === 'ended' ? '#EF4444' : '#9CA3AF';
+  const getStatusLabel = (status?: string) => status === 'active' ? 'Active' : status === 'ended' ? 'Day Ended' : 'Not Started';
+
+  const last7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return toISODate(d); }), []);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -919,7 +1100,6 @@ export const LiveTrackingScreen = () => {
       return matchRole && matchSearch;
     });
   }, [liveUsers, user?.role, roleFilter, searchQuery]);
-  const totalAllowance = useMemo(() => allowances.reduce((s, a) => s + a.grossAmount, 0), [allowances]);
 
   // ── Individual tracking guard ─────────────────────────────────────────────
 
@@ -944,9 +1124,9 @@ export const LiveTrackingScreen = () => {
     (user?.zone ?? 'Zonal View');
 
   const tabs = [
+    ...(!isSCA ? [{ key: 'myDay' as TabKey, label: 'My Day', badge: undefined }] : []),
     { key: 'map' as TabKey, label: 'Map', badge: activeCount },
     { key: 'team' as TabKey, label: 'Team', badge: liveUsers.length },
-    { key: 'allowances' as TabKey, label: 'Allowances', badge: null },
   ];
 
   return (
@@ -970,6 +1150,127 @@ export const LiveTrackingScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* ── MY DAY TAB ───────────────────────────────────────────────────── */}
+      {activeTab === 'myDay' && (
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Location permission banner */}
+          {locationChecked && !locationGranted && (
+            <TouchableOpacity style={mdStyles.permBanner} onPress={requestLocationPermission} activeOpacity={0.7}>
+              <MapPin size={16} color="#DC2626" />
+              <View style={{ flex: 1 }}>
+                <Text style={mdStyles.permTitle}>Location Access Required</Text>
+                <Text style={mdStyles.permSub}>Tap to enable location for tracking</Text>
+              </View>
+              <Text style={mdStyles.permAction}>Enable</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* My Day card */}
+          <View style={mdStyles.card}>
+            <View style={mdStyles.cardHeader}>
+              <View>
+                <Text style={mdStyles.cardTitle}>My Day</Text>
+                <Text style={mdStyles.cardDate}>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
+              </View>
+              <View style={mdStyles.btnRow}>
+                <TouchableOpacity
+                  style={[mdStyles.actionBtn, { backgroundColor: startEnabled ? '#16A34A' : '#9CA3AF' }]}
+                  onPress={handleStartDay}
+                  disabled={!startEnabled || dayActionLoading}
+                >
+                  <Navigation size={14} color="#FFF" />
+                  <Text style={mdStyles.actionBtnText}>{dayActionLoading && startEnabled ? 'Starting…' : 'Start My Day'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[mdStyles.actionBtn, { backgroundColor: endEnabled ? '#DC2626' : '#9CA3AF' }]}
+                  onPress={handleEndDay}
+                  disabled={!endEnabled || dayActionLoading}
+                >
+                  <Text style={mdStyles.actionBtnText}>{dayActionLoading && endEnabled ? 'Ending…' : 'End Day'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {daySession?.status === 'ended' && (
+              <View style={mdStyles.endedBanner}>
+                <Check size={14} color="#22C55E" />
+                <Text style={mdStyles.endedText}>Session ended. You can start again anytime.</Text>
+              </View>
+            )}
+            {daySession?.isSuspicious && (
+              <View style={mdStyles.fraudBanner}>
+                <AlertTriangle size={14} color="#DC2626" />
+                <Text style={mdStyles.fraudText}>Session flagged — fraud score: {daySession.fraudScore}</Text>
+              </View>
+            )}
+
+            {/* Stats grid */}
+            <View style={mdStyles.statsGrid}>
+              <View style={mdStyles.statBox}>
+                <Navigation size={16} color="#0D9488" />
+                <Text style={mdStyles.statVal}>{daySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km</Text>
+                <Text style={mdStyles.statLbl}>Today's Distance</Text>
+              </View>
+              <View style={[mdStyles.statBox, { backgroundColor: '#FFFBEB' }]}>
+                <DollarSign size={16} color="#D97706" />
+                <Text style={[mdStyles.statVal, { color: '#92400E' }]}>{formatCurrency(daySession?.allowanceAmount ?? 0)}</Text>
+                <Text style={[mdStyles.statLbl, { color: '#D97706' }]}>Today's Allowance</Text>
+              </View>
+              <View style={[mdStyles.statBox, { backgroundColor: '#EFF6FF' }]}>
+                <View style={[mdStyles.statusDot, { backgroundColor: getStatusColor(daySession?.status) }]} />
+                <Text style={[mdStyles.statVal, { color: '#1D4ED8', fontSize: rf(13) }]}>{getStatusLabel(daySession?.status)}</Text>
+                <Text style={[mdStyles.statLbl, { color: '#3B82F6' }]}>Session Status</Text>
+              </View>
+            </View>
+
+            {dayLoading && <LoadingSpinner color={rc.primary} />}
+          </View>
+
+          {/* Tracking History */}
+          <View style={mdStyles.card}>
+            <View style={mdStyles.historyHeader}>
+              <Text style={mdStyles.cardTitle}>My Tracking History</Text>
+              <View style={mdStyles.dateRow}>
+                <Calendar size={14} color="#9CA3AF" />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {last7Days.map((d, i) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[mdStyles.dateChip, historyDate === d && { backgroundColor: rc.primary }]}
+                      onPress={() => handleHistoryDate(d)}
+                    >
+                      <Text style={[mdStyles.dateChipText, historyDate === d && { color: '#FFF' }]}>
+                        {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            {historyLoading ? (
+              <LoadingSpinner color={rc.primary} message="Loading..." />
+            ) : historySession ? (
+              <View style={mdStyles.historyGrid}>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Distance</Text><Text style={mdStyles.histVal}>{historySession.totalDistanceKm?.toFixed(1)} km</Text></View>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Allowance</Text><Text style={mdStyles.histVal}>{formatCurrency(historySession.allowanceAmount)}</Text></View>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Start</Text><Text style={mdStyles.histVal}>{formatTime(historySession.startedAt)}</Text></View>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>End</Text><Text style={mdStyles.histVal}>{historySession.endedAt ? formatTime(historySession.endedAt) : '--'}</Text></View>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Duration</Text><Text style={mdStyles.histVal}>{getSessionDuration(historySession)}</Text></View>
+                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Pings</Text><Text style={mdStyles.histVal}>{historySession.pingCount ?? 0}</Text></View>
+              </View>
+            ) : (
+              <View style={mdStyles.emptyHist}>
+                <MapPin size={28} color="#D1D5DB" />
+                <Text style={mdStyles.emptyHistText}>No tracking data for this date</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      )}
 
       {/* ── MAP TAB ──────────────────────────────────────────────────────── */}
       {activeTab === 'map' && (
@@ -1063,10 +1364,6 @@ export const LiveTrackingScreen = () => {
                   <Text style={styles.infoStatVal}>{selectedMarker.speedKmh?.toFixed(0) ?? '--'} km/h</Text>
                   <Text style={styles.infoStatLbl}>Speed</Text>
                 </View>
-                <View style={styles.infoStat}>
-                  <Text style={styles.infoStatCurr}>{formatCurrency(selectedMarker.allowanceAmount)}</Text>
-                  <Text style={styles.infoStatLbl}>Allowance</Text>
-                </View>
               </View>
 
               <Button
@@ -1089,13 +1386,97 @@ export const LiveTrackingScreen = () => {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[rc.primary]} />}
         >
-          {/* Summary row */}
+          {/* ── Filter bar: User picker + Date + Refresh ── */}
+          <View style={tfStyles.filterCard}>
+            <TouchableOpacity style={tfStyles.userSelector} onPress={() => setShowTeamUserPicker(true)}>
+              <Users size={15} color="#6B7280" />
+              <Text style={tfStyles.userSelectorLabel}>User</Text>
+              <Text style={[tfStyles.userSelectorValue, !selectedTeamUser && { color: '#9CA3AF' }]} numberOfLines={1}>
+                {selectedTeamUser
+                  ? `${selectedTeamUser.name} - ${selectedTeamUser.status === 'active' ? 'Active' : 'Ended'}`
+                  : '— Select a User —'}
+              </Text>
+              <ChevronDown size={14} color="#9CA3AF" />
+            </TouchableOpacity>
+            <View style={tfStyles.dateRefreshRow}>
+              <DateInput
+                label=""
+                value={teamDate}
+                onChange={setTeamDate}
+                accentColor={rc.primary}
+              />
+              <TouchableOpacity style={[tfStyles.refreshBtn, { borderColor: rc.primary }]} onPress={() => { setRefreshing(true); fetchLive().finally(() => setRefreshing(false)); }}>
+                <Text style={[tfStyles.refreshText, { color: rc.primary }]}>↻ Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── Selected user stats card ── */}
+          {selectedTeamUser && (
+            <View style={tfStyles.statsCard}>
+              <View style={tfStyles.statsCardTop}>
+                {selectedTeamUser.avatar && selectedTeamUser.avatar.startsWith('http') ? (
+                  <Image source={{ uri: selectedTeamUser.avatar }} style={tfStyles.statsAvatar} />
+                ) : (
+                  <View style={[tfStyles.statsAvatar, { backgroundColor: roleColor(selectedTeamUser.role), alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={tfStyles.statsAvatarText}>{initials(selectedTeamUser.name)}</Text>
+                  </View>
+                )}
+                <View>
+                  <Text style={tfStyles.statsName}>{selectedTeamUser.name}</Text>
+                  <View style={[tfStyles.statusChip, { backgroundColor: selectedTeamUser.status === 'active' ? '#D1FAE5' : '#F3F4F6' }]}>
+                    <Text style={[tfStyles.statusChipText, { color: selectedTeamUser.status === 'active' ? '#059669' : '#9CA3AF' }]}>
+                      {selectedTeamUser.status === 'active' ? 'Active' : 'Ended'}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedTeamUser(null)} hitSlop={10} style={{ marginLeft: 'auto' }}>
+                  <X size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+              <View style={tfStyles.statsRow}>
+                <View style={tfStyles.statItem}>
+                  <Text style={tfStyles.statLabel}>Last Seen</Text>
+                  <Text style={tfStyles.statValue}>{formatRelativeDate(selectedTeamUser.lastSeen)}</Text>
+                </View>
+                <View style={tfStyles.statItem}>
+                  <Text style={tfStyles.statLabel}>Distance Today</Text>
+                  <Text style={tfStyles.statValue}>{selectedTeamUser.totalDistanceKm.toFixed(1)} km</Text>
+                </View>
+                <View style={tfStyles.statItem}>
+                  <Text style={tfStyles.statLabel}>Allowance</Text>
+                  <Text style={tfStyles.statValue}>{formatCurrency(selectedTeamUser.allowanceAmount)}</Text>
+                </View>
+              </View>
+              <View style={tfStyles.statsRowSecond}>
+                <View style={tfStyles.statItem}>
+                  <Text style={tfStyles.statLabel}>Speed</Text>
+                  <Text style={tfStyles.statValue}>{selectedTeamUser.speedKmh?.toFixed(1) ?? '0.0'} km/h</Text>
+                </View>
+                {selectedTeamUser.batteryLevel != null && (
+                  <View style={tfStyles.statItem}>
+                    <Text style={tfStyles.statLabel}>Battery</Text>
+                    <Text style={[tfStyles.statValue, selectedTeamUser.batteryLevel < 0.2 ? { color: '#DC2626' } : {}]}>
+                      🔋 {Math.round(selectedTeamUser.batteryLevel * 100)}%
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[tfStyles.viewRouteBtn, { backgroundColor: rc.primary }]}
+                  onPress={() => handlePersonPress(selectedTeamUser)}
+                >
+                  <Navigation size={13} color="#FFF" />
+                  <Text style={tfStyles.viewRouteBtnText}>View Route</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Summary */}
           <View style={styles.summaryRow}>
             <Users size={14} color={rc.primary} />
-            <Text style={styles.summaryText}>
-              {activeCount} active · {liveUsers.length} tracked today
-            </Text>
-            <Text style={styles.summaryHint}>Tap any person to track them</Text>
+            <Text style={styles.summaryText}>{activeCount} active · {liveUsers.length} tracked today</Text>
+            <Text style={styles.summaryHint}>Tap to track</Text>
           </View>
 
           {liveUsers.length === 0 ? (
@@ -1192,97 +1573,60 @@ export const LiveTrackingScreen = () => {
         </ScrollView>
       )}
 
-      {/* ── ALLOWANCES TAB ───────────────────────────────────────────────── */}
-      {activeTab === 'allowances' && (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[rc.primary]} />}
-        >
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Date Range</Text>
-            <View style={styles.dateRangeRow}>
-              <View style={styles.dateInputWrap}>
-                <Text style={styles.dateInputLabel}>From</Text>
-                <TextInput
-                  style={styles.dateInput} value={dateFrom} onChangeText={setDateFrom}
-                  placeholder="YYYY-MM-DD" placeholderTextColor="#9CA3AF"
-                />
-              </View>
-              <View style={styles.dateInputWrap}>
-                <Text style={styles.dateInputLabel}>To</Text>
-                <TextInput
-                  style={styles.dateInput} value={dateTo} onChangeText={setDateTo}
-                  placeholder="YYYY-MM-DD" placeholderTextColor="#9CA3AF"
-                />
-              </View>
-              <Button title="Go" onPress={fetchAllowances} color={rc.primary} size="sm" style={styles.goBtn} />
+      {/* ── Team User Picker Modal ── */}
+      <Modal visible={showTeamUserPicker} transparent animationType="slide" onRequestClose={() => setShowTeamUserPicker(false)}>
+        <View style={tfStyles.pickerOverlay}>
+          <View style={tfStyles.pickerSheet}>
+            <View style={tfStyles.pickerHeader}>
+              <Text style={tfStyles.pickerTitle}>Select User</Text>
+              <TouchableOpacity onPress={() => { setShowTeamUserPicker(false); setTeamUserSearch(''); }} hitSlop={10}>
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
             </View>
-          </Card>
+            <View style={tfStyles.pickerSearch}>
+              <TextInput
+                style={tfStyles.pickerSearchInput}
+                placeholder="Search name..."
+                placeholderTextColor="#9CA3AF"
+                value={teamUserSearch}
+                onChangeText={setTeamUserSearch}
+              />
+              {teamUserSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setTeamUserSearch('')}>
+                  <X size={14} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+            <FlatList
+              data={liveUsers.filter(u => !teamUserSearch || u.name.toLowerCase().includes(teamUserSearch.toLowerCase()))}
+              keyExtractor={item => String(item.userId)}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={tfStyles.pickerItem}
+                  onPress={() => { setSelectedTeamUser(item); setShowTeamUserPicker(false); setTeamUserSearch(''); }}
+                >
+                  <View style={[tfStyles.pickerAvatar, { backgroundColor: roleColor(item.role) }]}>
+                    <Text style={tfStyles.pickerAvatarText}>{initials(item.name)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={tfStyles.pickerItemName}>{item.name}</Text>
+                    <Text style={tfStyles.pickerItemSub}>{item.role}{item.zoneName ? ` · ${item.zoneName}` : ''}</Text>
+                  </View>
+                  <View style={[tfStyles.statusDot2, { backgroundColor: item.status === 'active' ? '#22C55E' : '#9CA3AF' }]} />
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={<Text style={tfStyles.pickerEmpty}>No users found</Text>}
+            />
+          </View>
+        </View>
+      </Modal>
 
-          {allowancesLoading ? (
-            <LoadingSpinner color={rc.primary} message="Loading allowances..." />
-          ) : allowances.length === 0 ? (
-            <EmptyState title="No allowances" subtitle="No records for the selected period." icon="💰" />
-          ) : (
-            <>
-              {allowances.map(a => (
-                <Card key={a.id} style={styles.allowanceCard}>
-                  <View style={styles.allowanceHeader}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text style={styles.allowanceName}>{a.userName}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                        <RoleBadge role={a.role} />
-                        <Text style={styles.allowanceDateTxt}>{formatDate(a.allowanceDate)}</Text>
-                      </View>
-                    </View>
-                    <Badge label={a.approved ? 'Approved' : 'Pending'} color={a.approved ? '#22C55E' : '#F59E0B'} />
-                  </View>
-                  <View style={styles.allowanceDetails}>
-                    <View style={styles.allowanceItem}>
-                      <Text style={styles.allowanceItemLbl}>Distance</Text>
-                      <Text style={styles.allowanceItemVal}>{a.distanceKm.toFixed(1)} km</Text>
-                    </View>
-                    <View style={styles.allowanceItem}>
-                      <Text style={styles.allowanceItemLbl}>Rate</Text>
-                      <Text style={styles.allowanceItemVal}>{formatCurrency(a.ratePerKm)}/km</Text>
-                    </View>
-                    <View style={styles.allowanceItem}>
-                      <Text style={styles.allowanceItemLbl}>Amount</Text>
-                      <Text style={[styles.allowanceItemVal, { fontWeight: '700' }]}>{formatCurrency(a.grossAmount)}</Text>
-                    </View>
-                  </View>
-                  {a.isSuspicious && (
-                    <View style={styles.fraudWarn}>
-                      <Text style={styles.fraudWarnText}>⚠ Fraud score: {a.fraudScore}/100</Text>
-                    </View>
-                  )}
-                  {a.approvedByName && (
-                    <Text style={styles.approvedBy}>
-                      Approved by {a.approvedByName}{a.approvedAt ? ` on ${formatDate(a.approvedAt)}` : ''}
-                    </Text>
-                  )}
-                  {a.remarks && <Text style={styles.remarks}>Remarks: {a.remarks}</Text>}
-                  {!a.approved && (
-                    <View style={styles.approvalActions}>
-                      <Button title="Approve" onPress={() => handleApprove(a.id, true)} color="#22C55E" size="sm"
-                        loading={approveLoading === a.id} disabled={approveLoading !== null} style={{ flex: 1 }} />
-                      <Button title="Reject" onPress={() => handleApprove(a.id, false)} variant="danger" size="sm"
-                        loading={approveLoading === a.id} disabled={approveLoading !== null} style={{ flex: 1 }} />
-                    </View>
-                  )}
-                </Card>
-              ))}
-              <Card style={styles.totalFooter}>
-                <Text style={styles.totalLabel}>Total Allowance</Text>
-                <Text style={styles.totalValue}>{formatCurrency(totalAllowance)}</Text>
-              </Card>
-            </>
-          )}
-          <View style={{ height: 24 }} />
-        </ScrollView>
-      )}
+      <BackgroundLocationDisclosure
+        visible={showBgDisclosure}
+        onAccept={() => { setShowBgDisclosure(false); bgPermissionResolveRef.current?.(true); bgPermissionResolveRef.current = null; }}
+        onDecline={() => { setShowBgDisclosure(false); bgPermissionResolveRef.current?.(false); bgPermissionResolveRef.current = null; }}
+      />
     </SafeAreaView>
   );
 };
@@ -1361,32 +1705,6 @@ const styles = StyleSheet.create({
   emptyListText: { fontSize: rf(13), color: '#9CA3AF', textAlign: 'center', padding: 20 },
 
   // Allowances
-  dateRangeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  dateInputWrap: { flex: 1 },
-  dateInputLabel: { fontSize: rf(12), fontWeight: '500', color: '#6B7280', marginBottom: 4 },
-  dateInput: {
-    backgroundColor: '#F9FAFB', borderRadius: 8, borderWidth: 1,
-    borderColor: '#E5E7EB', paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: rf(13), color: '#111827',
-  },
-  goBtn: { marginBottom: 2 },
-  allowanceCard: { padding: 16 },
-  allowanceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  allowanceName: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  allowanceDateTxt: { fontSize: rf(12), color: '#9CA3AF' },
-  allowanceDetails: { flexDirection: 'row', marginTop: 12, gap: 12, backgroundColor: '#F9FAFB', borderRadius: 8, padding: 12 },
-  allowanceItem: { flex: 1, alignItems: 'center' },
-  allowanceItemLbl: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500' },
-  allowanceItemVal: { fontSize: rf(13), fontWeight: '600', color: '#111827', marginTop: 2 },
-  fraudWarn: { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 8, marginTop: 10 },
-  fraudWarnText: { fontSize: rf(12), fontWeight: '600', color: '#DC2626' },
-  approvedBy: { fontSize: rf(12), color: '#6B7280', marginTop: 8 },
-  remarks: { fontSize: rf(12), color: '#9CA3AF', fontStyle: 'italic', marginTop: 4 },
-  approvalActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  totalFooter: { padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  totalLabel: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  totalValue: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
-
   // SCA-specific styles
   scaSearchBar: { paddingHorizontal: 12, paddingVertical: 8 },
   scaSearchInput: {
@@ -1407,4 +1725,89 @@ const styles = StyleSheet.create({
     fontSize: rf(12), fontWeight: '700', color: '#E11D48',
     backgroundColor: '#FFF1F2', paddingHorizontal: 14, paddingVertical: 8,
   },
+});
+
+// ─── My Day styles ────────────────────────────────────────────────────────────
+const mdStyles = StyleSheet.create({
+  permBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FEF2F2', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#FECACA', marginBottom: 4,
+  },
+  permTitle: { fontSize: rf(13), fontWeight: '700', color: '#DC2626' },
+  permSub: { fontSize: rf(11), color: '#991B1B', marginTop: 2 },
+  permAction: { fontSize: rf(12), fontWeight: '700', color: '#DC2626', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  cardTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  cardDate: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  btnRow: { flexDirection: 'row', gap: 8 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  actionBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
+  endedBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10, marginBottom: 12 },
+  endedText: { fontSize: rf(12), fontWeight: '600', color: '#22C55E' },
+  fraudBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10, marginBottom: 12 },
+  fraudText: { fontSize: rf(12), fontWeight: '600', color: '#DC2626' },
+  statsGrid: { flexDirection: 'row', gap: 10 },
+  statBox: { flex: 1, backgroundColor: '#F0FDF9', borderRadius: 12, padding: 12, alignItems: 'center', gap: 5 },
+  statVal: { fontSize: rf(15), fontWeight: '800', color: '#134E4A' },
+  statLbl: { fontSize: rf(10), color: '#0D9488', fontWeight: '600', textAlign: 'center' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  historyHeader: { marginBottom: 12 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  dateChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 18, backgroundColor: '#F3F4F6' },
+  dateChipText: { fontSize: rf(11), fontWeight: '600', color: '#374151' },
+  historyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  histItem: { width: '47%', backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12 },
+  histLbl: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500', marginBottom: 4 },
+  histVal: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  emptyHist: { alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
+  emptyHistText: { fontSize: rf(13), color: '#9CA3AF' },
+});
+
+// ─── Team Filter styles ────────────────────────────────────────────────────────
+const tfStyles = StyleSheet.create({
+  // Filter bar
+  filterCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', gap: 10 },
+  userSelector: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#F9FAFB',
+  },
+  userSelectorLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
+  userSelectorValue: { flex: 1, fontSize: rf(13), color: '#111827', fontWeight: '500' },
+  dateRefreshRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
+  refreshText: { fontSize: rf(12), fontWeight: '700' },
+
+  // Selected user stats card
+  statsCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
+  statsCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statsAvatar: { width: 44, height: 44, borderRadius: 22 },
+  statsAvatarText: { fontSize: rf(14), fontWeight: '800', color: '#FFF' },
+  statsName: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 4 },
+  statusChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100, alignSelf: 'flex-start' },
+  statusChipText: { fontSize: rf(11), fontWeight: '700' },
+  statsRow: { flexDirection: 'row', gap: 12 },
+  statsRowSecond: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statItem: { flex: 1 },
+  statLabel: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500', marginBottom: 3 },
+  statValue: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  viewRouteBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  viewRouteBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
+
+  // Picker modal
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  pickerSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '70%' },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  pickerTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  pickerSearch: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  pickerSearchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
+  pickerItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
+  pickerAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  pickerAvatarText: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
+  pickerItemName: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
+  pickerItemSub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
+  statusDot2: { width: 9, height: 9, borderRadius: 4.5 },
+  pickerEmpty: { textAlign: 'center', padding: 32, fontSize: rf(14), color: '#9CA3AF' },
 });

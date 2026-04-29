@@ -4,10 +4,12 @@ import {
   Modal, FlatList, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, ChevronDown, X, Calendar, Clock, User, School } from 'lucide-react-native';
+import { Search, ChevronDown, X, Clock, User, School } from 'lucide-react-native';
+import { DateInput } from '../../components/common/DateInput';
 import { demosApi } from '../../api/demos';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
+import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
@@ -54,7 +56,6 @@ const PickerModal = ({
               placeholderTextColor="#9CA3AF"
               value={search}
               onChangeText={setSearch}
-              autoFocus
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')}>
@@ -155,7 +156,8 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
       .finally(() => setLoadingSchools(false));
 
     setLoadingUsers(true);
-    leadsApi.getAssignableFOs()
+    const userFetch = user?.role === 'SCA' ? authApi.getUsers() : leadsApi.getAssignableFOs();
+    userFetch
       .then(res => {
         const d: any = res.data;
         setUsers(Array.isArray(d) ? d : d?.items ?? d?.users ?? []);
@@ -251,18 +253,13 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>SCHEDULE</Text>
 
-          <Text style={styles.fieldLabel}>Date * (YYYY-MM-DD) — Today or future only</Text>
-          <View style={styles.inputRow}>
-            <Calendar size={16} color="#9CA3AF" style={styles.inputIcon} />
-            <TextInput
-              style={styles.inputWithIcon}
-              value={scheduledDate}
-              onChangeText={setScheduledDate}
-              placeholder={new Date().toISOString().split('T')[0]}
-              placeholderTextColor="#9CA3AF"
-              keyboardType="numbers-and-punctuation"
-            />
-          </View>
+          <DateInput
+            label="Date * (Today or future only)"
+            value={scheduledDate}
+            onChange={setScheduledDate}
+            placeholder="Select date"
+            accentColor={COLOR.primary}
+          />
 
           <View style={styles.twoCol}>
             <View style={styles.colField}>
