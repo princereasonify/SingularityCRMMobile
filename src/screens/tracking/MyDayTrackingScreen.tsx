@@ -15,6 +15,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import {
   MapPin,
   Navigation,
@@ -24,6 +25,8 @@ import {
   AlertTriangle,
   Wifi,
   WifiOff,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
@@ -48,6 +51,7 @@ import { ROLE_COLORS } from '../../utils/constants';
 import { formatCurrency, formatDate, formatTime, toISODate, toISTISOString } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
+import { DateInput } from '../../components/common/DateInput';
 
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
@@ -71,13 +75,17 @@ export const MyDayTrackingScreen = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [queuedPings, setQueuedPings] = useState(0);
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
   const [routePoints, setRoutePoints] = useState<RoutePointDto[]>([]);
   const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [allowances, setAllowances] = useState<AllowanceDto[]>([]);
   const [allowancesLoading, setAllowancesLoading] = useState(false);
+
+  const mapRef = useRef<MapView>(null);
+  const [mapType, setMapType] = useState<'standard' | 'satellite' | 'terrain' | 'hybrid'>('standard');
+  const [routePointsExpanded, setRoutePointsExpanded] = useState(false);
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [locationChecked, setLocationChecked] = useState(false);
@@ -495,7 +503,12 @@ export const MyDayTrackingScreen = () => {
     }
   }, [fetchSession, fetchAllowances]);
 
-  useEffect(() => { fetchAll().catch(() => {}); }, [fetchAll]);
+  useEffect(() => {
+    fetchAll().catch(() => {}).finally(() => {
+      handleDateSelect(toISODate(new Date())).catch(() => {});
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onRefresh = () => { setRefreshing(true); fetchAll().catch(() => {}); };
 
@@ -577,7 +590,18 @@ export const MyDayTrackingScreen = () => {
       const res = await trackingApi.getRoute(user.id, date);
       const data = res.data as any;
       setHistorySession(data?.session ?? null);
-      setRoutePoints(data?.route ?? []);
+      const pts: RoutePointDto[] = data?.route ?? [];
+      setRoutePoints(pts);
+      // Auto-fit map to route bounds
+      const validPts = pts.filter((p: RoutePointDto) => p.lat && p.lon && !p.isFiltered);
+      if (validPts.length > 1) {
+        setTimeout(() => {
+          mapRef.current?.fitToCoordinates(
+            validPts.map((p: RoutePointDto) => ({ latitude: p.lat, longitude: p.lon })),
+            { edgePadding: { top: 40, right: 40, bottom: 40, left: 40 }, animated: true },
+          );
+        }, 400);
+      }
     } catch {
       setHistorySession(null);
       setRoutePoints([]);
@@ -587,17 +611,6 @@ export const MyDayTrackingScreen = () => {
   };
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
-
-  const last30Days = useCallback(() => {
-    const days: string[] = [];
-    const today = new Date();
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      days.push(toISODate(d));
-    }
-    return days;
-  }, []);
 
   const getSessionDuration = (s: TrackingSessionDto): string => {
     if (!s.startedAt) return '--';
@@ -623,16 +636,6 @@ export const MyDayTrackingScreen = () => {
       case 'ended': return 'Day Ended';
       default: return 'Not Started';
     }
-  };
-
-  const formatDateLabel = (dateStr: string): string => {
-    const d = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    if (toISODate(d) === toISODate(today)) return 'Today';
-    if (toISODate(d) === toISODate(yesterday)) return 'Yesterday';
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   };
 
   if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading tracking..." />;
@@ -749,62 +752,139 @@ export const MyDayTrackingScreen = () => {
             <Text style={styles.sectionTitle}>Tracking History</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateScroller}>
-            {last30Days().map((date) => (
-              <TouchableOpacity key={date}
-                style={[styles.dateChip, selectedDate === date && { backgroundColor: COLOR.primary }]}
-                onPress={() => handleDateSelect(date)}>
-                <Text style={[styles.dateChipText, selectedDate === date && { color: '#FFF' }]}>
-                  {formatDateLabel(date)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <DateInput
+            value={selectedDate}
+            onChange={handleDateSelect}
+            placeholder="Select a date"
+            accentColor={COLOR.primary}
+          />
 
           {historyLoading ? (
             <LoadingSpinner color={COLOR.primary} message="Loading route..." />
-          ) : selectedDate && historySession ? (
-            <View style={styles.historySummary}>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>Distance</Text>
-                <Text style={styles.historyValue}>{historySession.totalDistanceKm?.toFixed(1)} km</Text>
+          ) : historySession ? (
+            <>
+              {/* Stats summary */}
+              <View style={styles.historySummary}>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statBoxLabel}>Distance</Text>
+                    <Text style={styles.statBoxValue}>{historySession.totalDistanceKm?.toFixed(1)} km</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statBoxLabel}>Allowance</Text>
+                    <Text style={styles.statBoxValue}>{formatCurrency(historySession.allowanceAmount)}</Text>
+                  </View>
+                </View>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statBoxLabel}>Start</Text>
+                    <Text style={styles.statBoxValue}>{formatTime(historySession.startedAt)}</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statBoxLabel}>End</Text>
+                    <Text style={styles.statBoxValue}>{historySession.endedAt ? formatTime(historySession.endedAt) : '--'}</Text>
+                  </View>
+                </View>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statBoxLabel}>Duration</Text>
+                    <Text style={styles.statBoxValue}>{getSessionDuration(historySession)}</Text>
+                  </View>
+                  {(historySession.fraudScore ?? 0) > 0 && (
+                    <View style={styles.statBox}>
+                      <Text style={styles.statBoxLabel}>Fraud Score</Text>
+                      <Text style={[styles.statBoxValue, historySession.isSuspicious ? { color: '#DC2626' } : {}]}>
+                        {historySession.fraudScore}/100
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>Allowance</Text>
-                <Text style={styles.historyValue}>{formatCurrency(historySession.allowanceAmount)}</Text>
+
+              {/* Map */}
+              <View style={styles.mapContainer}>
+                {/* Map type selector */}
+                <View style={styles.mapTypeRow}>
+                  {(['standard', 'satellite', 'terrain', 'hybrid'] as const).map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.mapTypeChip, mapType === type && { backgroundColor: COLOR.primary }]}
+                      onPress={() => setMapType(type)}
+                    >
+                      <Text style={[styles.mapTypeText, mapType === type && { color: '#FFF' }]}>
+                        {type === 'standard' ? 'Default' : type.charAt(0).toUpperCase() + type.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <MapView
+                  ref={mapRef}
+                  style={styles.map}
+                  mapType={mapType}
+                  initialRegion={{ latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 }}
+                >
+                  {routePoints.filter(p => !p.isFiltered).length > 1 && (
+                    <Polyline
+                      coordinates={routePoints.filter(p => !p.isFiltered).map(p => ({ latitude: p.lat, longitude: p.lon }))}
+                      strokeColor={COLOR.primary}
+                      strokeWidth={4}
+                    />
+                  )}
+                  {routePoints.filter(p => !p.isFiltered).length > 0 && (
+                    <Marker
+                      coordinate={{ latitude: routePoints.filter(p => !p.isFiltered)[0].lat, longitude: routePoints.filter(p => !p.isFiltered)[0].lon }}
+                      pinColor="#16A34A"
+                      title="Start"
+                    />
+                  )}
+                  {routePoints.filter(p => !p.isFiltered).length > 1 && (
+                    <Marker
+                      coordinate={{
+                        latitude: routePoints.filter(p => !p.isFiltered)[routePoints.filter(p => !p.isFiltered).length - 1].lat,
+                        longitude: routePoints.filter(p => !p.isFiltered)[routePoints.filter(p => !p.isFiltered).length - 1].lon,
+                      }}
+                      pinColor="#DC2626"
+                      title="End"
+                    />
+                  )}
+                </MapView>
               </View>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>Start Time</Text>
-                <Text style={styles.historyValue}>{formatTime(historySession.startedAt)}</Text>
-              </View>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>End Time</Text>
-                <Text style={styles.historyValue}>{historySession.endedAt ? formatTime(historySession.endedAt) : '--'}</Text>
-              </View>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>Duration</Text>
-                <Text style={styles.historyValue}>{getSessionDuration(historySession)}</Text>
-              </View>
-              <View style={styles.historyRow}>
-                <Text style={styles.historyLabel}>Ping Count</Text>
-                <Text style={styles.historyValue}>{historySession.pingCount ?? 0}</Text>
-              </View>
-              {(historySession.fraudScore ?? 0) > 0 && (
-                <View style={styles.historyRow}>
-                  <Text style={styles.historyLabel}>Fraud Score</Text>
-                  <Text style={[styles.historyValue, historySession.isSuspicious ? { color: '#DC2626' } : {}]}>
-                    {historySession.fraudScore}/100
-                  </Text>
+
+              {/* Route Points Accordion */}
+              {routePoints.length > 0 && (
+                <View style={styles.routePointsContainer}>
+                  <TouchableOpacity
+                    style={styles.routePointsHeader}
+                    onPress={() => setRoutePointsExpanded(e => !e)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.routePointsTitle}>Route Points ({routePoints.length})</Text>
+                    {routePointsExpanded
+                      ? <ChevronDown size={18} color="#6B7280" />
+                      : <ChevronRight size={18} color="#6B7280" />
+                    }
+                  </TouchableOpacity>
+                  {routePointsExpanded && (
+                    <>
+                      {routePoints.slice(0, 100).map((pt, idx) => (
+                        <View key={idx} style={styles.routePointRow}>
+                          <View style={[styles.routePointDot, { backgroundColor: pt.isFiltered ? '#9CA3AF' : '#22C55E' }]} />
+                          <Text style={styles.routePointCoords}>
+                            {pt.lat.toFixed(5)}, {pt.lon.toFixed(5)}
+                          </Text>
+                          <Text style={styles.routePointTime}>{formatTime(pt.recordedAt)}</Text>
+                        </View>
+                      ))}
+                      {routePoints.length > 100 && (
+                        <Text style={styles.routePointsMore}>+{routePoints.length - 100} more points</Text>
+                      )}
+                    </>
+                  )}
                 </View>
               )}
-            </View>
-          ) : selectedDate ? (
-            <EmptyState title="No tracking data" subtitle="No route data available for this date." icon="📍" />
+            </>
           ) : (
-            <View style={styles.selectDateHint}>
-              <MapPin size={20} color="#9CA3AF" />
-              <Text style={styles.hintText}>Select a date to view route history</Text>
-            </View>
+            <EmptyState title="No tracking data" subtitle="No route data available for this date." icon="📍" />
           )}
         </Card>
 
@@ -905,18 +985,43 @@ const styles = StyleSheet.create({
   },
   breakdownLabel: { fontSize: rf(12), color: '#6B7280' },
   breakdownValue: { fontSize: rf(12), fontWeight: '600', color: '#111827' },
-  dateScroller: { gap: 8, paddingVertical: 8 },
-  dateChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6' },
-  dateChipText: { fontSize: rf(12), fontWeight: '600', color: '#374151' },
-  historySummary: { marginTop: 12, backgroundColor: '#F9FAFB', borderRadius: 12, padding: 14 },
+  historySummary: { marginTop: 12, gap: 10 },
+  statsRow: { flexDirection: 'row', gap: 10 },
+  statBox: {
+    flex: 1, backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12,
+  },
+  statBoxLabel: { fontSize: rf(11), color: '#6B7280', fontWeight: '500', marginBottom: 4 },
+  statBoxValue: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
   historyRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
   },
   historyLabel: { fontSize: rf(13), color: '#6B7280', fontWeight: '500' },
   historyValue: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  selectDateHint: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 8 },
-  hintText: { fontSize: rf(13), color: '#9CA3AF' },
+  mapContainer: { marginTop: 14, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E7EB' },
+  mapTypeRow: {
+    flexDirection: 'row', gap: 6, padding: 8, backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  mapTypeChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: '#E5E7EB',
+  },
+  mapTypeText: { fontSize: rf(11), fontWeight: '600', color: '#374151' },
+  map: { height: 220 },
+  routePointsContainer: { marginTop: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 12 },
+  routePointsHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 4, marginBottom: 4,
+  },
+  routePointsTitle: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  routePointRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
+  routePointDot: { width: 8, height: 8, borderRadius: 4 },
+  routePointCoords: { flex: 1, fontSize: rf(11), color: '#374151', fontFamily: 'monospace' },
+  routePointTime: { fontSize: rf(11), color: '#9CA3AF' },
+  routePointsMore: { fontSize: rf(12), color: '#9CA3AF', textAlign: 'center', paddingVertical: 8, fontStyle: 'italic' },
   allowanceRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',

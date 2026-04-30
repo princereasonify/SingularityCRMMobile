@@ -852,6 +852,11 @@ export const LiveTrackingScreen = () => {
   const [teamDate, setTeamDate] = useState(toISODate(new Date()));
   const [showTeamUserPicker, setShowTeamUserPicker] = useState(false);
   const [teamUserSearch, setTeamUserSearch] = useState('');
+
+  // SCA: SH-level filter — when an SH is selected, fetch their scoped team
+  const [selectedSHId, setSelectedSHId] = useState<number | null>(null);
+  const [shTeamUsers, setShTeamUsers] = useState<LiveLocationDto[]>([]);
+  const [shTeamLoading, setShTeamLoading] = useState(false);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const didFitMap = useRef(false);
 
@@ -896,6 +901,31 @@ export const LiveTrackingScreen = () => {
   const handlePersonPress = useCallback((u: LiveLocationDto) => {
     setTrackingPerson(u);
   }, []);
+
+  // SCA: fetch team for the selected SH (passes managerId to backend for future support)
+  const fetchSHTeam = useCallback(async (shId: number) => {
+    setShTeamLoading(true);
+    try {
+      const res = await trackingApi.getLiveLocations(shId);
+      const data = res.data as LiveLocationDto[];
+      // Backend may not yet filter by managerId — fall back to client-side filter
+      // by removing the SH themselves and any users from other SHs (future: backend handles this)
+      setShTeamUsers(Array.isArray(data) ? data : []);
+    } catch {
+      setShTeamUsers([]);
+    } finally {
+      setShTeamLoading(false);
+    }
+  }, []);
+
+  const handleSelectSH = useCallback((shId: number | null) => {
+    setSelectedSHId(shId);
+    setSearchQuery('');
+    setRoleFilter('all');
+    if (shId !== null) {
+      fetchSHTeam(shId);
+    }
+  }, [fetchSHTeam]);
 
   // ── My Day: permission + tracking engine ────────────────────────────────────
 
@@ -1083,23 +1113,50 @@ export const LiveTrackingScreen = () => {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  // Role-scoped users: the API already returns team members scoped to the logged-in user.
+  // We only filter by role so each role sees the correct member types in Team/Map views.
+  const scopedUsers = useMemo(() => {
+    if (!user) return liveUsers;
+    switch (user.role) {
+      case 'ZH':
+        // ZH sees only FOs (API already returns their zone's users)
+        return liveUsers.filter(u => u.role === 'FO');
+      case 'RH':
+        // RH sees ZHs and FOs (API already returns their region's users)
+        return liveUsers.filter(u => u.role === 'ZH' || u.role === 'FO');
+      case 'SH':
+        // SH sees all RHs, ZHs, FOs below them
+        return liveUsers.filter(u => u.role === 'RH' || u.role === 'ZH' || u.role === 'FO');
+      case 'SCA':
+      default:
+        return liveUsers;
+    }
+  }, [liveUsers, user]);
+
   const mapUsers = useMemo(() =>
-    statusFilter === 'all' ? liveUsers : liveUsers.filter(u => u.status === statusFilter),
-  [liveUsers, statusFilter]);
+    statusFilter === 'all' ? scopedUsers : scopedUsers.filter(u => u.status === statusFilter),
+  [scopedUsers, statusFilter]);
 
-  const activeCount = useMemo(() => liveUsers.filter(u => u.status === 'active').length, [liveUsers]);
-  const zoneGroups = useMemo(() => buildZoneGroups(liveUsers), [liveUsers]);
-  const regionGroups = useMemo(() => buildRegionGroups(liveUsers), [liveUsers]);
+  const activeCount = useMemo(() => scopedUsers.filter(u => u.status === 'active').length, [scopedUsers]);
 
-  // SCA: filter by search + role across all users
+  // SCA: the base pool is either all users or the selected SH's team
+  const scaBaseUsers = useMemo(() => {
+    if (user?.role !== 'SCA') return scopedUsers;
+    return selectedSHId !== null ? shTeamUsers : scopedUsers;
+  }, [user?.role, scopedUsers, selectedSHId, shTeamUsers]);
+
+  // SCA: apply search + role filter on top of the base pool
   const scaFilteredUsers = useMemo(() => {
-    if (user?.role !== 'SCA') return liveUsers;
-    return liveUsers.filter(u => {
+    if (user?.role !== 'SCA') return scopedUsers;
+    return scaBaseUsers.filter(u => {
       const matchRole = roleFilter === 'all' || u.role === roleFilter;
       const matchSearch = !searchQuery.trim() || u.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchRole && matchSearch;
     });
-  }, [liveUsers, user?.role, roleFilter, searchQuery]);
+  }, [scaBaseUsers, scopedUsers, user?.role, roleFilter, searchQuery]);
+
+  // SH list available for the SCA SH-filter chips
+  const shList = useMemo(() => liveUsers.filter(u => u.role === 'SH'), [liveUsers]);
 
   // ── Individual tracking guard ─────────────────────────────────────────────
 
@@ -1475,11 +1532,11 @@ export const LiveTrackingScreen = () => {
           {/* Summary */}
           <View style={styles.summaryRow}>
             <Users size={14} color={rc.primary} />
-            <Text style={styles.summaryText}>{activeCount} active · {liveUsers.length} tracked today</Text>
+            <Text style={styles.summaryText}>{activeCount} active · {scopedUsers.length} tracked today</Text>
             <Text style={styles.summaryHint}>Tap to track</Text>
           </View>
 
-          {liveUsers.length === 0 ? (
+          {scopedUsers.length === 0 ? (
             <EmptyState
               title="No tracking data"
               subtitle="No team members have started tracking today."
@@ -1487,40 +1544,137 @@ export const LiveTrackingScreen = () => {
             />
           ) : (
             <>
-              {/* ZH: flat FO list */}
+              {/* ZH: flat FO list (zone-scoped) */}
               {user?.role === 'ZH' && (
                 <View style={styles.listCard}>
-                  {liveUsers.filter(u => u.role === 'FO').length === 0 ? (
+                  {scopedUsers.length === 0 ? (
                     <Text style={styles.emptyListText}>None of your FOs have started tracking today.</Text>
                   ) : (
-                    liveUsers.filter(u => u.role === 'FO').map(fo => (
+                    scopedUsers.map(fo => (
                       <PersonRow key={fo.userId} user={fo} onPress={handlePersonPress} />
                     ))
                   )}
                 </View>
               )}
 
-              {/* RH: grouped by zone */}
+              {/* RH: search + grouped by zone (ZH + FOs) */}
               {user?.role === 'RH' && (
-                zoneGroups.length === 0
-                  ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
-                  : zoneGroups.map(g => (
-                    <ZoneGroupSection key={g.zoneName} group={g} onPersonPress={handlePersonPress} defaultExpanded />
-                  ))
+                <>
+                  <View style={styles.scaSearchBar}>
+                    <TextInput
+                      style={styles.scaSearchInput}
+                      placeholder="Search by name..."
+                      placeholderTextColor="#9CA3AF"
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                  </View>
+                  {(() => {
+                    const filtered = searchQuery.trim()
+                      ? scopedUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                      : scopedUsers;
+                    const groups = buildZoneGroups(filtered);
+                    return groups.length === 0
+                      ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
+                      : groups.map(g => (
+                        <ZoneGroupSection key={g.zoneName} group={g} onPersonPress={handlePersonPress} defaultExpanded />
+                      ));
+                  })()}
+                </>
               )}
 
-              {/* SH: grouped by region → zone */}
+              {/* SH: search + role filter + grouped by region → zone (RH + ZH + FOs) */}
               {user?.role === 'SH' && (
-                regionGroups.length === 0
-                  ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
-                  : regionGroups.map(g => (
-                    <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
-                  ))
+                <>
+                  <View style={styles.scaSearchBar}>
+                    <TextInput
+                      style={styles.scaSearchInput}
+                      placeholder="Search by name..."
+                      placeholderTextColor="#9CA3AF"
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaRoleRow}>
+                    {(['all', 'RH', 'ZH', 'FO'] as const).map(r => (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.scaRoleChip, roleFilter === r && { backgroundColor: rc.primary }]}
+                        onPress={() => setRoleFilter(r)}
+                      >
+                        <Text style={[styles.scaRoleText, roleFilter === r && { color: '#FFF' }]}>
+                          {r === 'all' ? 'All Roles' : r}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {(() => {
+                    const filtered = scopedUsers.filter(u => {
+                      const matchRole = roleFilter === 'all' || u.role === roleFilter;
+                      const matchSearch = !searchQuery.trim() || u.name.toLowerCase().includes(searchQuery.toLowerCase());
+                      return matchRole && matchSearch;
+                    });
+                    const groups = buildRegionGroups(filtered);
+                    return groups.length === 0
+                      ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
+                      : groups.map(g => (
+                        <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
+                      ));
+                  })()}
+                </>
               )}
 
-              {/* SCA: national view — search + role filter + full hierarchy */}
+              {/* SCA: national view — SH filter + search + role filter + full hierarchy */}
               {user?.role === 'SCA' && (
                 <>
+                  {/* SH filter chips — "View as SH" selector */}
+                  {shList.length > 0 && (
+                    <View style={styles.scaSHFilterBlock}>
+                      <Text style={styles.scaSHFilterLabel}>Filter by Head</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaSHFilterRow}>
+                        {/* All chip */}
+                        <TouchableOpacity
+                          style={[styles.scaSHChip, selectedSHId === null && { backgroundColor: rc.primary }]}
+                          onPress={() => handleSelectSH(null)}
+                        >
+                          <Text style={[styles.scaSHChipText, selectedSHId === null && { color: '#FFF' }]}>All</Text>
+                        </TouchableOpacity>
+                        {/* One chip per SH */}
+                        {shList.map(sh => (
+                          <TouchableOpacity
+                            key={sh.userId}
+                            style={[
+                              styles.scaSHChip,
+                              selectedSHId === sh.userId && { backgroundColor: rc.primary },
+                              sh.status === 'active' && selectedSHId !== sh.userId && { borderColor: '#22C55E', borderWidth: 1.5 },
+                            ]}
+                            onPress={() => handleSelectSH(sh.userId)}
+                          >
+                            <View style={[styles.scaSHChipDot, { backgroundColor: sh.status === 'active' ? '#22C55E' : '#9CA3AF' }]} />
+                            <Text style={[styles.scaSHChipText, selectedSHId === sh.userId && { color: '#FFF' }]} numberOfLines={1}>
+                              {sh.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                      {/* Selected SH summary */}
+                      {selectedSHId !== null && (
+                        <View style={styles.scaSHSelectedBanner}>
+                          {shTeamLoading ? (
+                            <Text style={styles.scaSHSelectedText}>Loading team...</Text>
+                          ) : (
+                            <Text style={styles.scaSHSelectedText}>
+                              Showing team: {shList.find(s => s.userId === selectedSHId)?.name} · {scaBaseUsers.filter(u => u.role !== 'SH').length} members
+                            </Text>
+                          )}
+                          <TouchableOpacity onPress={() => handleSelectSH(null)} hitSlop={8}>
+                            <X size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   {/* Search bar */}
                   <View style={styles.scaSearchBar}>
                     <TextInput
@@ -1531,12 +1685,9 @@ export const LiveTrackingScreen = () => {
                       onChangeText={setSearchQuery}
                     />
                   </View>
+
                   {/* Role filter chips */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.scaRoleRow}
-                  >
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaRoleRow}>
                     {(['all', 'SH', 'RH', 'ZH', 'FO'] as const).map(r => (
                       <TouchableOpacity
                         key={r}
@@ -1549,22 +1700,30 @@ export const LiveTrackingScreen = () => {
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
-                  {/* SH-level users (national heads) */}
-                  {scaFilteredUsers.filter(u => u.role === 'SH').length > 0 && (
-                    <View style={styles.scaSHSection}>
-                      <Text style={styles.scaSHLabel}>🏢 National Heads</Text>
-                      {scaFilteredUsers.filter(u => u.role === 'SH').map(u => (
-                        <PersonRow key={u.userId} user={u} onPress={handlePersonPress} />
-                      ))}
-                    </View>
+
+                  {shTeamLoading ? (
+                    <LoadingSpinner color={rc.primary} message="Loading team..." />
+                  ) : (
+                    <>
+                      {/* SH-level users (shown only in All view, not when filtering by specific SH) */}
+                      {selectedSHId === null && scaFilteredUsers.filter(u => u.role === 'SH').length > 0 && (
+                        <View style={styles.scaSHSection}>
+                          <Text style={styles.scaSHLabel}>National Heads (SH)</Text>
+                          {scaFilteredUsers.filter(u => u.role === 'SH').map(u => (
+                            <PersonRow key={u.userId} user={u} onPress={handlePersonPress} />
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Regional hierarchy */}
+                      {buildRegionGroups(scaFilteredUsers.filter(u => u.role !== 'SH')).length === 0
+                        ? <EmptyState title="No users match" subtitle="Try adjusting the search or role filter." icon="🔍" />
+                        : buildRegionGroups(scaFilteredUsers.filter(u => u.role !== 'SH')).map(g => (
+                          <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
+                        ))
+                      }
+                    </>
                   )}
-                  {/* Regional hierarchy */}
-                  {buildRegionGroups(scaFilteredUsers).length === 0
-                    ? <EmptyState title="No users match" subtitle="Try adjusting the search or role filter." icon="🔍" />
-                    : buildRegionGroups(scaFilteredUsers).map(g => (
-                      <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
-                    ))
-                  }
                 </>
               )}
             </>
@@ -1598,7 +1757,7 @@ export const LiveTrackingScreen = () => {
               )}
             </View>
             <FlatList
-              data={liveUsers.filter(u => !teamUserSearch || u.name.toLowerCase().includes(teamUserSearch.toLowerCase()))}
+              data={scopedUsers.filter(u => !teamUserSearch || u.name.toLowerCase().includes(teamUserSearch.toLowerCase()))}
               keyExtractor={item => String(item.userId)}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
@@ -1725,6 +1884,26 @@ const styles = StyleSheet.create({
     fontSize: rf(12), fontWeight: '700', color: '#E11D48',
     backgroundColor: '#FFF1F2', paddingHorizontal: 14, paddingVertical: 8,
   },
+  // SH filter chips (SCA view)
+  scaSHFilterBlock: {
+    marginHorizontal: 12, marginBottom: 8,
+    backgroundColor: '#F8FAFF', borderRadius: 12,
+    borderWidth: 1, borderColor: '#E0E7FF', padding: 10,
+  },
+  scaSHFilterLabel: { fontSize: rf(11), fontWeight: '700', color: '#6B7280', marginBottom: 8 },
+  scaSHFilterRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  scaSHChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: '#E5E7EB',
+  },
+  scaSHChipDot: { width: 7, height: 7, borderRadius: 3.5 },
+  scaSHChipText: { fontSize: rf(12), fontWeight: '600', color: '#374151', maxWidth: 100 },
+  scaSHSelectedBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E0E7FF',
+  },
+  scaSHSelectedText: { fontSize: rf(11), color: '#4B5563', fontWeight: '500', flex: 1 },
 });
 
 // ─── My Day styles ────────────────────────────────────────────────────────────

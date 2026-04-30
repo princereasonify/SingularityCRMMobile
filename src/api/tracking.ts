@@ -66,9 +66,11 @@ export const trackingApi = {
     return res;
   },
 
-  getLiveLocations: async () => {
-    log('getLiveLocations');
-    const res = await apiClient.get('/tracking/live-locations');
+  getLiveLocations: async (managerId?: number) => {
+    const params: any = {};
+    if (managerId != null) params.managerId = managerId;
+    log('getLiveLocations', Object.keys(params).length ? params : undefined);
+    const res = await apiClient.get('/tracking/live-locations', { params });
     log('getLiveLocations', undefined, res.data);
     return res;
   },
