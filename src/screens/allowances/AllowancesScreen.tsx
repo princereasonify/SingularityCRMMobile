@@ -2,19 +2,11 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
   TextInput, ActivityIndicator, FlatList, Pressable, Image, Linking,
+  Platform, PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, X, Plus, Send, AlertTriangle, DollarSign, Square, CheckSquare, Paperclip, ExternalLink } from 'lucide-react-native';
-// Lazy-load image picker so the app compiles before the package is installed
-type _PickerAsset = { uri?: string; fileName?: string };
-type _PickerResponse = { assets?: _PickerAsset[] };
-type _PickerOptions = { mediaType: string; quality: number };
-const launchCamera = (opts: _PickerOptions, cb: (r: _PickerResponse) => void) => {
-  try { require('react-native-image-picker').launchCamera(opts, cb); } catch { cb({}); }
-};
-const launchImageLibrary = (opts: _PickerOptions, cb: (r: _PickerResponse) => void) => {
-  try { require('react-native-image-picker').launchImageLibrary(opts, cb); } catch { cb({}); }
-};
+import { launchCamera as _launchCamera, launchImageLibrary as _launchImageLibrary } from 'react-native-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { trackingApi } from '../../api/tracking';
 import { expenseClaimsApi } from '../../api/expenseClaims';
@@ -76,20 +68,142 @@ function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
     setBillName(null);
   };
 
+  const openCamera = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const already = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+        if (!already) {
+          const result = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            {
+              title: 'Camera Permission Required',
+              message: 'The app needs camera access to capture your bill.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            },
+          );
+          if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+            Alert.alert(
+              'Camera Permission Blocked',
+              'Camera access is blocked. Please enable it in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            );
+            return;
+          }
+          if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission Denied', 'Camera access is required to capture bill photos.');
+            return;
+          }
+        }
+      } catch {
+        Alert.alert('Error', 'Could not request camera permission.');
+        return;
+      }
+    }
+
+    _launchCamera(
+      { mediaType: 'photo', quality: 0.8, saveToPhotos: false, includeBase64: false },
+      res => {
+        if (res.didCancel) return;
+        if (res.errorCode === 'permission') {
+          Alert.alert(
+            'Camera Permission Required',
+            'Please enable camera access in your device Settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+        if (res.errorCode === 'camera_unavailable') {
+          Alert.alert('Camera Unavailable', 'No camera found on this device.');
+          return;
+        }
+        if (res.errorCode) {
+          Alert.alert('Camera Error', res.errorMessage ?? 'Could not open camera.');
+          return;
+        }
+        const asset = res.assets?.[0];
+        if (asset?.uri) {
+          setBillUri(asset.uri);
+          setBillName(asset.fileName ?? `bill_${Date.now()}.jpg`);
+        }
+      },
+    );
+  };
+
+  const openPhotoLibrary = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const permission = Number(Platform.Version) >= 33
+          ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+          : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+        const already = await PermissionsAndroid.check(permission);
+        if (!already) {
+          const result = await PermissionsAndroid.request(permission, {
+            title: 'Photo Library Permission Required',
+            message: 'The app needs access to your photos to attach a bill.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Deny',
+          });
+          if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+            Alert.alert(
+              'Photo Permission Blocked',
+              'Photo access is blocked. Please enable it in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            );
+            return;
+          }
+          if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission Denied', 'Photo library access is required to attach a bill.');
+            return;
+          }
+        }
+      } catch {
+        Alert.alert('Error', 'Could not request photo library permission.');
+        return;
+      }
+    }
+
+    _launchImageLibrary(
+      { mediaType: 'photo', quality: 0.8, includeBase64: false },
+      res => {
+        if (res.didCancel) return;
+        if (res.errorCode === 'permission') {
+          Alert.alert(
+            'Photo Permission Required',
+            'Please enable photo library access in your device Settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+        if (res.errorCode) {
+          Alert.alert('Error', res.errorMessage ?? 'Could not open photo library.');
+          return;
+        }
+        const asset = res.assets?.[0];
+        if (asset?.uri) {
+          setBillUri(asset.uri);
+          setBillName(asset.fileName ?? `bill_${Date.now()}.jpg`);
+        }
+      },
+    );
+  };
+
   const handlePickBill = () => {
     Alert.alert('Attach Bill', 'Choose source', [
-      {
-        text: 'Camera',
-        onPress: () => launchCamera({ mediaType: 'photo', quality: 0.8 }, res => {
-          if (res.assets?.[0]) { setBillUri(res.assets[0].uri ?? null); setBillName(res.assets[0].fileName ?? 'bill.jpg'); }
-        }),
-      },
-      {
-        text: 'Photo Library',
-        onPress: () => launchImageLibrary({ mediaType: 'photo', quality: 0.8 }, res => {
-          if (res.assets?.[0]) { setBillUri(res.assets[0].uri ?? null); setBillName(res.assets[0].fileName ?? 'bill.jpg'); }
-        }),
-      },
+      { text: 'Camera', onPress: openCamera },
+      { text: 'Photo Library', onPress: openPhotoLibrary },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -256,7 +370,7 @@ function TravelCard({ item, isManager, selected, onSelect, onApprove, onReject }
               {item.approved ? 'Approved' : 'Pending'}
             </Text>
           </View>
-          {isManager && !item.approved && (
+          {isManager && onApprove && onReject && !item.approved && (
             <View style={tc.actionBtns}>
               <TouchableOpacity style={tc.approveBtn} onPress={() => onApprove(item.id)}>
                 <Check size={12} color="#FFF" />
@@ -397,7 +511,7 @@ const sum = StyleSheet.create({
 export const AllowancesScreen = () => {
   const { user } = useAuth();
   const role = user?.role || 'FO';
-  const isManager = role !== 'FO';
+  const isManager = role === 'ZH' || role === 'RH' || role === 'SH' || role === 'SCA';
   const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
 
   const { from: defaultFrom, to: defaultTo } = getMonthRange();
@@ -661,8 +775,8 @@ export const AllowancesScreen = () => {
                   isManager={isManager}
                   selected={tSelected.has(item.id)}
                   onSelect={isManager && !item.approved ? () => toggleTSelect(item.id) : undefined}
-                  onApprove={handleTravelApprove}
-                  onReject={(id: number) => setRejectTravelId(id)}
+                  onApprove={isManager ? handleTravelApprove : undefined}
+                  onReject={isManager ? (id: number) => setRejectTravelId(id) : undefined}
                 />
               )}
               contentContainerStyle={s.list}

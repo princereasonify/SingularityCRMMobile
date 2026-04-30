@@ -33,8 +33,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>SingularityCRM needs camera access to capture bill photos for expense claims.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SingularityCRM needs access to your photo library to save and share PDF reports and documents.</string>
+	<string>SingularityCRM needs access to your photo library to attach bill images for expense claims.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SingularityCRM needs permission to save captured bill photos to your photo library.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SingularityCRM needs your location to track your daily travel for attendance and travel allowance calculation.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
