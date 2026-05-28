@@ -1,6 +1,6 @@
 {
   "name": "SingularityCRM",
-  "version": "0.0.1",
+  "version": "1.6.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
