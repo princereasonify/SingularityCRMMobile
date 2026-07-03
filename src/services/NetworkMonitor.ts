@@ -14,7 +14,7 @@ class NetworkMonitorService {
   private _isOnline = true;
   private _listeners: Set<ConnectivityListener> = new Set();
   private _pollInterval: ReturnType<typeof setInterval> | null = null;
-  private _checkUrl = 'https://singularity-learn.com/sales-crm/api/health';
+  private _checkUrl = 'https://sales.singularity-learn.com/api/health';
 
   get isOnline() {
     return this._isOnline;
