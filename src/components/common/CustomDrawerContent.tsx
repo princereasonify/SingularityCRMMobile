@@ -5,8 +5,6 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  Modal,
-  Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -17,6 +15,7 @@ import {
 import { LogOut } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { rf } from '../../utils/responsive';
+import { LogoutModal } from './LogoutModal';
 
 const brandLogo = require('../../asset/Images/image.png');
 
@@ -68,36 +67,12 @@ export const CustomDrawerContent = (props: DrawerContentComponentProps) => {
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
 
-      {/* ── Custom Logout Modal ── */}
-      <Modal visible={showLogoutModal} transparent animationType="fade">
-        <Pressable style={styles.overlay} onPress={() => setShowLogoutModal(false)}>
-          <Pressable style={styles.modal} onPress={() => {}}>
-            <View style={styles.modalIconWrap}>
-              <LogOut size={28} color="#DC2626" />
-            </View>
-            <Text style={styles.modalTitle}>Logout</Text>
-            <Text style={styles.modalMessage}>
-              Are you sure you want to logout from your account?
-            </Text>
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setShowLogoutModal(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={handleLogout}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.confirmBtnText}>Yes, Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* ── Themed Logout Modal (shared, Sunstone) ── */}
+      <LogoutModal
+        visible={showLogoutModal}
+        onCancel={() => setShowLogoutModal(false)}
+        onConfirm={handleLogout}
+      />
     </View>
   );
 };
@@ -164,78 +139,5 @@ const styles = StyleSheet.create({
     fontSize: rf(14),
     fontWeight: '600',
     color: '#DC2626',
-  },
-
-  // ── Logout Modal ──
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  modal: {
-    backgroundColor: '#FFF',
-    borderRadius: 24,
-    padding: 28,
-    width: '100%',
-    maxWidth: 340,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.15,
-    shadowRadius: 32,
-    elevation: 12,
-  },
-  modalIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FEF2F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: rf(20),
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  modalMessage: {
-    fontSize: rf(13),
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    fontSize: rf(14),
-    fontWeight: '600',
-    color: '#374151',
-  },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: '#DC2626',
-    alignItems: 'center',
-  },
-  confirmBtnText: {
-    fontSize: rf(14),
-    fontWeight: '600',
-    color: '#FFF',
   },
 });

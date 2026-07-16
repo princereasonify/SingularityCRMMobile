@@ -33,6 +33,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SingularityCRM uses Face ID to let you sign in quickly and securely.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SingularityCRM needs camera access to capture bill photos for expense claims.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

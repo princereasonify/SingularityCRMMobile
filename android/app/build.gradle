@@ -122,6 +122,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // Biometric auth (Face/Fingerprint via BiometricPrompt) — used by BiometricModule.kt
+    implementation("androidx.biometric:biometric:1.1.0")
+
     // Firebase BoM
     implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-analytics")

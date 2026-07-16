@@ -9,6 +9,7 @@ import {
   TextInput,
   useWindowDimensions,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,6 +23,16 @@ import { CustomKeyboard } from '../../components/common/CustomKeyboard';
 import { Fonts, getAuthTheme } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { applyLoginOrientation, applyAuthedOrientation } from '../../utils/orientation';
+import { BiometricButton } from '../../components/common/BiometricButton';
+import {
+  getBiometricInfo,
+  isBiometricEnabled,
+  setBiometricEnabled,
+  disableBiometric,
+  BiometricInfo,
+} from '../../services/biometricService';
+import { saveCredentials, loadCredentials, clearCredentials } from '../../services/secureStorage';
+import { androidAuthenticate } from '../../services/nativeBiometric';
 
 export const LoginScreen = ({ navigation }: any) => {
   const { login } = useAuth();
@@ -40,6 +51,13 @@ export const LoginScreen = ({ navigation }: any) => {
   // The in-app keyboard is open for whichever field is active (null = closed).
   const [activeField, setActiveField] = useState<'email' | 'password' | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  // ── Biometric quick sign-in ──
+  const [biometricInfo, setBiometricInfo] = useState<BiometricInfo | null>(null);
+  const [biometricEnabled, setBiometricEnabledState] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const biometricEnabledRef = useRef(false);      // live value for the focus-effect closure
+  const biometricAutoTriggered = useRef(false);   // one-shot guard for the auto-prompt
 
   const scrollRef = useRef<ScrollView>(null);
   const emailRef = useRef<TextInput>(null);
@@ -95,7 +113,21 @@ export const LoginScreen = ({ navigation }: any) => {
     setLoading(true);
     try {
       applyAuthedOrientation();
-      await login(email.trim().toLowerCase(), password);
+      const em = email.trim().toLowerCase();
+      await login(em, password);
+      // Auto-enroll biometrics silently on the first successful password login
+      // (only when the hardware is available). Fire-and-forget so it can never
+      // block or fail the login — the screen is already navigating away.
+      if (biometricInfo?.status === 'available' && !biometricEnabledRef.current) {
+        saveCredentials(em, password)
+          .then(ok => {
+            if (ok) {
+              biometricEnabledRef.current = true;
+              return setBiometricEnabled(true);
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Invalid email or password';
       Alert.alert('Login Failed', msg);
@@ -103,6 +135,60 @@ export const LoginScreen = ({ navigation }: any) => {
       setLoading(false);
     }
   };
+
+  // ── Biometric sign-in: unlock stored credentials and replay the login. ──
+  const handleBiometricLogin = useCallback(async () => {
+    if (!biometricEnabledRef.current) return;
+    setBiometricLoading(true);
+    try {
+      // Android authenticates via the native prompt FIRST; iOS does it inside the
+      // Keychain read (loadCredentials shows the Face ID / Touch ID sheet).
+      if (Platform.OS === 'android') {
+        const ok = await androidAuthenticate();
+        if (!ok) return; // cancelled — stay on the password screen, silently
+      }
+      const creds = await loadCredentials();
+      if (!creds) return; // cancelled the sheet, or nothing stored — silent
+
+      applyAuthedOrientation();
+      setLoading(true);
+      await login(creds.email, creds.password); // success → app auto-navigates
+    } catch {
+      // login rejected → the stored credentials are stale (password changed, etc.).
+      // Self-heal: wipe them and fall back to password sign-in.
+      await clearCredentials();
+      await disableBiometric();
+      biometricEnabledRef.current = false;
+      setBiometricEnabledState(false);
+      Alert.alert('Biometric sign-in unavailable', 'Please sign in with your password.');
+    } finally {
+      setBiometricLoading(false);
+      setLoading(false);
+    }
+  }, [login]);
+
+  // Detect hardware + enabled state on focus, and auto-prompt once if enabled.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      let timerId: ReturnType<typeof setTimeout>;
+      biometricAutoTriggered.current = false;
+
+      getBiometricInfo().then(info => { if (!cancelled) setBiometricInfo(info); });
+
+      isBiometricEnabled().then(enabled => {
+        if (cancelled) return;
+        biometricEnabledRef.current = enabled;
+        setBiometricEnabledState(enabled);
+        if (!enabled || biometricAutoTriggered.current) return;
+        biometricAutoTriggered.current = true;
+        // small delay so the screen is mounted before the system sheet appears
+        timerId = setTimeout(() => { if (!cancelled) handleBiometricLogin(); }, 500);
+      });
+
+      return () => { cancelled = true; if (timerId) clearTimeout(timerId); };
+    }, [handleBiometricLogin]),
+  );
 
   // ─── Form ────────────────────────────────────────────────────────────────────
   const renderForm = () => (
@@ -180,6 +266,21 @@ export const LoginScreen = ({ navigation }: any) => {
         icon={<ArrowRight size={18} color="#FFF" strokeWidth={2.5} />}
         style={styles.signIn}
       />
+
+      {/* Biometric quick sign-in — only when the device has it AND it's enrolled */}
+      {biometricInfo?.status === 'available' && biometricEnabled && (
+        <BiometricButton
+          theme={T}
+          label={biometricInfo.label}
+          biometryType={biometricInfo.biometryType}
+          loading={biometricLoading}
+          disabled={loading}
+          onPress={() => {
+            biometricAutoTriggered.current = true; // manual tap — don't also auto-fire
+            handleBiometricLogin();
+          }}
+        />
+      )}
 
       {/* Sign-up link */}
       <View style={styles.signupRow}>
