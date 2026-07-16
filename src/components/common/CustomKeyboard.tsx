@@ -65,7 +65,11 @@ export const CustomKeyboard = ({
       style={[
         styles.panel,
         {
-          bottom: insets.bottom + 8,
+          // Sit flush on the bottom edge (no gap that showed the page behind as a
+          // white strip). The home-indicator inset is absorbed as padding INSIDE the
+          // tray, so keys still clear the indicator while the tray fills to the edge.
+          bottom: 0,
+          paddingBottom: insets.bottom + 10,
           backgroundColor: tray,
           transform: [{ translateY }],
           opacity: slide,
@@ -147,10 +151,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 6,
     right: 6,
-    borderRadius: 20,
+    // Rounded top only — the bottom now meets the screen edge, so square it off
+    // to avoid the page peeking through rounded corners.
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 6,
     paddingTop: 8,
-    paddingBottom: 10,
     zIndex: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
