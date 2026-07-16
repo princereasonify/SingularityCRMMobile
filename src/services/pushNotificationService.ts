@@ -54,6 +54,20 @@ export async function requestFCMPermission(): Promise<void> {
 }
 
 /**
+ * Drop the FCM token on logout so the device stops receiving the logged-out
+ * account's pushes. Best-effort — swallows its own error so it can NEVER block or
+ * fail the logout flow (see LOGOUT guide). Local-only (no backend call): the
+ * device's own token is deleted, so this account's pushes stop arriving here.
+ */
+export async function unregisterFcm(): Promise<void> {
+  try {
+    await messaging().deleteToken().catch(() => {}); // drop it on the device
+  } catch {
+    /* ignore — logout must proceed regardless */
+  }
+}
+
+/**
  * Sets up a foreground message listener. Returns the unsubscribe function.
  */
 export function onForegroundMessage(

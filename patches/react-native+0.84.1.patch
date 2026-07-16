@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-native/Libraries/Modal/Modal.js b/node_modules/react-native/Libraries/Modal/Modal.js
+index eb0e1a9..eec6e71 100644
+--- a/node_modules/react-native/Libraries/Modal/Modal.js
++++ b/node_modules/react-native/Libraries/Modal/Modal.js
+@@ -341,7 +341,7 @@ class Modal extends React.Component<ModalProps, ModalState> {
+         style={styles.modal}
+         // $FlowFixMe[method-unbinding] added when improving typing for this parameters
+         onStartShouldSetResponder={this._shouldSetResponder}
+-        supportedOrientations={this.props.supportedOrientations}
++        supportedOrientations={this.props.supportedOrientations ?? ['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']}
+         onOrientationChange={this.props.onOrientationChange}
+         allowSwipeDismissal={this.props.allowSwipeDismissal}
+         testID={this.props.testID}>

@@ -17,7 +17,7 @@ import {
 } from '../api/client';
 import { UserDto } from '../types';
 import { getDeviceInfo } from '../utils/deviceInfo';
-import { requestFCMPermission } from '../services/pushNotificationService';
+import { requestFCMPermission, unregisterFcm } from '../services/pushNotificationService';
 import {
   updateNativeAuthToken,
   stopNativeTracking,
@@ -61,12 +61,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // logout: user-initiated — also revokes the refresh token server-side
+  // logout: the single user-initiated logout helper (LOGOUT guide pattern).
+  // Order is deliberate: stop pushes → revoke refresh token → wipe + reset.
+  // Every remote/cleanup step is best-effort (its own try/catch) so a network
+  // hiccup can never strand the user half-logged-out; the local wipe + teardown
+  // (clearSession → setUser(null), which unmounts the whole authed tree and makes
+  // Login the sole route — a reset, not a navigate) always runs.
   const logout = useCallback(async () => {
+    console.log('[Logout] start: unregister FCM → revoke refresh token → wipe session → reset to Login');
+    // 1. Stop this account's pushes on this device (best-effort, never blocks).
+    await unregisterFcm();
+    // 2. Revoke the refresh token server-side (best-effort — read it before the wipe).
     try {
       const refreshToken = await AsyncStorage.getItem('refresh_token');
       await authApi.logout(refreshToken);
     } catch (_) {}
+    // 3. Wipe local session + tear down tracking, then clear state → reset to Login.
     await clearSession();
   }, [clearSession]);
 
