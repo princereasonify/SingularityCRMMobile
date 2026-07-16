@@ -8,11 +8,13 @@ import { Search, Plus, Phone, Mail } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
 import { Contact } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
+import { Card, Badge } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
+import { GradientBackground } from '../../components/common/GradientBackground';
 import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { Fonts } from '../../theme';
 
 const FILTERS = ['All', 'Decision Makers', 'Influencers', 'Champions'];
 
@@ -22,6 +24,7 @@ const RELATIONSHIP_COLORS: Record<string, string> = {
 };
 
 export const ContactsListScreen = ({ navigation }: any) => {
+  const T = useAppTheme();
   const { user } = useAuth();
   const role = user?.role || 'FO';
   const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
@@ -78,44 +81,44 @@ export const ContactsListScreen = ({ navigation }: any) => {
       onPress={() => navigation.navigate('ContactDetail', { contactId: item.id })}
     >
       <View style={styles.cardHeader}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
+        <View style={[styles.avatar, { backgroundColor: T.accentSoft }]}>
+          <Text style={[styles.avatarText, { color: T.accent }]}>{item.name.charAt(0).toUpperCase()}</Text>
         </View>
         <View style={styles.cardMain}>
           <View style={styles.nameRow}>
-            <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
-            <Badge label={item.relationship} color={RELATIONSHIP_COLORS[item.relationship] || '#9CA3AF'} />
+            <Text style={[styles.contactName, { color: T.text }]} numberOfLines={1}>{item.name}</Text>
+            <Badge label={item.relationship} color={RELATIONSHIP_COLORS[item.relationship] || T.dim} />
           </View>
-          {item.designation && <Text style={styles.designation}>{item.designation}</Text>}
-          {item.schoolName && <Text style={styles.school} numberOfLines={1}>🏫 {item.schoolName}</Text>}
+          {item.designation && <Text style={[styles.designation, { color: T.sub }]}>{item.designation}</Text>}
+          {item.schoolName && <Text style={[styles.school, { color: T.dim }]} numberOfLines={1}>🏫 {item.schoolName}</Text>}
         </View>
       </View>
       <View style={styles.contactDetails}>
         {item.phone && (
           <View style={styles.detailRow}>
-            <Phone size={12} color="#9CA3AF" />
-            <Text style={styles.detailText}>{item.phone}</Text>
+            <Phone size={12} color={T.dim} />
+            <Text style={[styles.detailText, { color: T.sub }]}>{item.phone}</Text>
           </View>
         )}
         {item.email && (
           <View style={styles.detailRow}>
-            <Mail size={12} color="#9CA3AF" />
-            <Text style={styles.detailText}>{item.email}</Text>
+            <Mail size={12} color={T.dim} />
+            <Text style={[styles.detailText, { color: T.sub }]}>{item.email}</Text>
           </View>
         )}
       </View>
       {(item.isDecisionMaker || item.isInfluencer) && (
         <View style={styles.badgeRow}>
-          {item.isDecisionMaker && <Badge label="Decision Maker" color="#16A34A" />}
-          {item.isInfluencer && <Badge label="Influencer" color="#2563EB" />}
+          {item.isDecisionMaker && <Badge label="Decision Maker" color={T.success} />}
+          {item.isInfluencer && <Badge label="Influencer" color={T.info} />}
         </View>
       )}
     </Card>
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top']}>
+      <GradientBackground glow style={styles.header}>
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>Contacts</Text>
           {(role === 'FO' || role === 'ZH') && (
@@ -125,11 +128,11 @@ export const ContactsListScreen = ({ navigation }: any) => {
           )}
         </View>
         <View style={styles.searchBar}>
-          <Search size={16} color="#9CA3AF" />
+          <Search size={16} color="rgba(255,255,255,0.8)" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search contacts..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="rgba(255,255,255,0.7)"
             value={search}
             onChangeText={setSearch}
           />
@@ -138,17 +141,17 @@ export const ContactsListScreen = ({ navigation }: any) => {
           {FILTERS.map(f => (
             <TouchableOpacity
               key={f}
-              style={[styles.filterChip, filter === f && { backgroundColor: '#FFF' }]}
+              style={[styles.filterChip, filter === f && styles.filterChipActive]}
               onPress={() => setFilter(f)}
             >
-              <Text style={[styles.filterText, filter === f && { color: COLOR.primary }]}>{f}</Text>
+              <Text style={[styles.filterText, filter === f && { color: T.accent }]}>{f}</Text>
             </TouchableOpacity>
           ))}
         </View>
-      </View>
+      </GradientBackground>
 
       {loading ? (
-        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading contacts..." />
+        <LoadingSpinner fullScreen color={T.accent} message="Loading contacts..." />
       ) : (
         <FlatList
           data={contacts}
@@ -162,13 +165,13 @@ export const ContactsListScreen = ({ navigation }: any) => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); setPage(1); fetchContacts(1, true); }}
-              colors={[COLOR.primary]}
+              colors={[T.accent]}
             />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={<EmptyState title="No contacts found" subtitle="Add your first contact" icon="👤" />}
-          ListFooterComponent={loadingMore ? <LoadingSpinner color={COLOR.primary} /> : null}
+          ListFooterComponent={loadingMore ? <LoadingSpinner color={T.accent} /> : null}
         />
       )}
     </SafeAreaView>
@@ -176,41 +179,42 @@ export const ContactsListScreen = ({ navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
+  headerTitle: { fontSize: rf(22), fontFamily: Fonts.bold, color: '#FFF' },
   iconBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
   },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
     marginBottom: 10, gap: 8,
   },
-  searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
+  searchInput: { flex: 1, fontSize: rf(14), fontFamily: Fonts.regular, color: '#FFF' },
   filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
-  filterText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  filterChipActive: { backgroundColor: '#FFF' },
+  filterText: { fontSize: rf(12), color: 'rgba(255,255,255,0.9)', fontFamily: Fonts.medium },
   list: { padding: 12, gap: 10 },
   cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 8 },
   avatar: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#E0E7FF', alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: rf(16), fontWeight: '700', color: '#4338CA' },
+  avatarText: { fontSize: rf(16), fontFamily: Fonts.bold },
   cardMain: { flex: 1 },
   nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  contactName: { fontSize: rf(15), fontWeight: '700', color: '#111827', flex: 1 },
-  designation: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
-  school: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  contactName: { fontSize: rf(15), fontFamily: Fonts.bold, flex: 1 },
+  designation: { fontSize: rf(12), fontFamily: Fonts.regular, marginTop: 2 },
+  school: { fontSize: rf(12), fontFamily: Fonts.regular, marginTop: 2 },
   contactDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  detailText: { fontSize: rf(12), color: '#6B7280' },
+  detailText: { fontSize: rf(12), fontFamily: Fonts.regular },
   badgeRow: { flexDirection: 'row', gap: 6 },
 });

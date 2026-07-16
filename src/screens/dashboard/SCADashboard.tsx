@@ -534,7 +534,7 @@ export const SCADashboard = ({ navigation }: any) => {
           </View>
         </View>
       </Modal>
-      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); setTimeout(logout, 350); }} />
     </SafeAreaView>
   );
 };

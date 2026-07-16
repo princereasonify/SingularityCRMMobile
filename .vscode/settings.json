@@ -1,0 +1,8 @@
+{
+  // Use the TypeScript installed in this project (5.9.x), not the one bundled with VS Code.
+  // tsconfig.json extends "@react-native/typescript-config", which exposes its config through
+  // a package.json "exports" map. Resolving `extends` through "exports" needs TypeScript >= 5.0,
+  // so an older bundled compiler reports: File '@react-native/typescript-config' not found.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

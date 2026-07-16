@@ -1,0 +1,25 @@
+diff --git a/node_modules/react-native-orientation-locker/iOS/RCTOrientation/Orientation.m b/node_modules/react-native-orientation-locker/iOS/RCTOrientation/Orientation.m
+index d93debf..bd38d4c 100644
+--- a/node_modules/react-native-orientation-locker/iOS/RCTOrientation/Orientation.m
++++ b/node_modules/react-native-orientation-locker/iOS/RCTOrientation/Orientation.m
+@@ -45,7 +45,10 @@ - (instancetype)init
+         _disableFaceUpDown = NO;
+         
+         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(deviceOrientationDidChange:) name:UIDeviceOrientationDidChangeNotification object:nil];
+-        [self addListener:@"orientationDidChange"];
++        // NOTE: do NOT call [self addListener:] here. addListener/removeListeners are
++        // RCTEventEmitter's JS-facing counters; invoking them from native corrupts the
++        // count and makes teardown throw "Attempted to remove more Orientation listeners
++        // than added". RCTEventEmitter emits only when JS has subscribed, which is correct.
+     }
+     return self;
+ }
+@@ -53,7 +56,7 @@ - (instancetype)init
+ - (void)dealloc
+ {
+     [[NSNotificationCenter defaultCenter] removeObserver:self];
+-    [self removeListeners:1];
++    // See init: no manual removeListeners — it would push the JS listener count negative.
+ }
+ 
+ - (UIInterfaceOrientation)getInterfaceOrientation

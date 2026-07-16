@@ -4,7 +4,7 @@ import {
   TextInput, ActivityIndicator, FlatList, Pressable, Image, Linking,
   Platform, PermissionsAndroid,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, X, Plus, Send, AlertTriangle, DollarSign, Square, CheckSquare, Paperclip, ExternalLink } from 'lucide-react-native';
 import { launchCamera as _launchCamera, launchImageLibrary as _launchImageLibrary } from 'react-native-image-picker';
 import { useAuth } from '../../context/AuthContext';
@@ -14,7 +14,12 @@ import { authApi } from '../../api/auth';
 import { DateInput } from '../../components/common/DateInput';
 import { SelectPicker } from '../../components/common/SelectPicker';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Badge } from '../../components/ui';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import type { AppTheme } from '../../theme';
 import { rf } from '../../utils/responsive';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -26,18 +31,22 @@ const EXPENSE_CATEGORIES = [
   { value: 'Other', label: 'Other' },
 ];
 
-const EXP_CAT_COLORS: Record<string, { bg: string; text: string }> = {
-  HotelStay: { bg: '#EDE9FE', text: '#7C3AED' },
-  Food:      { bg: '#FFEDD5', text: '#EA580C' },
-  Transport: { bg: '#DBEAFE', text: '#2563EB' },
-  Other:     { bg: '#F3F4F6', text: '#6B7280' },
-};
+// Category accent per expense type, resolved against the active theme tokens.
+function categoryColor(T: AppTheme, category: string): string {
+  switch (category) {
+    case 'HotelStay': return T.info;
+    case 'Food': return T.warning;
+    case 'Transport': return T.accent;
+    default: return T.dim;
+  }
+}
 
-const EXP_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  Pending:  { bg: '#FEF3C7', text: '#D97706' },
-  Approved: { bg: '#D1FAE5', text: '#059669' },
-  Rejected: { bg: '#FEE2E2', text: '#DC2626' },
-};
+// Status accent — pending → warning, approved → success, rejected → danger.
+function statusColor(T: AppTheme, status: string): string {
+  if (status === 'Approved') return T.success;
+  if (status === 'Rejected') return T.danger;
+  return T.warning;
+}
 
 function getMonthRange() {
   const now = new Date();
@@ -58,6 +67,7 @@ function fmtDate(d: string) {
 // ─── Expense Form Modal ───────────────────────────────────────────────────────
 
 function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
+  const T = useAppTheme();
   const [form, setForm] = useState({ expenseDate: '', category: 'HotelStay', amount: '', description: '' });
   const [billUri, setBillUri] = useState<string | null>(null);
   const [billName, setBillName] = useState<string | null>(null);
@@ -215,11 +225,11 @@ function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }} edges={['top']}>
-        <View style={ef.header}>
-          <Text style={ef.title}>Submit Expense Claim</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }} edges={['top']}>
+        <View style={[ef.header, { backgroundColor: T.card, borderBottomColor: T.line }]}>
+          <Text style={[ef.title, { color: T.text }]}>Submit Expense Claim</Text>
           <TouchableOpacity onPress={() => { reset(); onClose(); }} hitSlop={8}>
-            <X size={22} color="#6B7280" />
+            <X size={22} color={T.sub} />
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={ef.content}>
@@ -227,52 +237,51 @@ function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
             label="Expense Date *"
             value={form.expenseDate}
             onChange={v => setForm(f => ({ ...f, expenseDate: v }))}
-            accentColor="#7C3AED"
+            accentColor={T.accent}
           />
           <SelectPicker
             label="Category *"
             options={EXPENSE_CATEGORIES}
             value={form.category}
             onChange={v => setForm(f => ({ ...f, category: String(v) }))}
-            accentColor="#7C3AED"
+            accentColor={T.accent}
           />
-          <Text style={ef.label}>Amount (₹) *</Text>
+          <Text style={[ef.label, { color: T.sub }]}>Amount (₹) *</Text>
           <TextInput
-            style={ef.input}
+            style={[ef.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={form.amount}
             onChangeText={t => setForm(f => ({ ...f, amount: t }))}
             placeholder="0"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             keyboardType="numeric"
           />
-          <Text style={[ef.label, { marginTop: 12 }]}>Description (optional)</Text>
+          <Text style={[ef.label, { color: T.sub, marginTop: 12 }]}>Description (optional)</Text>
           <TextInput
-            style={ef.input}
+            style={[ef.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={form.description}
             onChangeText={t => setForm(f => ({ ...f, description: t }))}
             placeholder="Brief description"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
           />
 
           {/* Upload Bill */}
-          <Text style={[ef.label, { marginTop: 12 }]}>Upload Bill (optional)</Text>
-          <TouchableOpacity style={ef.billBtn} onPress={handlePickBill}>
-            <Paperclip size={16} color="#7C3AED" />
-            <Text style={ef.billBtnText}>{billName ? billName : 'Attach receipt / bill'}</Text>
-            {billUri && <X size={14} color="#9CA3AF" onPress={(e: any) => { e.stopPropagation?.(); setBillUri(null); setBillName(null); }} />}
+          <Text style={[ef.label, { color: T.sub, marginTop: 12 }]}>Upload Bill (optional)</Text>
+          <TouchableOpacity style={[ef.billBtn, { backgroundColor: T.cardAlt, borderColor: T.line }]} onPress={handlePickBill}>
+            <Paperclip size={16} color={T.accent} />
+            <Text style={[ef.billBtnText, { color: T.sub }]}>{billName ? billName : 'Attach receipt / bill'}</Text>
+            {billUri && <X size={14} color={T.dim} onPress={(e: any) => { e.stopPropagation?.(); setBillUri(null); setBillName(null); }} />}
           </TouchableOpacity>
           {billUri && (
-            <Image source={{ uri: billUri }} style={ef.billPreview} resizeMode="cover" />
+            <Image source={{ uri: billUri }} style={[ef.billPreview, { borderColor: T.line }]} resizeMode="cover" />
           )}
 
-          <TouchableOpacity
-            style={[ef.submitBtn, submitting && { opacity: 0.6 }]}
+          <GradientButton
+            label={submitting ? 'Submitting...' : 'Submit Claim'}
             onPress={handle}
-            disabled={submitting}
-          >
-            {submitting ? <ActivityIndicator color="#FFF" size="small" /> : <Send size={16} color="#FFF" />}
-            <Text style={ef.submitText}>{submitting ? 'Submitting...' : 'Submit Claim'}</Text>
-          </TouchableOpacity>
+            loading={submitting}
+            icon={<Send size={16} color="#FFF" />}
+            style={{ marginTop: 20 }}
+          />
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -280,50 +289,49 @@ function ExpenseFormModal({ visible, onClose, onSubmit, submitting }: any) {
 }
 
 const ef = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: '#FFF' },
-  title: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+  title: { fontFamily: Fonts.bold, fontSize: rf(17) },
   content: { padding: 16 },
-  label: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', marginBottom: 4 },
-  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, marginTop: 20 },
-  submitText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
-  billBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FAFAFA', borderStyle: 'dashed' },
-  billBtnText: { flex: 1, fontSize: rf(13), color: '#6B7280' },
-  billPreview: { width: '100%', height: 160, borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  label: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
+  input: { borderWidth: 1, borderRadius: 14, padding: 12, fontFamily: Fonts.regular, fontSize: rf(14), marginBottom: 4 },
+  billBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, borderStyle: 'dashed' },
+  billBtnText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13) },
+  billPreview: { width: '100%', height: 160, borderRadius: 14, marginTop: 10, borderWidth: 1 },
 });
 
 // ─── Reject Modal ────────────────────────────────────────────────────────────
 
 function RejectModal({ visible, onClose, onReject, rejecting }: any) {
+  const T = useAppTheme();
   const [reason, setReason] = useState('');
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={rej.overlay}>
-        <View style={rej.box}>
-          <Text style={rej.title}>Reject Expense Claim</Text>
+        <View style={[rej.box, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Text style={[rej.title, { color: T.text }]}>Reject Expense Claim</Text>
           <TextInput
-            style={rej.textarea}
+            style={[rej.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={reason}
             onChangeText={setReason}
             placeholder="Provide a reason for rejection (required)"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             multiline
             numberOfLines={3}
             textAlignVertical="top"
           />
           <View style={rej.actions}>
-            <TouchableOpacity style={rej.cancelBtn} onPress={onClose}>
-              <Text style={rej.cancelText}>Cancel</Text>
+            <TouchableOpacity style={[rej.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={onClose}>
+              <Text style={[rej.cancelText, { color: T.sub }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[rej.rejectBtn, rejecting && { opacity: 0.6 }]}
+              style={[rej.rejectBtn, { backgroundColor: T.danger }, rejecting && { opacity: 0.6 }]}
               onPress={() => {
                 if (!reason.trim()) { Alert.alert('Error', 'Reason required'); return; }
                 onReject(reason.trim());
               }}
               disabled={rejecting}
             >
-              <Text style={rej.rejectText}>{rejecting ? 'Rejecting...' : 'Reject'}</Text>
+              <Text style={[rej.rejectText, { color: '#FFF' }]}>{rejecting ? 'Rejecting...' : 'Reject'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -334,48 +342,48 @@ function RejectModal({ visible, onClose, onReject, rejecting }: any) {
 
 const rej = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  box: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400 },
-  title: { fontSize: rf(16), fontWeight: '700', color: '#111827', marginBottom: 12 },
-  textarea: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', minHeight: 80, marginBottom: 16, textAlignVertical: 'top' },
+  box: { borderRadius: 20, padding: 20, width: '100%', maxWidth: 400, borderWidth: 1 },
+  title: { fontFamily: Fonts.bold, fontSize: rf(16), marginBottom: 12 },
+  textarea: { borderWidth: 1, borderRadius: 14, padding: 12, fontFamily: Fonts.regular, fontSize: rf(14), minHeight: 80, marginBottom: 16, textAlignVertical: 'top' },
   actions: { flexDirection: 'row', gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  cancelText: { fontSize: rf(14), fontWeight: '600', color: '#374151' },
-  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#DC2626', alignItems: 'center' },
-  rejectText: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  cancelText: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  rejectText: { fontFamily: Fonts.medium, fontSize: rf(14) },
 });
 
 // ─── Travel Allowance Card ───────────────────────────────────────────────────
 
 function TravelCard({ item, isManager, selected, onSelect, onApprove, onReject }: any) {
+  const T = useAppTheme();
   return (
-    <Pressable style={[tc.card, selected && { borderColor: '#0D9488', borderWidth: 1.5 }]} onPress={onSelect}>
+    <Pressable
+      style={[tc.card, { backgroundColor: T.card, borderColor: T.line }, selected && { borderColor: T.accent, borderWidth: 1.5 }]}
+      onPress={onSelect}
+    >
       <View style={tc.row}>
         <View style={tc.left}>
           {isManager && onSelect && (
             <View style={{ marginBottom: 4 }}>
-              {selected ? <CheckSquare size={16} color="#0D9488" /> : <Square size={16} color="#D1D5DB" />}
+              {selected ? <CheckSquare size={16} color={T.accent} /> : <Square size={16} color={T.dim} />}
             </View>
           )}
-          <Text style={tc.name}>{item.userName || '—'}</Text>
-          <Text style={tc.meta}>{item.role || ''} · {fmtDate(item.allowanceDate)}</Text>
+          <Text style={[tc.name, { color: T.text }]}>{item.userName || '—'}</Text>
+          <Text style={[tc.meta, { color: T.sub }]}>{item.role || ''} · {fmtDate(item.allowanceDate)}</Text>
           <View style={tc.badges}>
-            <Text style={tc.dist}>{item.distanceKm != null ? `${Number(item.distanceKm).toFixed(1)} km` : '—'}</Text>
-            <Text style={tc.rate}>@ {fmtCurrency(item.ratePerKm)}/km</Text>
+            <Text style={[tc.dist, { color: T.text }]}>{item.distanceKm != null ? `${Number(item.distanceKm).toFixed(1)} km` : '—'}</Text>
+            <Text style={[tc.rate, { color: T.dim }]}>@ {fmtCurrency(item.ratePerKm)}/km</Text>
           </View>
         </View>
         <View style={tc.right}>
-          <Text style={tc.amount}>{fmtCurrency(item.grossAmount)}</Text>
-          <View style={[tc.statusBadge, { backgroundColor: item.approved ? '#D1FAE5' : '#FEF3C7' }]}>
-            <Text style={[tc.statusText, { color: item.approved ? '#059669' : '#D97706' }]}>
-              {item.approved ? 'Approved' : 'Pending'}
-            </Text>
-          </View>
+          <Text style={[tc.amount, { color: T.text }]}>{fmtCurrency(item.grossAmount)}</Text>
+          <Badge label={item.approved ? 'Approved' : 'Pending'} color={item.approved ? T.success : T.warning} />
           {isManager && onApprove && onReject && !item.approved && (
             <View style={tc.actionBtns}>
-              <TouchableOpacity style={tc.approveBtn} onPress={() => onApprove(item.id)}>
+              <TouchableOpacity style={[tc.approveBtn, { backgroundColor: T.success }]} onPress={() => onApprove(item.id)}>
                 <Check size={12} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={tc.rejectBtn} onPress={() => onReject(item.id)}>
+              <TouchableOpacity style={[tc.rejectBtn, { backgroundColor: T.danger }]} onPress={() => onReject(item.id)}>
                 <X size={12} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -383,9 +391,9 @@ function TravelCard({ item, isManager, selected, onSelect, onApprove, onReject }
         </View>
       </View>
       {item.isSuspicious && (
-        <View style={tc.suspRow}>
-          <AlertTriangle size={12} color="#DC2626" />
-          <Text style={tc.suspText}>Fraud score: {item.fraudScore || 0} — Flagged suspicious</Text>
+        <View style={[tc.suspRow, { backgroundColor: T.danger + '22' }]}>
+          <AlertTriangle size={12} color={T.danger} />
+          <Text style={[tc.suspText, { color: T.danger }]}>Fraud score: {item.fraudScore || 0} — Flagged suspicious</Text>
         </View>
       )}
     </Pressable>
@@ -393,61 +401,55 @@ function TravelCard({ item, isManager, selected, onSelect, onApprove, onReject }
 }
 
 const tc = StyleSheet.create({
-  card: { backgroundColor: '#FFF', borderRadius: 12, marginBottom: 8, padding: 14, borderWidth: 1, borderColor: '#F3F4F6' },
+  card: { borderRadius: 18, marginBottom: 10, padding: 14, borderWidth: 1 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   left: { flex: 1 },
   right: { alignItems: 'flex-end', gap: 6 },
-  name: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  meta: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
+  name: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  meta: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
   badges: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  dist: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  rate: { fontSize: rf(12), color: '#9CA3AF' },
-  amount: { fontSize: rf(16), fontWeight: '800', color: '#111827' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  statusText: { fontSize: rf(11), fontWeight: '700' },
+  dist: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  rate: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  amount: { fontFamily: Fonts.bold, fontSize: rf(16) },
   actionBtns: { flexDirection: 'row', gap: 4 },
-  approveBtn: { width: 26, height: 26, borderRadius: 8, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' },
-  rejectBtn: { width: 26, height: 26, borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  suspRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEE2E2', borderRadius: 8, padding: 6, marginTop: 8 },
-  suspText: { fontSize: rf(11), color: '#DC2626' },
+  approveBtn: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  rejectBtn: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  suspRow: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, padding: 6, marginTop: 8 },
+  suspText: { fontFamily: Fonts.regular, fontSize: rf(11) },
 });
 
 // ─── Expense Card ────────────────────────────────────────────────────────────
 
 function ExpenseCard({ item, isTeam, isManager, onApprove, onReject }: any) {
-  const cc = EXP_CAT_COLORS[item.category] || EXP_CAT_COLORS.Other;
-  const sc = EXP_STATUS_COLORS[item.status] || { bg: '#F3F4F6', text: '#6B7280' };
+  const T = useAppTheme();
+  const catLabel = EXPENSE_CATEGORIES.find(c => c.value === item.category)?.label || item.category;
   return (
-    <View style={ec.card}>
+    <View style={[ec.card, { backgroundColor: T.card, borderColor: T.line }]}>
       <View style={ec.row}>
         <View style={{ flex: 1 }}>
-          {isTeam && <Text style={ec.name}>{item.userName} <Text style={ec.role}>({item.userRole})</Text></Text>}
+          {isTeam && <Text style={[ec.name, { color: T.text }]}>{item.userName} <Text style={[ec.role, { color: T.sub }]}>({item.userRole})</Text></Text>}
           <View style={ec.badges}>
-            <View style={[ec.badge, { backgroundColor: cc.bg }]}>
-              <Text style={[ec.badgeText, { color: cc.text }]}>{EXPENSE_CATEGORIES.find(c => c.value === item.category)?.label || item.category}</Text>
-            </View>
-            <View style={[ec.badge, { backgroundColor: sc.bg }]}>
-              <Text style={[ec.badgeText, { color: sc.text }]}>{item.status}</Text>
-            </View>
+            <Badge label={catLabel} color={categoryColor(T, item.category)} />
+            <Badge label={item.status} color={statusColor(T, item.status)} />
           </View>
-          <Text style={ec.date}>{fmtDate(item.expenseDate)}</Text>
-          {item.description ? <Text style={ec.desc}>{item.description}</Text> : null}
-          {item.rejectionReason ? <Text style={ec.rejection}>Rejected: {item.rejectionReason}</Text> : null}
+          <Text style={[ec.date, { color: T.sub }]}>{fmtDate(item.expenseDate)}</Text>
+          {item.description ? <Text style={[ec.desc, { color: T.dim }]}>{item.description}</Text> : null}
+          {item.rejectionReason ? <Text style={[ec.rejection, { color: T.danger }]}>Rejected: {item.rejectionReason}</Text> : null}
           {item.billUrl ? (
             <TouchableOpacity style={ec.billLink} onPress={() => Linking.openURL(item.billUrl)}>
-              <ExternalLink size={12} color="#7C3AED" />
-              <Text style={ec.billLinkText}>View Bill</Text>
+              <ExternalLink size={12} color={T.accent} />
+              <Text style={[ec.billLinkText, { color: T.accent }]}>View Bill</Text>
             </TouchableOpacity>
           ) : null}
         </View>
         <View style={ec.right}>
-          <Text style={ec.amount}>{fmtCurrency(item.amount)}</Text>
+          <Text style={[ec.amount, { color: T.text }]}>{fmtCurrency(item.amount)}</Text>
           {isManager && isTeam && item.status === 'Pending' && (
             <View style={ec.actionBtns}>
-              <TouchableOpacity style={ec.approveBtn} onPress={() => onApprove(item.id)}>
+              <TouchableOpacity style={[ec.approveBtn, { backgroundColor: T.success }]} onPress={() => onApprove(item.id)}>
                 <Check size={12} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={ec.rejectBtn} onPress={() => onReject(item.id)}>
+              <TouchableOpacity style={[ec.rejectBtn, { backgroundColor: T.danger }]} onPress={() => onReject(item.id)}>
                 <X size={12} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -459,41 +461,40 @@ function ExpenseCard({ item, isTeam, isManager, onApprove, onReject }: any) {
 }
 
 const ec = StyleSheet.create({
-  card: { backgroundColor: '#FFF', borderRadius: 12, marginBottom: 8, padding: 14, borderWidth: 1, borderColor: '#F3F4F6' },
+  card: { borderRadius: 18, marginBottom: 10, padding: 14, borderWidth: 1 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  name: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 4 },
-  role: { fontSize: rf(12), color: '#6B7280', fontWeight: '400' },
+  name: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 4 },
+  role: { fontFamily: Fonts.regular, fontSize: rf(12) },
   badges: { flexDirection: 'row', gap: 6, marginBottom: 4 },
-  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  badgeText: { fontSize: rf(11), fontWeight: '700' },
-  date: { fontSize: rf(12), color: '#6B7280' },
-  desc: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  rejection: { fontSize: rf(11), color: '#DC2626', marginTop: 2 },
+  date: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  desc: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  rejection: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
   billLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  billLinkText: { fontSize: rf(12), color: '#7C3AED', fontWeight: '600' },
+  billLinkText: { fontFamily: Fonts.medium, fontSize: rf(12) },
   right: { alignItems: 'flex-end', gap: 6 },
-  amount: { fontSize: rf(16), fontWeight: '800', color: '#111827' },
+  amount: { fontFamily: Fonts.bold, fontSize: rf(16) },
   actionBtns: { flexDirection: 'row', gap: 4 },
-  approveBtn: { width: 26, height: 26, borderRadius: 8, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' },
-  rejectBtn: { width: 26, height: 26, borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  approveBtn: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  rejectBtn: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });
 
 // ─── Summary Cards ───────────────────────────────────────────────────────────
 
 function SummaryRow({ total, approved, pending }: { total: number; approved: number; pending: number }) {
+  const T = useAppTheme();
   return (
     <View style={sum.row}>
-      <View style={sum.card}>
-        <Text style={sum.label}>Total</Text>
-        <Text style={sum.val}>{fmtCurrency(total)}</Text>
+      <View style={[sum.card, { backgroundColor: T.card, borderColor: T.line }]}>
+        <Text style={[sum.label, { color: T.sub }]}>Total</Text>
+        <Text style={[sum.val, { color: T.text }]}>{fmtCurrency(total)}</Text>
       </View>
-      <View style={[sum.card, { borderColor: '#D1FAE5' }]}>
-        <Text style={[sum.label, { color: '#059669' }]}>Approved</Text>
-        <Text style={[sum.val, { color: '#059669' }]}>{fmtCurrency(approved)}</Text>
+      <View style={[sum.card, { backgroundColor: T.card, borderColor: T.line }]}>
+        <Text style={[sum.label, { color: T.success }]}>Approved</Text>
+        <Text style={[sum.val, { color: T.success }]}>{fmtCurrency(approved)}</Text>
       </View>
-      <View style={[sum.card, { borderColor: '#FEF3C7' }]}>
-        <Text style={[sum.label, { color: '#D97706' }]}>Pending</Text>
-        <Text style={[sum.val, { color: '#D97706' }]}>{fmtCurrency(pending)}</Text>
+      <View style={[sum.card, { backgroundColor: T.card, borderColor: T.line }]}>
+        <Text style={[sum.label, { color: T.warning }]}>Pending</Text>
+        <Text style={[sum.val, { color: T.warning }]}>{fmtCurrency(pending)}</Text>
       </View>
     </View>
   );
@@ -501,18 +502,19 @@ function SummaryRow({ total, approved, pending }: { total: number; approved: num
 
 const sum = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  card: { flex: 1, backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#F3F4F6', padding: 10, alignItems: 'center' },
-  label: { fontSize: rf(11), color: '#6B7280', fontWeight: '600', marginBottom: 4 },
-  val: { fontSize: rf(14), fontWeight: '800', color: '#111827' },
+  card: { flex: 1, borderRadius: 18, borderWidth: 1, padding: 12, alignItems: 'center' },
+  label: { fontFamily: Fonts.medium, fontSize: rf(11), marginBottom: 4 },
+  val: { fontFamily: Fonts.bold, fontSize: rf(14) },
 });
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export const AllowancesScreen = () => {
   const { user } = useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const role = user?.role || 'FO';
   const isManager = role === 'ZH' || role === 'RH' || role === 'SH' || role === 'SCA';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
 
   const { from: defaultFrom, to: defaultTo } = getMonthRange();
   const [mainTab, setMainTab] = useState<'travel' | 'expense'>('travel');
@@ -699,22 +701,26 @@ export const AllowancesScreen = () => {
   ];
 
   return (
-    <SafeAreaView style={s.safe} edges={['bottom']}>
-      {/* Header */}
-      <View style={s.headerBar}>
-        <View>
-          <Text style={s.pageTitle}>Allowances</Text>
-          <Text style={s.pageSub}>{isManager ? 'Review and approve allowances for your team' : 'View your allowance history'}</Text>
-        </View>
-      </View>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[s.header, { paddingTop: insets.top + 12 }]}>
+        <Text style={s.pageTitle}>Allowances</Text>
+        <Text style={s.pageSub}>{isManager ? 'Review and approve allowances for your team' : 'View your allowance history'}</Text>
+      </GradientBackground>
 
       {/* Main Tabs */}
       <View style={s.mainTabs}>
-        <TouchableOpacity style={[s.mainTab, mainTab === 'travel' && { backgroundColor: COLOR.primary }]} onPress={() => setMainTab('travel')}>
-          <Text style={[s.mainTabText, mainTab === 'travel' && { color: '#FFF' }]}>Travel Allowance</Text>
+        <TouchableOpacity
+          style={[s.mainTab, { backgroundColor: mainTab === 'travel' ? T.accent : T.cardAlt, borderColor: mainTab === 'travel' ? T.accent : T.line }]}
+          onPress={() => setMainTab('travel')}
+        >
+          <Text style={[s.mainTabText, { color: mainTab === 'travel' ? '#FFF' : T.sub }]}>Travel Allowance</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[s.mainTab, mainTab === 'expense' && { backgroundColor: COLOR.primary }]} onPress={() => setMainTab('expense')}>
-          <Text style={[s.mainTabText, mainTab === 'expense' && { color: '#FFF' }]}>Expense Claims</Text>
+        <TouchableOpacity
+          style={[s.mainTab, { backgroundColor: mainTab === 'expense' ? T.accent : T.cardAlt, borderColor: mainTab === 'expense' ? T.accent : T.line }]}
+          onPress={() => setMainTab('expense')}
+        >
+          <Text style={[s.mainTabText, { color: mainTab === 'expense' ? '#FFF' : T.sub }]}>Expense Claims</Text>
         </TouchableOpacity>
       </View>
 
@@ -724,14 +730,14 @@ export const AllowancesScreen = () => {
           <SummaryRow total={tTotal} approved={tApproved} pending={tPending} />
           {/* Filters */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterScroll}>
-            <DateInput label="From" value={dateFrom} onChange={setDateFrom} accentColor={COLOR.primary} />
-            <DateInput label="To" value={dateTo} onChange={setDateTo} accentColor={COLOR.primary} />
+            <DateInput label="From" value={dateFrom} onChange={setDateFrom} accentColor={T.accent} />
+            <DateInput label="To" value={dateTo} onChange={setDateTo} accentColor={T.accent} />
             <SelectPicker
               placeholder="Status"
               options={tStatusOptions}
               value={tStatusFilter}
               onChange={v => setTStatusFilter(String(v))}
-              accentColor={COLOR.primary}
+              accentColor={T.accent}
               containerStyle={{ width: 120, marginBottom: 0 }}
             />
             {isManager && teamMemberOptions.length > 1 && (
@@ -740,7 +746,7 @@ export const AllowancesScreen = () => {
                 options={teamMemberOptions}
                 value={tUserFilter}
                 onChange={v => setTUserFilter(String(v))}
-                accentColor={COLOR.primary}
+                accentColor={T.accent}
                 containerStyle={{ width: 140, marginBottom: 0 }}
               />
             )}
@@ -748,10 +754,10 @@ export const AllowancesScreen = () => {
 
           {/* Bulk approve row */}
           {isManager && tPendingItems.length > 0 && (
-            <View style={s.bulkRow}>
-              <Text style={s.bulkCount}>{tSelected.size > 0 ? `${tSelected.size} selected` : `${tPendingItems.length} pending`}</Text>
+            <View style={[s.bulkRow, { backgroundColor: T.card, borderBottomColor: T.line }]}>
+              <Text style={[s.bulkCount, { color: T.sub }]}>{tSelected.size > 0 ? `${tSelected.size} selected` : `${tPendingItems.length} pending`}</Text>
               <TouchableOpacity
-                style={[s.bulkBtn, (tSelected.size === 0 || bulkApproving) && s.bulkBtnDisabled]}
+                style={[s.bulkBtn, { backgroundColor: T.success }, (tSelected.size === 0 || bulkApproving) && s.bulkBtnDisabled]}
                 onPress={handleBulkApproveTravel}
                 disabled={tSelected.size === 0 || bulkApproving}
               >
@@ -764,7 +770,7 @@ export const AllowancesScreen = () => {
           )}
 
           {tLoading ? (
-            <LoadingSpinner fullScreen color={COLOR.primary} message="Loading allowances..." />
+            <LoadingSpinner fullScreen color={T.accent} message="Loading allowances..." />
           ) : (
             <FlatList
               data={tFiltered}
@@ -782,8 +788,8 @@ export const AllowancesScreen = () => {
               contentContainerStyle={s.list}
               ListEmptyComponent={
                 <View style={s.empty}>
-                  <DollarSign size={40} color="#D1D5DB" />
-                  <Text style={s.emptyText}>No travel allowances for selected period</Text>
+                  <DollarSign size={40} color={T.dim} />
+                  <Text style={[s.emptyText, { color: T.sub }]}>No travel allowances for selected period</Text>
                 </View>
               }
             />
@@ -798,17 +804,23 @@ export const AllowancesScreen = () => {
           {/* Sub-tabs + Submit */}
           <View style={s.expSubRow}>
             <View style={s.expSubTabs}>
-              <TouchableOpacity style={[s.subTab, expSubTab === 'my' && { backgroundColor: COLOR.primary }]} onPress={() => setExpSubTab('my')}>
-                <Text style={[s.subTabText, expSubTab === 'my' && { color: '#FFF' }]}>My Claims</Text>
+              <TouchableOpacity
+                style={[s.subTab, { backgroundColor: expSubTab === 'my' ? T.accent : T.cardAlt, borderColor: expSubTab === 'my' ? T.accent : T.line }]}
+                onPress={() => setExpSubTab('my')}
+              >
+                <Text style={[s.subTabText, { color: expSubTab === 'my' ? '#FFF' : T.sub }]}>My Claims</Text>
               </TouchableOpacity>
               {isManager && (
-                <TouchableOpacity style={[s.subTab, expSubTab === 'team' && { backgroundColor: COLOR.primary }]} onPress={() => setExpSubTab('team')}>
-                  <Text style={[s.subTabText, expSubTab === 'team' && { color: '#FFF' }]}>Team Claims</Text>
+                <TouchableOpacity
+                  style={[s.subTab, { backgroundColor: expSubTab === 'team' ? T.accent : T.cardAlt, borderColor: expSubTab === 'team' ? T.accent : T.line }]}
+                  onPress={() => setExpSubTab('team')}
+                >
+                  <Text style={[s.subTabText, { color: expSubTab === 'team' ? '#FFF' : T.sub }]}>Team Claims</Text>
                 </TouchableOpacity>
               )}
             </View>
             {expSubTab === 'my' && (
-              <TouchableOpacity style={[s.addBtn, { backgroundColor: COLOR.primary }]} onPress={() => setShowExpForm(true)}>
+              <TouchableOpacity style={[s.addBtn, { backgroundColor: T.accent }]} onPress={() => setShowExpForm(true)}>
                 <Plus size={14} color="#FFF" />
                 <Text style={s.addBtnText}>Submit</Text>
               </TouchableOpacity>
@@ -817,20 +829,20 @@ export const AllowancesScreen = () => {
 
           {/* Filters */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterScroll}>
-            <DateInput label="From" value={expDateFrom} onChange={setExpDateFrom} accentColor={COLOR.primary} />
-            <DateInput label="To" value={expDateTo} onChange={setExpDateTo} accentColor={COLOR.primary} />
+            <DateInput label="From" value={expDateFrom} onChange={setExpDateFrom} accentColor={T.accent} />
+            <DateInput label="To" value={expDateTo} onChange={setExpDateTo} accentColor={T.accent} />
             <SelectPicker
               placeholder="Status"
               options={eStatusOptions}
               value={eStatusFilter}
               onChange={v => setEStatusFilter(String(v))}
-              accentColor={COLOR.primary}
+              accentColor={T.accent}
               containerStyle={{ width: 130, marginBottom: 0 }}
             />
           </ScrollView>
 
           {eLoading ? (
-            <LoadingSpinner fullScreen color={COLOR.primary} message="Loading expenses..." />
+            <LoadingSpinner fullScreen color={T.accent} message="Loading expenses..." />
           ) : (
             <FlatList
               data={currentExpenses}
@@ -848,7 +860,7 @@ export const AllowancesScreen = () => {
               ListEmptyComponent={
                 <View style={s.empty}>
                   <Text style={s.emptyIcon}>📄</Text>
-                  <Text style={s.emptyText}>No expense claims found</Text>
+                  <Text style={[s.emptyText, { color: T.sub }]}>No expense claims found</Text>
                 </View>
               }
             />
@@ -882,27 +894,27 @@ export const AllowancesScreen = () => {
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  headerBar: { padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  pageTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
-  pageSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
-  mainTabs: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  mainTab: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  mainTabText: { fontSize: rf(13), fontWeight: '700', color: '#6B7280' },
+  safe: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  pageTitle: { fontFamily: Fonts.bold, fontSize: rf(22), color: '#FFF', letterSpacing: -0.4 },
+  pageSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  mainTabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
+  mainTab: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
+  mainTabText: { fontFamily: Fonts.bold, fontSize: rf(13) },
   filterScroll: { paddingHorizontal: 12, paddingVertical: 8, gap: 10, alignItems: 'flex-end' },
   expSubRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 8 },
   expSubTabs: { flexDirection: 'row', gap: 6 },
-  subTab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  subTabText: { fontSize: rf(12), fontWeight: '700', color: '#6B7280' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
-  addBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
+  subTab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
+  subTabText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  addBtnText: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
   list: { padding: 12, paddingBottom: 32 },
-  bulkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  bulkCount: { fontSize: rf(12), color: '#6B7280', fontWeight: '600' },
-  bulkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#16A34A', borderRadius: 10 },
+  bulkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
+  bulkCount: { fontFamily: Fonts.medium, fontSize: rf(12) },
+  bulkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   bulkBtnDisabled: { opacity: 0.4 },
-  bulkBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
+  bulkBtnText: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },
   emptyIcon: { fontSize: 40 },
-  emptyText: { fontSize: rf(14), color: '#9CA3AF', textAlign: 'center' },
+  emptyText: { fontFamily: Fonts.regular, fontSize: rf(14), textAlign: 'center' },
 });

@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   TrendingUp,
   Users,
@@ -23,26 +23,26 @@ import {
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { NotificationBell } from '../../components/common/NotificationBell';
 import { LogoutModal } from '../../components/common/LogoutModal';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card, StatTile, SectionLabel } from '../../components/ui';
 import { dashboardApi } from '../../api/dashboard';
 import { FoDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { KPICard } from '../../components/common/KPICard';
-import { Badge, StageBadge } from '../../components/common/Badge';
 import { Avatar } from '../../components/common/Avatar';
-import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS, ACTIVITY_COLORS, getScoreColor } from '../../utils/constants';
+import { ACTIVITY_COLORS, getScoreColor } from '../../utils/constants';
 import { formatCurrency, formatRelativeDate, formatTime } from '../../utils/formatting';
-import { rf, isTablet, getNumColumns, getCardWidth } from '../../utils/responsive';
-
-const COLOR = ROLE_COLORS.FO;
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice, getCardWidth } from '../../utils/responsive';
 
 export const FODashboard = ({ navigation }: any) => {
   const { user, logout } = useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [showLogout, setShowLogout] = useState(false);
-  const { width } = useWindowDimensions();
-  const tablet = width >= 768;
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
   const [data, setData] = useState<FoDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -53,7 +53,6 @@ export const FODashboard = ({ navigation }: any) => {
       const res = await dashboardApi.getFODashboard(p);
       setData(res.data);
     } catch {
-      // Use placeholder data for demo
       setData(DEMO_DATA);
     } finally {
       setLoading(false);
@@ -68,214 +67,180 @@ export const FODashboard = ({ navigation }: any) => {
     fetch(period);
   };
 
-  const handlePeriodChange = (p: 'today' | 'week' | 'month') => {
-    setPeriod(p);
-  };
-
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading dashboard..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading dashboard..." />;
 
   const revenuePct = data ? Math.round((data.revenue / data.revenueTarget) * 100) : 0;
-  const cols = tablet ? 4 : 2;
-  const cardW = getCardWidth(cols, tablet ? 48 + (cols - 1) * 12 : 32 + 12);
+  const cols = twoWide ? 4 : 2;
+  const cardW = getCardWidth(cols, 32 + (cols - 1) * 12);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
             <DrawerMenuButton />
-            <Avatar initials={user?.avatar || 'FO'} color="#FFF" size={42} />
+            <Avatar initials={user?.avatar || 'FO'} color="rgba(255,255,255,0.9)" size={42} />
             <View style={styles.headerText}>
               <Text style={styles.greeting}>Good morning 👋</Text>
-              <Text style={styles.userName}>{user?.name}</Text>
+              <Text style={styles.userName} numberOfLines={1}>{user?.name}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
-            <NotificationBell
-              style={styles.iconBtn}
-              onPress={() => navigation.navigate('Notifications')}
-            />
+            <NotificationBell style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')} />
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
               <LogOut size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
         </View>
+
         <View style={styles.roleTagRow}>
           <View style={styles.roleTag}>
-            <Zap size={12} color={COLOR.primary} />
-            <Text style={[styles.roleText, { color: COLOR.primary }]}>Field Officer</Text>
-            {user?.zone && (
-              <Text style={styles.zoneText}> • {user.zone}</Text>
-            )}
+            <Zap size={12} color="#8C5A2E" />
+            <Text style={styles.roleText}>Field Officer</Text>
+            {user?.zone && <Text style={styles.zoneText}> • {user.zone}</Text>}
           </View>
           <View style={styles.periodRow}>
-            {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
+            {([['today', 'Today'], ['week', 'Week'], ['month', 'Month']] as const).map(([p, label]) => (
               <TouchableOpacity
                 key={p}
                 style={[styles.periodBtn, period === p && styles.periodBtnActive]}
-                onPress={() => handlePeriodChange(p)}
+                onPress={() => setPeriod(p)}
               >
                 <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{label}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
-      </View>
+      </GradientBackground>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, tablet && styles.contentTablet]}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 14 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLOR.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accent} />}
       >
-        {/* KPI Grid */}
-        <View style={[styles.kpiGrid, { gap: 12 }]}>
-          <KPICard
-            title="Month Revenue"
-            value={formatCurrency(data?.revenue || 0)}
-            subtitle={`Target: ${formatCurrency(data?.revenueTarget || 0)}`}
-            progress={revenuePct}
-            progressColor={COLOR.primary}
-            icon={<TrendingUp size={16} color={COLOR.primary} />}
-            iconBg={COLOR.light}
-            style={{ width: cardW }}
+        {/* KPI grid */}
+        <View style={styles.kpiGrid}>
+          <StatTile
+            label="Revenue" value={formatCurrency(data?.revenue || 0)}
+            sub={`${revenuePct}% of ${formatCurrency(data?.revenueTarget || 0)}`}
+            icon={<TrendingUp size={15} color={T.accent} />} tint={T.accent} style={{ width: cardW }}
           />
-          <KPICard
-            title="Pipeline Leads"
-            value={String(data?.pipelineLeads || 0)}
-            subtitle={formatCurrency(data?.pipelineValue || 0)}
-            icon={<Users size={16} color="#3B82F6" />}
-            iconBg="#EFF6FF"
-            style={{ width: cardW }}
+          <StatTile
+            label="Pipeline" value={String(data?.pipelineLeads || 0)}
+            sub={formatCurrency(data?.pipelineValue || 0)}
+            icon={<Users size={15} color={T.info} />} tint={T.info} style={{ width: cardW }}
           />
-          <KPICard
-            title="Visits This Week"
-            value={String(data?.visitsThisWeek || 0)}
-            subtitle={`${data?.visitsThisWeek || 0} / ${data?.visitsTargetWeekly || 15} target`}
-            icon={<MapPin size={16} color="#8B5CF6" />}
-            iconBg="#F5F3FF"
-            style={{ width: cardW }}
+          <StatTile
+            label="Visits / wk" value={String(data?.visitsThisWeek || 0)}
+            sub={`of ${data?.visitsTargetWeekly || 15} target`}
+            icon={<MapPin size={15} color="#8B5CF6" />} tint="#8B5CF6" style={{ width: cardW }}
           />
-          <KPICard
-            title="Demos This Month"
-            value={String(data?.demosThisMonth || 0)}
-            subtitle={`${data?.demosThisMonth || 0} / ${data?.demosTargetMonthly || 8} target`}
-            icon={<Monitor size={16} color="#F59E0B" />}
-            iconBg="#FFFBEB"
-            style={{ width: cardW }}
+          <StatTile
+            label="Demos / mo" value={String(data?.demosThisMonth || 0)}
+            sub={`of ${data?.demosTargetMonthly || 8} target`}
+            icon={<Monitor size={15} color={T.warning} />} tint={T.warning} style={{ width: cardW }}
           />
-          <KPICard
-            title="Deals Lost"
-            value={String(data?.dealsLost || 0)}
-            subtitle="Stage = Lost"
-            icon={<AlertTriangle size={16} color="#EF4444" />}
-            iconBg="#FEF2F2"
-            valueColor="#EF4444"
-            style={{ width: cardW }}
+          <StatTile
+            label="Deals Lost" value={String(data?.dealsLost || 0)}
+            sub="Stage = Lost"
+            icon={<AlertTriangle size={15} color={T.danger} />} tint={T.danger} style={{ width: cardW }}
           />
         </View>
 
-        {/* Today's Assigned Schools — quick-access banner */}
-        <TouchableOpacity
-          style={styles.schoolsBanner}
-          onPress={() => navigation.navigate('AssignedSchools')}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.schoolsBannerIcon, { backgroundColor: COLOR.light }]}>
-            <School size={22} color={COLOR.primary} />
+        {/* Assigned schools banner */}
+        <Card onPress={() => navigation.navigate('AssignedSchools')} style={styles.banner}>
+          <View style={[styles.bannerIcon, { backgroundColor: T.accentSoft }]}>
+            <School size={22} color={T.accent} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.schoolsBannerTitle}>Today's Assigned Schools</Text>
-            <Text style={styles.schoolsBannerSub}>View map, route & geofence check-ins</Text>
+            <Text style={[styles.bannerTitle, { color: T.text }]}>Today's Assigned Schools</Text>
+            <Text style={[styles.bannerSub, { color: T.sub }]}>Map, route & geofence check-ins</Text>
           </View>
-          <ChevronRight size={18} color={COLOR.primary} />
-        </TouchableOpacity>
+          <ChevronRight size={18} color={T.accent} />
+        </Card>
 
         {/* Hot Leads */}
         {(data?.hotLeads?.length || 0) > 0 && (
-          <Card style={styles.section}>
+          <View>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>🔥 Hot Leads</Text>
+              <SectionLabel style={{ marginBottom: 0 }}>🔥 Hot Leads</SectionLabel>
               <TouchableOpacity onPress={() => navigation.navigate('Leads')}>
-                <Text style={[styles.seeAll, { color: COLOR.primary }]}>See All</Text>
+                <Text style={[styles.seeAll, { color: T.accent }]}>See All</Text>
               </TouchableOpacity>
             </View>
-            {(data?.hotLeads || []).slice(0, 5).map((lead) => (
-              <TouchableOpacity
-                key={lead.id}
-                style={styles.leadRow}
-                onPress={() => navigation.navigate('LeadDetail', { leadId: lead.id })}
-              >
-                <View style={styles.leadInfo}>
-                  <Text style={styles.leadSchool} numberOfLines={1}>{lead.school}</Text>
-                  <Text style={styles.leadMeta}>{lead.board} • {lead.city}</Text>
-                </View>
-                <View style={styles.leadRight}>
-                  <View style={[styles.scoreBadge, { backgroundColor: getScoreColor(lead.score) + '22' }]}>
-                    <Text style={[styles.scoreText, { color: getScoreColor(lead.score) }]}>
-                      {lead.score}
-                    </Text>
+            <Card padded={false}>
+              {(data?.hotLeads || []).slice(0, 5).map((lead, i, arr) => (
+                <TouchableOpacity
+                  key={lead.id}
+                  style={[styles.row, i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}
+                  onPress={() => navigation.navigate('LeadDetail', { leadId: lead.id })}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={[styles.rowTitle, { color: T.text }]} numberOfLines={1}>{lead.school}</Text>
+                    <Text style={[styles.rowMeta, { color: T.sub }]}>{lead.board} • {lead.city}</Text>
                   </View>
-                  <Text style={styles.leadValue}>{formatCurrency(lead.value)}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </Card>
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <View style={[styles.scoreBadge, { backgroundColor: getScoreColor(lead.score) + '22' }]}>
+                      <Text style={[styles.scoreText, { color: getScoreColor(lead.score) }]}>{lead.score}</Text>
+                    </View>
+                    <Text style={[styles.rowValue, { color: T.text }]}>{formatCurrency(lead.value)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </Card>
+          </View>
         )}
 
         {/* Today's Tasks */}
         {(data?.todaysTasks?.length || 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>📋 Today's Tasks</Text>
-            {(data?.todaysTasks || []).map((task) => (
-              <View key={task.id} style={styles.taskRow}>
-                <View
-                  style={[
-                    styles.taskType,
-                    { backgroundColor: (ACTIVITY_COLORS[task.type] || '#6B7280') + '22' },
-                  ]}
-                >
-                  <Text style={[styles.taskTypeText, { color: ACTIVITY_COLORS[task.type] || '#6B7280' }]}>
-                    {task.type}
-                  </Text>
+          <View>
+            <SectionLabel>📋 Today's Tasks</SectionLabel>
+            <Card padded={false}>
+              {(data?.todaysTasks || []).map((task, i, arr) => (
+                <View key={task.id} style={[styles.row, i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}>
+                  <View style={[styles.taskType, { backgroundColor: (ACTIVITY_COLORS[task.type] || T.sub) + '22' }]}>
+                    <Text style={[styles.taskTypeText, { color: ACTIVITY_COLORS[task.type] || T.sub }]}>{task.type}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: T.text }]} numberOfLines={1}>{task.school}</Text>
+                    <Text style={[styles.rowMeta, { color: T.sub }]}>{formatTime(task.scheduledTime)}</Text>
+                  </View>
+                  <View style={[styles.taskDot, { backgroundColor: task.isDone ? T.success : T.line }]} />
                 </View>
-                <View style={styles.taskInfo}>
-                  <Text style={styles.taskSchool} numberOfLines={1}>{task.school}</Text>
-                  <Text style={styles.taskTime}>{formatTime(task.scheduledTime)}</Text>
-                </View>
-                <View style={[styles.taskDot, { backgroundColor: task.isDone ? '#22C55E' : '#E5E7EB' }]} />
-              </View>
-            ))}
-          </Card>
+              ))}
+            </Card>
+          </View>
         )}
 
         {/* Recent Activities */}
         {(data?.recentActivities?.length || 0) > 0 && (
-          <Card style={styles.section}>
+          <View>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>📌 Recent Activities</Text>
+              <SectionLabel style={{ marginBottom: 0 }}>📌 Recent Activities</SectionLabel>
               <TouchableOpacity onPress={() => navigation.navigate('Activities')}>
-                <Text style={[styles.seeAll, { color: COLOR.primary }]}>See All</Text>
+                <Text style={[styles.seeAll, { color: T.accent }]}>See All</Text>
               </TouchableOpacity>
             </View>
-            {(data?.recentActivities || []).slice(0, 5).map((act) => (
-              <View key={act.id} style={styles.activityRow}>
-                <View style={[styles.actDot, { backgroundColor: ACTIVITY_COLORS[act.type] || '#6B7280' }]} />
-                <View style={styles.actInfo}>
-                  <Text style={styles.actSchool} numberOfLines={1}>{act.school}</Text>
-                  <Text style={styles.actMeta}>{act.type} • {act.outcome}</Text>
+            <Card padded={false}>
+              {(data?.recentActivities || []).slice(0, 5).map((act, i, arr) => (
+                <View key={act.id} style={[styles.row, i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}>
+                  <View style={[styles.actDot, { backgroundColor: ACTIVITY_COLORS[act.type] || T.sub }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: T.text }]} numberOfLines={1}>{act.school}</Text>
+                    <Text style={[styles.rowMeta, { color: T.sub }]}>{act.type} • {act.outcome}</Text>
+                  </View>
+                  <Text style={[styles.rowMeta, { color: T.sub }]}>{formatRelativeDate(act.date)}</Text>
                 </View>
-                <Text style={styles.actDate}>{formatRelativeDate(act.date)}</Text>
-              </View>
-            ))}
-          </Card>
+              ))}
+            </Card>
+          </View>
         )}
-
-        <View style={{ height: 24 }} />
       </ScrollView>
-      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); logout(); }} />
-    </SafeAreaView>
+
+      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); setTimeout(logout, 350); }} />
+    </View>
   );
 };
 
@@ -299,114 +264,49 @@ const DEMO_DATA: FoDashboardDto = {
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   headerText: { flex: 1 },
-  greeting: { fontSize: rf(12), color: 'rgba(255,255,255,0.7)' },
-  userName: { fontSize: rf(17), fontWeight: '700', color: '#FFF' },
+  greeting: { fontFamily: Fonts.regular, fontSize: rf(12), color: 'rgba(255,255,255,0.8)' },
+  userName: { fontFamily: Fonts.bold, fontSize: rf(18), color: '#FFF', letterSpacing: -0.3 },
   headerRight: { flexDirection: 'row', gap: 8 },
   iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
   },
   roleTagRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   roleTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 100,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-    gap: 4,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', gap: 4,
   },
-  roleText: { fontSize: rf(12), fontWeight: '700' },
-  zoneText: { fontSize: rf(12), color: '#6B7280' },
-  periodRow: { flexDirection: 'row', gap: 4 },
-  periodBtn: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
+  roleText: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#8C5A2E' },
+  zoneText: { fontFamily: Fonts.regular, fontSize: rf(12), color: '#6B5A3E' },
+  periodRow: { flexDirection: 'row', gap: 4, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 100, padding: 3 },
+  periodBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100 },
   periodBtnActive: { backgroundColor: '#FFF' },
-  periodText: { fontSize: rf(11), color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
-  periodTextActive: { color: COLOR.primary },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 14 },
-  contentTablet: { padding: 24, gap: 20 },
-  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  section: { padding: 16 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  seeAll: { fontSize: rf(13), fontWeight: '600' },
-  leadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  leadInfo: { flex: 1, marginRight: 8 },
-  leadSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  leadMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  leadRight: { alignItems: 'flex-end', gap: 4 },
-  scoreBadge: { borderRadius: 100, paddingHorizontal: 8, paddingVertical: 2 },
-  scoreText: { fontSize: rf(12), fontWeight: '700' },
-  leadValue: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  taskType: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  taskTypeText: { fontSize: rf(11), fontWeight: '600' },
-  taskInfo: { flex: 1 },
-  taskSchool: { fontSize: rf(14), fontWeight: '500', color: '#111827' },
-  taskTime: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  taskDot: { width: 10, height: 10, borderRadius: 5 },
-  activityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  actDot: { width: 8, height: 8, borderRadius: 4 },
-  actInfo: { flex: 1 },
-  actSchool: { fontSize: rf(14), fontWeight: '500', color: '#111827' },
-  actMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  actDate: { fontSize: rf(12), color: '#9CA3AF' },
+  periodText: { fontFamily: Fonts.medium, fontSize: rf(11.5), color: 'rgba(255,255,255,0.9)' },
+  periodTextActive: { color: '#8C5A2E' },
 
-  schoolsBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#FFF', borderRadius: 14,
-    padding: 14, marginBottom: 4,
-    borderWidth: 1, borderColor: '#E5E7EB',
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-  },
-  schoolsBannerIcon: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  schoolsBannerTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  schoolsBannerSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
+  scroll: { flex: 1 },
+  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bannerIcon: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  bannerTitle: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  bannerSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  seeAll: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, gap: 10 },
+  rowTitle: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  rowMeta: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  rowValue: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  scoreBadge: { borderRadius: 100, paddingHorizontal: 8, paddingVertical: 2 },
+  scoreText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  taskType: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  taskTypeText: { fontFamily: Fonts.medium, fontSize: rf(11) },
+  taskDot: { width: 10, height: 10, borderRadius: 5 },
+  actDot: { width: 8, height: 8, borderRadius: 4 },
 });

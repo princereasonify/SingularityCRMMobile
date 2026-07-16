@@ -4,5 +4,10 @@
 export { Palette, Colors, getScoreColor, getProgressColor, getStatusColor, getTargetStatusColor } from './colors';
 export { Typography } from './typography';
 export { Spacing, Radius } from './spacing';
+export { Fonts, Sunstone } from './fonts';
+export { getAuthTheme } from './authTheme';
+export type { AuthTheme } from './authTheme';
+export { getAppTheme } from './appTheme';
+export type { AppTheme } from './appTheme';
 export { Shadows } from './shadows';
 export { CS } from './components';

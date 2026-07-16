@@ -7,12 +7,22 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../api/auth';
-import { setUnauthorizedHandler } from '../api/client';
+import {
+  setUnauthorizedHandler,
+  setTokenRefreshedHandler,
+  ensureFreshToken,
+} from '../api/client';
 import { UserDto } from '../types';
 import { getDeviceInfo } from '../utils/deviceInfo';
 import { requestFCMPermission } from '../services/pushNotificationService';
+import {
+  updateNativeAuthToken,
+  stopNativeTracking,
+  clearGeofences,
+} from '../services/nativeLocationTracking';
 
 interface AuthContextType {
   user: UserDto | null;
@@ -24,26 +34,38 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const AUTH_KEYS = ['auth_token', 'auth_user', 'refresh_token', 'auth_token_expires_at'];
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserDto | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isLoggingOut = useRef(false);
 
-  // clearSession: wipes local state only — safe to call from 401 handler
+  // clearSession: wipes local state only — safe to call from the 401 handler.
+  // Also tears down location tracking: the native Android service is START_STICKY
+  // with stopWithTask=false, so if we don't stop it here it keeps running (and
+  // keeps POSTing pings with a dead token) long after the user has logged out.
   const clearSession = useCallback(async () => {
     if (isLoggingOut.current) return;
     isLoggingOut.current = true;
-    await AsyncStorage.multiRemove(['auth_token', 'auth_user']);
-    setToken(null);
-    setUser(null);
-    isLoggingOut.current = false;
+    try {
+      await stopNativeTracking();
+      await clearGeofences();
+      await updateNativeAuthToken(null);
+      await AsyncStorage.multiRemove(AUTH_KEYS);
+      setToken(null);
+      setUser(null);
+    } finally {
+      isLoggingOut.current = false;
+    }
   }, []);
 
-  // logout: user-initiated — also tells the server
+  // logout: user-initiated — also revokes the refresh token server-side
   const logout = useCallback(async () => {
     try {
-      await authApi.logout();
+      const refreshToken = await AsyncStorage.getItem('refresh_token');
+      await authApi.logout(refreshToken);
     } catch (_) {}
     await clearSession();
   }, [clearSession]);
@@ -56,6 +78,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (savedToken && savedUser) {
           setToken(savedToken);
           setUser(JSON.parse(savedUser));
+          // Roll the access token forward before anything can 401 on it, and hand
+          // the fresh value to the native tracking service.
+          const fresh = await ensureFreshToken();
+          if (fresh) {
+            setToken(fresh);
+            await updateNativeAuthToken(fresh);
+          }
           // Re-register FCM token on every app start (token can rotate)
           requestFCMPermission().catch(() => {});
         }
@@ -63,9 +92,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(false);
     };
     bootstrap();
-    // 401 handler skips server call — token is already invalid
+
+    // Only fires once a refresh attempt has actually failed — a bare 401 no longer
+    // ejects the user (see api/client.ts).
     setUnauthorizedHandler(() => clearSession());
+
+    // Keep the native tracking service's copy of the token in lockstep with ours.
+    setTokenRefreshedHandler((newToken) => {
+      setToken(newToken);
+      updateNativeAuthToken(newToken).catch(() => {});
+    });
   }, [clearSession]);
+
+  // The app can sit backgrounded for days. Refresh on the way back in so the first
+  // screen fetch — and the background pings — use a live token.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      AsyncStorage.getItem('auth_token').then((existing) => {
+        if (!existing) return;
+        ensureFreshToken().catch(() => {});
+      });
+    });
+    return () => sub.remove();
+  }, []);
 
   const login = async (email: string, password: string) => {
     let deviceInfo;
@@ -75,11 +125,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       deviceInfo = undefined;
     }
     const { data: res } = await authApi.login(email, password, deviceInfo);
-    const { token, user } = res;
-    await AsyncStorage.setItem('auth_token', token);
-    await AsyncStorage.setItem('auth_user', JSON.stringify(user));
+    const { token, user, refreshToken, expiresAt } = res;
+
+    const writes: [string, string][] = [
+      ['auth_token', token],
+      ['auth_user', JSON.stringify(user)],
+    ];
+    if (refreshToken) writes.push(['refresh_token', refreshToken]);
+    if (expiresAt) writes.push(['auth_token_expires_at', String(expiresAt)]);
+    await AsyncStorage.multiSet(writes);
+
     setToken(token);
     setUser(user);
+
+    // A tracking service left over from a previous session still holds the old
+    // token; overwrite it now so it doesn't 401 its way through the new session.
+    await updateNativeAuthToken(token);
+
     // Register FCM device token with backend — same as web's handleLogin
     requestFCMPermission().catch(() => {});
   };

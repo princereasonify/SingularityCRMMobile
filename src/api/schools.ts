@@ -1,11 +1,23 @@
 import { apiClient } from './client';
-import { School, SchoolFilters, CreateSchoolRequest, PaginatedResult, DuplicateMatch, SchoolWithPriority } from '../types';
+import { School, SchoolFilters, CreateSchoolRequest, PaginatedResult, DuplicateMatch, SchoolWithPriority, BulkUploadResult } from '../types';
 
 export const schoolsApi = {
   getAll: (filters?: SchoolFilters) =>
     apiClient.get<PaginatedResult<School>>('/schools', { params: filters }),
   getById: (id: number) => apiClient.get<School>(`/schools/${id}`),
   create: (data: CreateSchoolRequest) => apiClient.post<School>('/schools', data),
+
+  // Bulk step 1 — upload an Excel/CSV; backend parses + geocodes, returns a preview.
+  bulkUpload: (file: { uri: string; name: string; type: string }) => {
+    const fd = new FormData();
+    fd.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+    return apiClient.post<BulkUploadResult>('/schools/bulk-upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  // Bulk step 2 — create the reviewed schools.
+  bulkCreate: (schools: any[]) =>
+    apiClient.post<{ created: number; skipped: number; schools: School[] }>('/schools/bulk', { schools }),
   update: (id: number, data: Partial<CreateSchoolRequest>) =>
     apiClient.put<School>(`/schools/${id}`, data),
   getNearby: (lat: number, lon: number, radiusMeters: number) =>

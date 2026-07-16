@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, ActivityIndicator, Platform,
+  Modal, ActivityIndicator, Platform, FlatList, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
-import { AlertTriangle, ExternalLink, X, MapPin, Search, CheckCircle } from 'lucide-react-native';
+import { AlertTriangle, ExternalLink, X, MapPin, Search, CheckCircle, Upload } from 'lucide-react-native';
+import { pick, types } from '@react-native-documents/picker';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
-import { School, DuplicateMatch, UserDto } from '../../types';
+import { School, DuplicateMatch, UserDto, BulkSchoolRow } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
-import { ROLE_COLORS } from '../../utils/constants';
+import { GradientButton } from '../../components/common/GradientButton';
 import { rf } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import type { AppTheme } from '../../theme';
 
 // ─── Google Places API key (same key registered in AndroidManifest / Info.plist) ─
 const GMAPS_KEY = 'AIzaSyA3RPOnKdaBqe-fL5Ou5zqstKwghO5BqL4';
@@ -128,7 +132,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<{
 export const AddSchoolScreen = ({ navigation, route }: any) => {
   const existing: School | undefined = route.params?.school;
   const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
   const isEdit = !!existing;
   const isFO = user?.role === 'FO';
 
@@ -169,6 +173,81 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const dupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Bulk upload (create mode only) ──
+  const [bulkRows, setBulkRows] = useState<BulkSchoolRow[] | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const bulkMapRef = useRef<MapView>(null);
+
+  const handleBulkPick = async () => {
+    try {
+      const [file] = await pick({ type: [types.xlsx, types.xls, types.csv] });
+      if (!file?.uri) return;
+      setBulkLoading(true);
+      const res = await schoolsApi.bulkUpload({
+        uri: file.uri,
+        name: file.name || 'schools.xlsx',
+        type: file.type || 'application/octet-stream',
+      });
+      const result = res.data; // unwrapped by apiClient interceptor
+      const rows = result?.rows || [];
+      if (rows.length === 0) {
+        Alert.alert('Nothing found', 'No school rows were found. Make sure the first row has a "Name" column.');
+        return;
+      }
+      setBulkRows(rows);
+    } catch (err: any) {
+      // Picker cancellation isn't an error we surface.
+      if (err?.message?.toLowerCase?.().includes('cancel')) return;
+      Alert.alert('Upload failed', err?.response?.data?.message || 'Could not read the file.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkSave = async () => {
+    // Located, non-duplicate schools only (duplicates are also skipped server-side).
+    const ready = (bulkRows || []).filter(r => r.geocoded && r.name?.trim() && !r.duplicateExisting);
+    if (ready.length === 0) {
+      Alert.alert('Nothing to save', 'No new schools to add — they were either not located or already exist.');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      // Field names match the backend CreateSchoolRequest exactly (address,
+      // geofenceRadiusMetres) — not the mobile single-create's fullAddress/category.
+      const schools = ready.map(r => ({
+        name: r.name,
+        address: r.address,
+        city: r.city,
+        state: r.state,
+        pincode: r.pincode,
+        board: r.board,
+        type: r.type,
+        phone: r.phone,
+        email: r.email,
+        principalName: r.principalName,
+        principalPhone: r.principalPhone,
+        studentCount: r.studentCount ?? null,
+        staffCount: r.staffCount ?? null,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        geofenceRadiusMetres: 100,
+      }));
+      const res = await schoolsApi.bulkCreate(schools);
+      const created = res.data?.created ?? ready.length;
+      const skipped = res.data?.skipped ?? 0;
+      const msg = skipped > 0
+        ? `${created} school(s) created.\n${skipped} skipped (already existed).`
+        : `${created} school(s) created.`;
+      Alert.alert('Done', msg, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+    } catch (err: any) {
+      Alert.alert('Save failed', err?.response?.data?.message || 'Could not create the schools.');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   // FO assignment fields
   const [assignToSelf, setAssignToSelf] = useState(true);
@@ -336,14 +415,154 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   };
 
   const DUP_COLORS: Record<string, string> = {
-    Definite: '#DC2626', Probable: '#F59E0B', Possible: '#2563EB',
+    Definite: T.danger, Probable: T.warning, Possible: T.info,
   };
+
+  const styles = makeStyles(T);
+
+  // ── Bulk preview mode ──
+  if (bulkRows) {
+    const located = bulkRows.filter(r => r.geocoded);
+    const savable = bulkRows.filter(r => r.geocoded && !r.duplicateExisting);
+    const issues = bulkRows.filter(r => r.error);
+    const dupes = bulkRows.filter(r => r.duplicateExisting);
+    const fitCoords = located.map(r => ({ latitude: Number(r.latitude), longitude: Number(r.longitude) }));
+
+    // Group the problem rows by reason for a clean message.
+    const reasonGroups = Object.entries(
+      issues.reduce((acc: Record<string, number>, r) => {
+        const k = r.error || 'Could not be added';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
+    );
+    const linkColumnMissing =
+      bulkRows.length > 0 && located.length === 0 &&
+      issues.every(r => r.error === 'Google Maps link is required');
+
+    return (
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <ScreenHeader title="Bulk Upload" color={T.accent} onBack={() => setBulkRows(null)} />
+
+        {/* Summary chips */}
+        <View style={styles.bulkSummary}>
+          <View style={[styles.bulkChip, { backgroundColor: T.success + '22' }]}>
+            <CheckCircle size={13} color={T.success} />
+            <Text style={[styles.bulkChipText, { color: T.success }]}>{savable.length} ready</Text>
+          </View>
+          {issues.length > 0 && (
+            <View style={[styles.bulkChip, { backgroundColor: T.danger + '22' }]}>
+              <AlertTriangle size={13} color={T.danger} />
+              <Text style={[styles.bulkChipText, { color: T.danger }]}>{issues.length} need attention</Text>
+            </View>
+          )}
+          {dupes.length > 0 && (
+            <View style={[styles.bulkChip, { backgroundColor: T.warning + '22' }]}>
+              <AlertTriangle size={13} color={T.warning} />
+              <Text style={[styles.bulkChipText, { color: T.warning }]}>{dupes.length} already added</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Issues — clear, grouped message */}
+        {issues.length > 0 && (
+          <View style={styles.bulkIssues}>
+            <View style={styles.bulkIssuesHead}>
+              <AlertTriangle size={14} color={T.danger} />
+              <Text style={styles.bulkIssuesTitle}>
+                {issues.length} school{issues.length > 1 ? 's' : ''} can’t be added yet
+              </Text>
+            </View>
+            {linkColumnMissing && (
+              <Text style={styles.bulkIssuesHint}>
+                No location was found for any row. Make sure your file has a “Google Map Link” column with a real
+                Google Maps link in each cell.
+              </Text>
+            )}
+            {reasonGroups.map(([reason, count]) => (
+              <Text key={reason} style={styles.bulkIssuesReason}>• {reason}  ({count})</Text>
+            ))}
+            <Text style={styles.bulkIssuesFoot}>
+              Fix these rows and re-upload, or save the {located.length} valid one{located.length === 1 ? '' : 's'}.
+            </Text>
+          </View>
+        )}
+
+        {/* Map of located schools */}
+        <View style={styles.bulkMapWrap}>
+          <MapView
+            ref={bulkMapRef}
+            style={styles.map}
+            initialRegion={fitCoords[0] ? { ...fitCoords[0], latitudeDelta: 0.5, longitudeDelta: 0.5 } : DEFAULT_REGION}
+            onMapReady={() => {
+              if (fitCoords.length > 0) {
+                bulkMapRef.current?.fitToCoordinates(fitCoords, {
+                  edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+                  animated: false,
+                });
+              }
+            }}
+          >
+            {located.map((r, i) => (
+              <Marker
+                key={i}
+                coordinate={{ latitude: Number(r.latitude), longitude: Number(r.longitude) }}
+                title={r.name}
+                description={r.city || undefined}
+                pinColor={r.duplicateExisting ? T.warning : T.accent}
+                tracksViewChanges={false}
+              />
+            ))}
+          </MapView>
+        </View>
+
+        {/* Reviewable list */}
+        <FlatList
+          data={bulkRows}
+          keyExtractor={(_, i) => String(i)}
+          style={styles.bulkList}
+          renderItem={({ item }) => (
+            <View style={styles.bulkRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bulkRowName} numberOfLines={1}>{item.name || '(no name)'}</Text>
+                <Text style={styles.bulkRowSub} numberOfLines={1}>{item.city || item.address || '—'}</Text>
+              </View>
+              <Text
+                style={[
+                  styles.bulkRowStatus,
+                  { color: item.geocoded ? (item.duplicateExisting ? T.warning : T.success) : T.danger },
+                ]}
+              >
+                {item.geocoded
+                  ? (item.duplicateExisting ? 'Already added' : (item.source === 'link' ? 'Pinned' : 'Located'))
+                  : 'Not located'}
+              </Text>
+            </View>
+          )}
+        />
+
+        {/* Actions */}
+        <View style={styles.bulkActions}>
+          <Text style={styles.bulkHint}>
+            {savable.length} new school{savable.length === 1 ? '' : 's'} will be saved
+            {dupes.length > 0 ? ` · ${dupes.length} already exist` : ''}.
+          </Text>
+          <GradientButton
+            label={bulkSaving ? 'Saving…' : `Save All (${savable.length})`}
+            onPress={handleBulkSave}
+            loading={bulkSaving}
+            disabled={bulkSaving || savable.length === 0}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScreenHeader
         title={isEdit ? 'Edit School' : 'Add School'}
-        color={COLOR.primary}
+        color={T.accent}
         onBack={() => navigation.goBack()}
       />
       <ScrollView
@@ -355,11 +574,30 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         {/* ── Duplicate warning ──────────────────────────────────────── */}
         {!isEdit && duplicates.length > 0 && (
           <View style={styles.dupBanner}>
-            <AlertTriangle size={15} color="#92400E" />
+            <AlertTriangle size={15} color={T.warning} />
             <Text style={styles.dupBannerText}>
               {duplicates.length} possible duplicate{duplicates.length > 1 ? 's' : ''} found
             </Text>
           </View>
+        )}
+
+        {/* ── Bulk upload (create mode only) ──────────────────────────── */}
+        {!isEdit && (
+          <TouchableOpacity
+            style={[styles.bulkUploadBtn, { borderColor: T.accent }]}
+            onPress={handleBulkPick}
+            disabled={bulkLoading}
+            activeOpacity={0.8}
+          >
+            {bulkLoading ? (
+              <ActivityIndicator size="small" color={T.accent} />
+            ) : (
+              <Upload size={16} color={T.accent} />
+            )}
+            <Text style={[styles.bulkUploadText, { color: T.accent }]}>
+              {bulkLoading ? 'Reading file…' : 'Bulk Upload (Excel / CSV)'}
+            </Text>
+          </TouchableOpacity>
         )}
 
         {/* ── School Name & Location ────────────────────────────────── */}
@@ -371,20 +609,20 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             <Text style={styles.fieldLabel}>Search Address / Area</Text>
             <View style={styles.searchRow}>
               <View style={styles.searchInputWrap}>
-                <Search size={14} color="#9CA3AF" style={styles.searchIcon} />
+                <Search size={14} color={T.dim} style={styles.searchIcon} />
                 <TextInput
                   style={styles.searchInput}
                   value={searchText}
                   onChangeText={t => { setSearchText(t); setShowSuggestions(true); }}
                   placeholder="Type area or address…"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.dim}
                   onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 />
-                {searchLoading && <ActivityIndicator size="small" color={COLOR.primary} style={{ marginRight: 8 }} />}
+                {searchLoading && <ActivityIndicator size="small" color={T.accent} style={{ marginRight: 8 }} />}
               </View>
               <TouchableOpacity
-                style={[styles.findBtn, { backgroundColor: COLOR.primary }, (!name.trim() && !searchText.trim()) && styles.findBtnDisabled]}
+                style={[styles.findBtn, { backgroundColor: T.accent }, (!name.trim() && !searchText.trim()) && styles.findBtnDisabled]}
                 onPress={handleFindOnMap}
                 disabled={findingOnMap || (!name.trim() && !searchText.trim())}
               >
@@ -394,7 +632,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               </TouchableOpacity>
             </View>
             <Text style={styles.searchHint}>
-              Enter school name above + area here, then tap <Text style={{ fontWeight: '700' }}>Find</Text> to pin on map. Or tap the map directly.
+              Enter school name above + area here, then tap <Text style={{ fontFamily: Fonts.bold }}>Find</Text> to pin on map. Or tap the map directly.
             </Text>
 
             {/* Autocomplete dropdown */}
@@ -406,7 +644,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                     style={styles.suggestionItem}
                     onPress={() => handleSuggestionSelect(s)}
                   >
-                    <MapPin size={12} color="#9CA3AF" />
+                    <MapPin size={12} color={T.dim} />
                     <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
                   </TouchableOpacity>
                 ))}
@@ -432,16 +670,16 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                   <Circle
                     center={{ latitude, longitude }}
                     radius={100}
-                    strokeColor="#0D9488"
+                    strokeColor={T.accent}
                     strokeWidth={2}
-                    fillColor="rgba(13,148,136,0.15)"
+                    fillColor={T.accent + '26'}
                   />
                   <Marker
                     coordinate={{ latitude, longitude }}
                     draggable
                     onDragEnd={handleMarkerDragEnd}
                     tracksViewChanges={false}
-                    pinColor="#0D9488"
+                    pinColor={T.accent}
                     title={name || 'School'}
                   />
                 </>
@@ -452,14 +690,14 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             <View style={[styles.mapBadge, locationSet ? styles.mapBadgeSet : styles.mapBadgeUnset]}>
               {locationSet ? (
                 <>
-                  <CheckCircle size={12} color="#16A34A" />
+                  <CheckCircle size={12} color={T.success} />
                   <Text style={styles.mapBadgeSetText}>
                     Location set · {latitude?.toFixed(4)}, {longitude?.toFixed(4)}
                   </Text>
                 </>
               ) : (
                 <>
-                  <MapPin size={12} color="#D97706" />
+                  <MapPin size={12} color={T.warning} />
                   <Text style={styles.mapBadgeUnsetText}>Tap map or search to set location</Text>
                 </>
               )}
@@ -490,8 +728,8 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
         {/* ── School Details ────────────────────────────────────────── */}
         <SectionCard label="School Details">
-          <PickerRow label="Board" options={BOARDS} value={board} onChange={setBoard} color={COLOR.primary} />
-          <PickerRow label="Type"  options={TYPES}  value={type}  onChange={setType}  color={COLOR.primary} />
+          <PickerRow label="Board" options={BOARDS} value={board} onChange={setBoard} color={T.accent} />
+          <PickerRow label="Type"  options={TYPES}  value={type}  onChange={setType}  color={T.accent} />
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
               <FormField label="Student Count" value={studentCount} onChange={setStudentCount} placeholder="0" keyboardType="numeric" />
@@ -534,14 +772,14 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               <Text style={styles.fieldLabel}>Assign To</Text>
               <View style={styles.chipRow}>
                 <TouchableOpacity
-                  style={[styles.chip, assignToSelf && { backgroundColor: COLOR.primary }]}
+                  style={[styles.chip, assignToSelf && { backgroundColor: T.accent, borderColor: T.accent }]}
                   onPress={() => { setAssignToSelf(true); setSelectedFO(null); }}
                 >
                   <Text style={[styles.chipText, assignToSelf && { color: '#FFF' }]}>Myself</Text>
                 </TouchableOpacity>
                 {zoneFOs.length > 0 && (
                   <TouchableOpacity
-                    style={[styles.chip, !assignToSelf && { backgroundColor: COLOR.primary }]}
+                    style={[styles.chip, !assignToSelf && { backgroundColor: T.accent, borderColor: T.accent }]}
                     onPress={() => setAssignToSelf(false)}
                   >
                     <Text style={[styles.chipText, !assignToSelf && { color: '#FFF' }]}>Another FO</Text>
@@ -558,7 +796,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                   style={[styles.input, { justifyContent: 'center' }]}
                   onPress={() => setShowFOPicker(true)}
                 >
-                  <Text style={{ fontSize: rf(14), color: selectedFO ? '#111827' : '#9CA3AF' }}>
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: rf(14), color: selectedFO ? T.text : T.dim }}>
                     {selectedFO ? selectedFO.name : 'Tap to select FO…'}
                   </Text>
                 </TouchableOpacity>
@@ -582,7 +820,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Select FO in Zone</Text>
                   <TouchableOpacity onPress={() => setShowFOPicker(false)}>
-                    <X size={20} color="#6B7280" />
+                    <X size={20} color={T.sub} />
                   </TouchableOpacity>
                 </View>
                 {zoneFOs.map(fo => (
@@ -600,10 +838,10 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </Modal>
         )}
 
-        <Button
-          title={submitting ? 'Saving…' : isEdit ? 'Update School' : 'Create School'}
+        <GradientButton
+          label={submitting ? 'Saving…' : isEdit ? 'Update School' : 'Create School'}
           onPress={handleSubmit}
-          variant="primary"
+          loading={submitting}
           disabled={submitting || !locationSet || !name.trim()}
           style={{ marginTop: 8 }}
         />
@@ -615,19 +853,19 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <AlertTriangle size={18} color="#F59E0B" />
+                <AlertTriangle size={18} color={T.warning} />
                 <Text style={styles.modalTitle}>Possible Duplicate</Text>
               </View>
               <TouchableOpacity onPress={() => setShowDupModal(false)}>
-                <X size={20} color="#6B7280" />
+                <X size={20} color={T.sub} />
               </TouchableOpacity>
             </View>
             {duplicates.map(d => (
-              <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || '#6B7280' }]}>
+              <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || T.sub }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <Text style={styles.dupName}>{d.matchedEntityName}</Text>
-                  <View style={[styles.matchBadge, { backgroundColor: (DUP_COLORS[d.matchType] || '#6B7280') + '20' }]}>
-                    <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || '#6B7280' }]}>{d.matchType}</Text>
+                  <View style={[styles.matchBadge, { backgroundColor: (DUP_COLORS[d.matchType] || T.sub) + '20' }]}>
+                    <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || T.sub }]}>{d.matchType}</Text>
                   </View>
                 </View>
                 <Text style={styles.dupReason}>{d.matchReason}</Text>
@@ -635,14 +873,14 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
                   onPress={() => { setShowDupModal(false); navigation.navigate('SchoolDetail', { schoolId: d.matchedEntityId }); }}
                 >
-                  <ExternalLink size={12} color={COLOR.primary} />
-                  <Text style={[styles.viewExistingText, { color: COLOR.primary }]}>View Existing</Text>
+                  <ExternalLink size={12} color={T.accent} />
+                  <Text style={[styles.viewExistingText, { color: T.accent }]}>View Existing</Text>
                 </TouchableOpacity>
               </View>
             ))}
             <View style={styles.modalActions}>
-              <Button title="Create Anyway" onPress={doSave} disabled={submitting} variant="secondary" style={{ flex: 1 }} />
-              <Button title="Cancel" onPress={() => setShowDupModal(false)} variant="primary" style={{ flex: 1 }} />
+              <Button title="Create Anyway" onPress={doSave} disabled={submitting} variant="secondary" color={T.accent} style={{ flex: 1 }} />
+              <Button title="Cancel" onPress={() => setShowDupModal(false)} variant="primary" color={T.accent} style={{ flex: 1 }} />
             </View>
           </View>
         </View>
@@ -653,78 +891,131 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const FormField = ({ label, value, onChange, placeholder, keyboardType, multiline, autoCapitalize }: any) => (
-  <View style={styles.fieldGroup}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <TextInput
-      style={[styles.input, multiline && styles.inputMulti]}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#9CA3AF"
-      keyboardType={keyboardType || 'default'}
-      multiline={multiline}
-      numberOfLines={multiline ? 3 : 1}
-      autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
-    />
-  </View>
-);
-
-const PickerRow = ({ label, options, value, onChange, color }: any) => (
-  <View style={styles.fieldGroup}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <View style={styles.chipRow}>
-      {options.map((opt: string) => (
-        <TouchableOpacity
-          key={opt}
-          style={[styles.chip, value === opt && { backgroundColor: color }]}
-          onPress={() => onChange(value === opt ? '' : opt)}
-        >
-          <Text style={[styles.chipText, value === opt && { color: '#FFF' }]}>{opt}</Text>
-        </TouchableOpacity>
-      ))}
+const FormField = ({ label, value, onChange, placeholder, keyboardType, multiline, autoCapitalize }: any) => {
+  const T = useAppTheme();
+  const styles = makeStyles(T);
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.input, multiline && styles.inputMulti]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={T.dim}
+        keyboardType={keyboardType || 'default'}
+        multiline={multiline}
+        numberOfLines={multiline ? 3 : 1}
+        autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
+      />
     </View>
-  </View>
-);
+  );
+};
 
-const SectionCard = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <View style={styles.card}>
-    <Text style={styles.cardTitle}>{label}</Text>
-    {children}
-  </View>
-);
+const PickerRow = ({ label, options, value, onChange, color }: any) => {
+  const T = useAppTheme();
+  const styles = makeStyles(T);
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.chipRow}>
+        {options.map((opt: string) => (
+          <TouchableOpacity
+            key={opt}
+            style={[styles.chip, value === opt && { backgroundColor: color, borderColor: color }]}
+            onPress={() => onChange(value === opt ? '' : opt)}
+          >
+            <Text style={[styles.chipText, value === opt && { color: '#FFF' }]}>{opt}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const SectionCard = ({ label, children }: { label: string; children: React.ReactNode }) => {
+  const T = useAppTheme();
+  const styles = makeStyles(T);
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>{label}</Text>
+      {children}
+    </View>
+  );
+};
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: '#F9FAFB' },
+const makeStyles = (T: AppTheme) => StyleSheet.create({
+  safe:    { flex: 1, backgroundColor: T.bg },
   scroll:  { flex: 1 },
   content: { padding: 16, gap: 16, paddingBottom: 40 },
 
+  // Bulk upload
+  bulkUploadBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: T.card, borderWidth: 1.5, borderStyle: 'dashed',
+    borderRadius: 14, paddingVertical: 14,
+  },
+  bulkUploadText: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  bulkSummary: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, flexWrap: 'wrap' },
+  bulkChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  bulkChipText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  bulkMapWrap: { height: 240, margin: 16, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.line },
+  bulkList: { flex: 1, marginHorizontal: 16 },
+  bulkRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: T.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: T.line,
+  },
+  bulkRowName: { fontFamily: Fonts.medium, fontSize: rf(14), color: T.text },
+  bulkRowSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub, marginTop: 2 },
+  bulkRowStatus: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  bulkIssues: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+    backgroundColor: T.danger + '1A',
+    borderWidth: 1,
+    borderColor: T.danger + '55',
+    borderRadius: 14,
+    padding: 12,
+    gap: 4,
+  },
+  bulkIssuesHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  bulkIssuesTitle: { fontFamily: Fonts.bold, fontSize: rf(13), color: T.danger, flex: 1 },
+  bulkIssuesHint: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.danger, lineHeight: 17, marginBottom: 2 },
+  bulkIssuesReason: { fontFamily: Fonts.medium, fontSize: rf(12), color: T.danger },
+  bulkIssuesFoot: { fontFamily: Fonts.regular, fontSize: rf(11), color: T.danger, opacity: 0.75, marginTop: 3 },
+  bulkActions: { padding: 16, gap: 8, borderTopWidth: 1, borderTopColor: T.line, backgroundColor: T.card },
+  bulkHint: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub, textAlign: 'center' },
+
   card: {
-    backgroundColor: '#FFF', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    backgroundColor: T.card, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: T.line,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
+      android: { elevation: 1 },
+    }),
   },
   cardTitle: {
-    fontSize: rf(13), fontWeight: '700', color: '#6B7280',
-    marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5,
+    fontFamily: Fonts.bold, fontSize: rf(12), color: T.sub,
+    marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1,
   },
 
   fieldGroup:  { marginBottom: 14 },
-  fieldLabel:  { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  fieldLabel:  { fontFamily: Fonts.medium, fontSize: rf(13), color: T.text, marginBottom: 6 },
   input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+    borderWidth: 1, borderColor: T.line, borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: rf(14), color: '#111827', backgroundColor: '#FAFAFA',
+    fontFamily: Fonts.regular, fontSize: rf(14), color: T.text, backgroundColor: T.fieldBg,
   },
   inputMulti: { height: 80, textAlignVertical: 'top' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
+    backgroundColor: T.cardAlt, borderWidth: 1, borderColor: T.line,
   },
-  chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+  chipText: { fontFamily: Fonts.medium, fontSize: rf(13), color: T.sub },
 
   dualRow:  { flexDirection: 'row', gap: 10 },
   triRow:   { flexDirection: 'row', gap: 8 },
@@ -733,37 +1024,37 @@ const styles = StyleSheet.create({
   searchRow:      { flexDirection: 'row', gap: 8, alignItems: 'center' },
   searchInputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    backgroundColor: '#FAFAFA', paddingHorizontal: 10,
+    borderWidth: 1, borderColor: T.line, borderRadius: 14,
+    backgroundColor: T.fieldBg, paddingHorizontal: 10,
   },
   searchIcon:  { marginRight: 6 },
-  searchInput: { flex: 1, fontSize: rf(14), color: '#111827', paddingVertical: Platform.OS === 'ios' ? 10 : 8 },
-  searchHint:  { fontSize: rf(11), color: '#9CA3AF', marginTop: 5 },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), color: T.text, paddingVertical: Platform.OS === 'ios' ? 10 : 8 },
+  searchHint:  { fontFamily: Fonts.regular, fontSize: rf(11), color: T.dim, marginTop: 5 },
 
   findBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
   },
   findBtnDisabled: { opacity: 0.4 },
-  findBtnText: { fontSize: rf(13), color: '#FFF', fontWeight: '600' },
+  findBtnText: { fontFamily: Fonts.medium, fontSize: rf(13), color: '#FFF' },
 
   suggestionsBox: {
     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-    backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+    backgroundColor: T.card, borderRadius: 14, borderWidth: 1, borderColor: T.line,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 6,
     marginTop: 2,
   },
   suggestionItem: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
     paddingHorizontal: 14, paddingVertical: 11,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line,
   },
-  suggestionText: { flex: 1, fontSize: rf(13), color: '#374151' },
+  suggestionText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), color: T.text },
 
   // Map
   mapContainer: {
     height: 300, borderRadius: 14, overflow: 'hidden',
-    borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 14,
+    borderWidth: 1, borderColor: T.line, marginBottom: 14,
     position: 'relative',
   },
   map: { flex: 1 },
@@ -773,47 +1064,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
     shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-  mapBadgeSet:      { backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 1, borderColor: '#BBF7D0' },
-  mapBadgeUnset:    { backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 1, borderColor: '#FDE68A' },
-  mapBadgeSetText:  { fontSize: rf(11), fontWeight: '600', color: '#16A34A' },
-  mapBadgeUnsetText:{ fontSize: rf(11), fontWeight: '600', color: '#D97706' },
+  mapBadgeSet:      { backgroundColor: T.card, borderWidth: 1, borderColor: T.success + '66' },
+  mapBadgeUnset:    { backgroundColor: T.card, borderWidth: 1, borderColor: T.warning + '66' },
+  mapBadgeSetText:  { fontFamily: Fonts.medium, fontSize: rf(11), color: T.success },
+  mapBadgeUnsetText:{ fontFamily: Fonts.medium, fontSize: rf(11), color: T.warning },
   geofenceLegend: {
     position: 'absolute', bottom: 10, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 8,
+    backgroundColor: T.card, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 5,
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
   geofenceDot: {
     width: 12, height: 12, borderRadius: 6,
-    backgroundColor: 'rgba(13,148,136,0.3)', borderWidth: 1.5, borderColor: '#0D9488',
+    backgroundColor: T.accent + '4D', borderWidth: 1.5, borderColor: T.accent,
   },
-  geofenceLegendText: { fontSize: rf(11), color: '#374151' },
+  geofenceLegendText: { fontFamily: Fonts.regular, fontSize: rf(11), color: T.text },
 
-  visitHint: { fontSize: rf(13), color: '#6B7280', marginBottom: 10, lineHeight: 18 },
+  visitHint: { fontFamily: Fonts.regular, fontSize: rf(13), color: T.sub, marginBottom: 10, lineHeight: 18 },
 
   // Duplicate warning
   dupBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12,
+    backgroundColor: T.warning + '22', borderRadius: 14, padding: 12,
   },
-  dupBannerText: { flex: 1, fontSize: rf(13), color: '#92400E', fontWeight: '500' },
+  dupBannerText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(13), color: T.warning },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: T.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 20, paddingBottom: 40,
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle:  { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  modalTitle:  { fontFamily: Fonts.bold, fontSize: rf(16), color: T.text },
   dupCard: {
-    borderLeftWidth: 4, backgroundColor: '#FAFAFA', borderRadius: 10,
+    borderLeftWidth: 4, backgroundColor: T.cardAlt, borderRadius: 14,
     padding: 12, marginBottom: 10,
   },
-  dupName:        { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
+  dupName:        { fontFamily: Fonts.bold, fontSize: rf(14), color: T.text, flex: 1 },
   matchBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  matchBadgeText: { fontSize: rf(11), fontWeight: '700' },
-  dupReason:      { fontSize: rf(12), color: '#6B7280' },
-  viewExistingText:{ fontSize: rf(13), fontWeight: '600' },
+  matchBadgeText: { fontFamily: Fonts.bold, fontSize: rf(11) },
+  dupReason:      { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub },
+  viewExistingText:{ fontFamily: Fonts.medium, fontSize: rf(13) },
   modalActions:   { flexDirection: 'row', gap: 10, marginTop: 16 },
 });

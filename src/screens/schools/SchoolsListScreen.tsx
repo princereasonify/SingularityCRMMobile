@@ -14,22 +14,17 @@ import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { dashboardApi } from '../../api/dashboard';
 import { School, SchoolWithPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
+import { Card, Badge } from '../../components/ui';
+import { GradientButton } from '../../components/common/GradientButton';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { DateInput } from '../../components/common/DateInput';
 import { SelectPicker } from '../../components/common/SelectPicker';
-import { ROLE_COLORS } from '../../utils/constants';
 import { formatRelativeDate } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 const FILTERS = ['All', 'Active', 'Inactive', 'Blacklisted', 'Priority'];
-
-const STATUS_COLORS: Record<string, string> = {
-  Active: '#16A34A',
-  Inactive: '#9CA3AF',
-  Blacklisted: '#DC2626',
-};
 
 // ── Normalise team member response into { userId, name, group } ──
 function normalizeMembers(data: any[], isSca: boolean) {
@@ -48,8 +43,11 @@ function normalizeMembers(data: any[], isSca: boolean) {
 
 // ── Assign Schools Modal ──
 function AssignModal({
-  onClose, color, isSca,
-}: { onClose: () => void; color: any; isSca: boolean }) {
+  onClose, isSca,
+}: { onClose: () => void; isSca: boolean }) {
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
   const [members, setMembers] = useState<{ userId: number; name: string; role: string; group: string }[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
@@ -125,23 +123,23 @@ function AssignModal({
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={am.overlay}>
-        <View style={am.card}>
+        <View style={[am.card, { backgroundColor: T.card }, wide && am.cardWide]}>
           {/* Header */}
           <View style={am.header}>
             <View style={am.headerLeft}>
-              <Navigation size={18} color="#0D9488" />
-              <Text style={am.title}>Assign Schools</Text>
+              <Navigation size={18} color={T.accent} />
+              <Text style={[am.title, { color: T.text }]}>Assign Schools</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={22} color="#6B7280" />
+              <X size={22} color={T.sub} />
             </TouchableOpacity>
           </View>
 
           {/* Assign To — SelectPicker dropdown */}
           {loadingMembers ? (
             <View style={am.loadingRow}>
-              <ActivityIndicator size="small" color={color.primary} />
-              <Text style={am.loadingText}>Loading team members...</Text>
+              <ActivityIndicator size="small" color={T.accent} />
+              <Text style={[am.loadingText, { color: T.dim }]}>Loading team members...</Text>
             </View>
           ) : (
             <SelectPicker
@@ -153,7 +151,7 @@ function AssignModal({
               }))}
               value={selectedUserId ?? undefined}
               onChange={v => setSelectedUserId(Number(v))}
-              accentColor={color.primary}
+              accentColor={T.accent}
               containerStyle={am.pickerContainer}
             />
           )}
@@ -161,21 +159,21 @@ function AssignModal({
           {/* Date + Notes row */}
           <View style={am.row2}>
             <View style={{ flex: 1 }}>
-              <Text style={am.label}>Date *</Text>
+              <Text style={[am.label, { color: T.sub }]}>Date *</Text>
               <DateInput
                 value={assignDate}
                 onChange={setAssignDate}
-                accentColor={color.primary}
+                accentColor={T.accent}
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={am.label}>Notes</Text>
+              <Text style={[am.label, { color: T.sub }]}>Notes</Text>
               <TextInput
-                style={am.notesInput}
+                style={[am.notesInput, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
                 value={notes}
                 onChangeText={setNotes}
                 placeholder="Optional notes"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={T.dim}
               />
             </View>
           </View>
@@ -183,12 +181,12 @@ function AssignModal({
           {/* Already assigned pills */}
           {existingIds.length > 0 && (
             <View style={am.existingRow}>
-              <Text style={am.existingLabel}>Already assigned:</Text>
+              <Text style={[am.existingLabel, { color: T.dim }]}>Already assigned:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={{ flexDirection: 'row', gap: 4 }}>
                   {allSchools.filter(s => existingIds.includes(s.id)).map(s => (
-                    <View key={s.id} style={am.existingPill}>
-                      <Text style={am.existingPillText}>{s.name}</Text>
+                    <View key={s.id} style={[am.existingPill, { backgroundColor: T.info + '22' }]}>
+                      <Text style={[am.existingPillText, { color: T.info }]}>{s.name}</Text>
                     </View>
                   ))}
                 </View>
@@ -197,69 +195,73 @@ function AssignModal({
           )}
 
           {/* Search */}
-          <View style={am.searchBar}>
-            <Search size={14} color="#9CA3AF" />
+          <View style={[am.searchBar, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+            <Search size={14} color={T.dim} />
             <TextInput
-              style={am.searchInput}
+              style={[am.searchInput, { color: T.text }]}
               value={search}
               onChangeText={setSearch}
               placeholder="Search schools..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.dim}
             />
           </View>
 
           {/* School list */}
           <ScrollView style={am.schoolList} showsVerticalScrollIndicator={false}>
             {loadingSchools ? (
-              <ActivityIndicator size="small" color={color.primary} style={{ marginVertical: 20 }} />
+              <ActivityIndicator size="small" color={T.accent} style={{ marginVertical: 20 }} />
             ) : filtered.length === 0 ? (
-              <Text style={am.emptyText}>No schools found</Text>
+              <Text style={[am.emptyText, { color: T.dim }]}>No schools found</Text>
             ) : filtered.map(s => {
               const isSelected = selectedIds.includes(s.id);
               const already = existingIds.includes(s.id);
               return (
                 <TouchableOpacity
                   key={s.id}
-                  style={[am.schoolRow, isSelected && { backgroundColor: '#F0FDF4', borderColor: '#16A34A' }, already && am.schoolRowDisabled]}
+                  style={[
+                    am.schoolRow,
+                    { borderColor: 'transparent' },
+                    isSelected && { backgroundColor: T.accentSoft, borderColor: T.accent },
+                    already && am.schoolRowDisabled,
+                  ]}
                   onPress={() => toggle(s.id)}
                   activeOpacity={already ? 1 : 0.7}
                 >
-                  <View style={[am.checkbox, isSelected && { backgroundColor: '#16A34A', borderColor: '#16A34A' }, already && am.checkboxDisabled]}>
-                    {(isSelected || already) && <Check size={12} color={already ? '#9CA3AF' : '#FFF'} />}
+                  <View style={[
+                    am.checkbox,
+                    { borderColor: T.lineStrong },
+                    isSelected && { backgroundColor: T.accent, borderColor: T.accent },
+                    already && { backgroundColor: T.line, borderColor: T.lineStrong },
+                  ]}>
+                    {(isSelected || already) && <Check size={12} color={already ? T.dim : T.onAccent} />}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={am.schoolName} numberOfLines={1}>{s.name}</Text>
-                    <Text style={am.schoolMeta}>{[s.city, s.board].filter(Boolean).join(' • ')}</Text>
+                    <Text style={[am.schoolName, { color: T.text }]} numberOfLines={1}>{s.name}</Text>
+                    <Text style={[am.schoolMeta, { color: T.dim }]}>{[s.city, s.board].filter(Boolean).join(' • ')}</Text>
                   </View>
-                  {already && <Text style={am.assignedLabel}>Assigned</Text>}
+                  {already && <Text style={[am.assignedLabel, { color: T.dim }]}>Assigned</Text>}
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
 
           {/* Footer */}
-          <View style={am.footer}>
-            <Text style={am.selectedCount}>
+          <View style={[am.footer, { borderTopColor: T.line }]}>
+            <Text style={[am.selectedCount, { color: T.sub }]}>
               {selectedIds.length > 0 ? `${selectedIds.length} selected` : 'Select schools above'}
             </Text>
             <View style={am.footerBtns}>
-              <TouchableOpacity style={am.cancelBtn} onPress={onClose}>
-                <Text style={am.cancelText}>Cancel</Text>
+              <TouchableOpacity style={[am.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={onClose}>
+                <Text style={[am.cancelText, { color: T.sub }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[am.assignBtn, (!selectedUserId || selectedIds.length === 0 || assigning) && am.btnDisabled]}
+              <GradientButton
+                label="Assign"
                 onPress={handleAssign}
-                disabled={!selectedUserId || selectedIds.length === 0 || assigning}
-              >
-                {assigning ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <UserCheck size={15} color="#FFF" />
-                    <Text style={am.assignBtnText}>Assign</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={assigning}
+                disabled={!selectedUserId || selectedIds.length === 0}
+                icon={<UserCheck size={15} color="#FFF" />}
+                style={am.submitBtn}
+              />
             </View>
           </View>
         </View>
@@ -270,8 +272,11 @@ function AssignModal({
 
 // ── Reassign Single School Modal ──
 function ReassignModal({
-  school, onClose, onSaved, color, isSca,
-}: { school: any; onClose: () => void; onSaved: () => void; color: any; isSca: boolean }) {
+  school, onClose, onSaved, isSca,
+}: { school: any; onClose: () => void; onSaved: () => void; isSca: boolean }) {
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
   const [members, setMembers] = useState<{ userId: number; name: string; group: string }[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(
     school.assignedToId ? Number(school.assignedToId) : null
@@ -309,20 +314,20 @@ function ReassignModal({
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={rm.overlay}>
-        <View style={rm.card}>
+        <View style={[rm.card, { backgroundColor: T.card }, wide && rm.cardWide]}>
           <View style={rm.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <UserCheck size={18} color="#7C3AED" />
-              <Text style={rm.title}>Reassign School</Text>
+              <UserCheck size={18} color={T.accent} />
+              <Text style={[rm.title, { color: T.text }]}>Reassign School</Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={8}><X size={22} color="#6B7280" /></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={8}><X size={22} color={T.sub} /></TouchableOpacity>
           </View>
 
-          <View style={rm.schoolInfo}>
-            <Text style={rm.schoolInfoName}>{school.name}</Text>
-            <Text style={rm.schoolInfoMeta}>{[school.city, school.board].filter(Boolean).join(' • ')}</Text>
+          <View style={[rm.schoolInfo, { backgroundColor: T.fieldBg }]}>
+            <Text style={[rm.schoolInfoName, { color: T.text }]}>{school.name}</Text>
+            <Text style={[rm.schoolInfoMeta, { color: T.dim }]}>{[school.city, school.board].filter(Boolean).join(' • ')}</Text>
             {school.assignedToName ? (
-              <Text style={rm.currentAssignee}>Currently: <Text style={{ fontWeight: '700' }}>{school.assignedToName}</Text></Text>
+              <Text style={[rm.currentAssignee, { color: T.sub }]}>Currently: <Text style={{ fontFamily: Fonts.bold }}>{school.assignedToName}</Text></Text>
             ) : null}
           </View>
 
@@ -335,28 +340,24 @@ function ReassignModal({
             }))}
             value={selectedUserId ?? undefined}
             onChange={v => setSelectedUserId(Number(v))}
-            accentColor="#7C3AED"
+            accentColor={T.accent}
           />
 
-          <Text style={rm.label}>Visit Date *</Text>
-          <DateInput value={assignDate} onChange={setAssignDate} accentColor="#7C3AED" />
+          <Text style={[rm.label, { color: T.sub }]}>Visit Date *</Text>
+          <DateInput value={assignDate} onChange={setAssignDate} accentColor={T.accent} />
 
-          <View style={rm.footer}>
-            <TouchableOpacity style={rm.cancelBtn} onPress={onClose}>
-              <Text style={rm.cancelText}>Cancel</Text>
+          <View style={[rm.footer, { borderTopColor: T.line }]}>
+            <TouchableOpacity style={[rm.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={onClose}>
+              <Text style={[rm.cancelText, { color: T.sub }]}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[rm.saveBtn, (!selectedUserId || saving) && rm.btnDisabled]}
+            <GradientButton
+              label="Reassign"
               onPress={handleSave}
-              disabled={!selectedUserId || saving}
-            >
-              {saving ? <ActivityIndicator size="small" color="#FFF" /> : (
-                <>
-                  <UserCheck size={15} color="#FFF" />
-                  <Text style={rm.saveBtnText}>Reassign</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              loading={saving}
+              disabled={!selectedUserId}
+              icon={<UserCheck size={15} color="#FFF" />}
+              style={rm.submitBtn}
+            />
           </View>
         </View>
       </View>
@@ -367,13 +368,21 @@ function ReassignModal({
 // ── Main Screen ──
 export const SchoolsListScreen = ({ navigation }: any) => {
   const { user } = useAuth();
+  const T = useAppTheme();
   const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
-  const { width } = useWindowDimensions();
-  const tablet = width >= 768;
+  const { width, height } = useWindowDimensions();
+  const landscapeTablet = isTabletDevice && width > height;
+  const cols = landscapeTablet ? (width >= 1100 ? 3 : 2) : 1;
   const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(role);
   const isSca = role === 'SCA';
   const isFo = role === 'FO';
+
+  const STATUS_COLORS: Record<string, string> = {
+    Active: T.success,
+    Inactive: T.dim,
+    Blacklisted: T.danger,
+  };
+  const PRIORITY_COLORS: Record<string, string> = { High: T.danger, Medium: T.warning, Low: T.success };
 
   const [schools, setSchools] = useState<(School | SchoolWithPriority)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -453,98 +462,96 @@ export const SchoolsListScreen = ({ navigation }: any) => {
     }
   };
 
-  const PRIORITY_COLORS: Record<string, string> = { High: '#DC2626', Medium: '#F59E0B', Low: '#16A34A' };
-
   const renderSchool = ({ item }: { item: School | SchoolWithPriority }) => {
     const s = item as any;
     const hasPriority = s.visitPriorityScore != null;
     return (
       <Card
-        style={tablet ? { ...styles.card, flex: 1 } : styles.card}
+        style={cols > 1 ? [styles.card, { flex: 1 }] : styles.card}
         onPress={() => navigation.navigate('SchoolDetail', { schoolId: s.id })}
       >
         {/* Name + badges */}
         <View style={styles.cardHeader}>
-          <Text style={styles.schoolName} numberOfLines={2}>{s.name}</Text>
+          <Text style={[styles.schoolName, { color: T.text }]} numberOfLines={2}>{s.name}</Text>
           <View style={styles.cardHeaderRight}>
             {hasPriority && (
-              <View style={[styles.priorityBadge, { backgroundColor: (PRIORITY_COLORS[s.priorityLevel] || '#9CA3AF') + '20' }]}>
-                <Flame size={10} color={PRIORITY_COLORS[s.priorityLevel] || '#9CA3AF'} />
-                <Text style={[styles.priorityScore, { color: PRIORITY_COLORS[s.priorityLevel] || '#9CA3AF' }]}>{s.visitPriorityScore}</Text>
+              <View style={[styles.priorityBadge, { backgroundColor: (PRIORITY_COLORS[s.priorityLevel] || T.dim) + '20' }]}>
+                <Flame size={10} color={PRIORITY_COLORS[s.priorityLevel] || T.dim} />
+                <Text style={[styles.priorityScore, { color: PRIORITY_COLORS[s.priorityLevel] || T.dim }]}>{s.visitPriorityScore}</Text>
               </View>
             )}
-            <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[s.status] || '#9CA3AF' }]} />
+            <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[s.status] || T.dim }]} />
           </View>
         </View>
 
         {/* City / State / Board */}
         <View style={styles.metaRow}>
-          {s.city && <Text style={styles.metaText}>{s.city}</Text>}
-          {s.city && s.state && <Text style={styles.metaDot}>•</Text>}
-          {s.state && <Text style={styles.metaText}>{s.state}</Text>}
-          {s.board && <><Text style={styles.metaDot}>•</Text><Text style={styles.metaText}>{s.board}</Text></>}
+          {s.city && <Text style={[styles.metaText, { color: T.dim }]}>{s.city}</Text>}
+          {s.city && s.state && <Text style={[styles.metaDot, { color: T.line }]}>•</Text>}
+          {s.state && <Text style={[styles.metaText, { color: T.dim }]}>{s.state}</Text>}
+          {s.board && <><Text style={[styles.metaDot, { color: T.line }]}>•</Text><Text style={[styles.metaText, { color: T.dim }]}>{s.board}</Text></>}
         </View>
 
         {/* Assigned To — managers only */}
         {isManager && s.assignedToName ? (
           <View style={styles.assignedRow}>
-            <UserCheck size={12} color="#16A34A" />
-            <Text style={styles.assignedText}>{s.assignedToName}</Text>
+            <UserCheck size={12} color={T.success} />
+            <Text style={[styles.assignedText, { color: T.success }]}>{s.assignedToName}</Text>
           </View>
         ) : isManager ? (
-          <Text style={styles.unassignedText}>Unassigned</Text>
+          <Text style={[styles.unassignedText, { color: T.dim }]}>Unassigned</Text>
         ) : null}
 
         {/* Stats */}
         <View style={styles.statsRow}>
           {s.studentCount != null && (
             <View style={styles.stat}>
-              <Users size={12} color="#9CA3AF" />
-              <Text style={styles.statText}>{s.studentCount} students</Text>
+              <Users size={12} color={T.dim} />
+              <Text style={[styles.statText, { color: T.sub }]}>{s.studentCount} students</Text>
             </View>
           )}
           {s.contactCount != null && (
             <View style={styles.stat}>
-              <Phone size={12} color="#9CA3AF" />
-              <Text style={styles.statText}>{s.contactCount} contacts</Text>
+              <Phone size={12} color={T.dim} />
+              <Text style={[styles.statText, { color: T.sub }]}>{s.contactCount} contacts</Text>
             </View>
           )}
-          {s.lastVisitDate && <Text style={styles.lastVisit}>Visited {formatRelativeDate(s.lastVisitDate)}</Text>}
+          {s.lastVisitDate && <Text style={[styles.lastVisit, { color: T.dim }]}>Visited {formatRelativeDate(s.lastVisitDate)}</Text>}
         </View>
 
         {/* Footer: category + status badge */}
         <View style={styles.cardFooter}>
-          <Text style={styles.category}>{s.category}</Text>
-          <Badge label={s.status} color={STATUS_COLORS[s.status] || '#9CA3AF'} />
+          <Text style={[styles.category, { color: T.sub }]}>{s.category}</Text>
+          <Badge label={s.status} color={STATUS_COLORS[s.status] || T.dim} />
         </View>
 
         {/* Action buttons */}
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, { borderTopColor: T.line }]}>
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={[styles.actionBtn, { backgroundColor: T.info + '22' }]}
             onPress={(e) => { e.stopPropagation?.(); navigation.navigate('AddSchool', { school: s }); }}
           >
-            <Edit2 size={13} color="#2563EB" />
-            <Text style={[styles.actionText, { color: '#2563EB' }]}>Edit</Text>
+            <Edit2 size={13} color={T.info} />
+            <Text style={[styles.actionText, { color: T.info }]}>Edit</Text>
           </TouchableOpacity>
 
           {isManager && (
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#EDE9FE' }]}
+              style={[styles.actionBtn, { backgroundColor: T.accentSoft }]}
               onPress={(e) => { e.stopPropagation?.(); setReassignSchool(s); }}
             >
-              <UserCheck size={13} color="#7C3AED" />
-              <Text style={[styles.actionText, { color: '#7C3AED' }]}>Reassign</Text>
+              <UserCheck size={13} color={T.accent} />
+              <Text style={[styles.actionText, { color: T.accent }]}>Reassign</Text>
             </TouchableOpacity>
           )}
 
           {!isFo && (
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#FEE2E2' }]}
+              style={[styles.actionBtn, { backgroundColor: T.danger + '22' }]}
               onPress={(e) => { e.stopPropagation?.(); setDeleteSchool(s); }}
             >
-              <Trash2 size={13} color="#DC2626" />
-              <Text style={[styles.actionText, { color: '#DC2626' }]}>Delete</Text>
+              <Trash2 size={13} color={T.danger} />
+              <Text style={[styles.actionText, { color: T.danger }]}>Delete</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -553,65 +560,67 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       {loading ? (
-        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading schools..." />
+        <LoadingSpinner fullScreen color={T.accent} message="Loading schools..." />
       ) : (
         <FlatList
           data={schools}
           keyExtractor={item => String(item.id)}
           renderItem={renderSchool}
           contentContainerStyle={[styles.list, schools.length === 0 && styles.listEmpty]}
-          key={tablet ? 'grid' : 'list'}
-          numColumns={tablet ? 2 : 1}
-          columnWrapperStyle={tablet ? { gap: 10 } : undefined}
+          key={String(cols)}
+          numColumns={cols}
+          columnWrapperStyle={cols > 1 ? { gap: 10 } : undefined}
           ListHeaderComponent={
             <View>
-              <View style={styles.controlsCard}>
+              <View style={[styles.controlsCard, { backgroundColor: T.card, borderColor: T.line }]}>
                 <View style={styles.controlsTopRow}>
-                  <View style={styles.searchBar}>
-                    <Search size={16} color="#9CA3AF" />
+                  <View style={[styles.searchBar, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+                    <Search size={16} color={T.dim} />
                     <TextInput
-                      style={styles.searchInput}
+                      style={[styles.searchInput, { color: T.text }]}
                       placeholder="Search school, city..."
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={T.dim}
                       value={search}
                       onChangeText={setSearch}
                     />
                   </View>
                   <TouchableOpacity
-                    style={[styles.addBtn, { backgroundColor: COLOR.primary }]}
+                    style={[styles.addBtn, { backgroundColor: T.accent }]}
                     onPress={() => navigation.navigate('AddSchool')}
                   >
-                    <Plus size={18} color="#FFF" />
+                    <Plus size={18} color={T.onAccent} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.filterRow}>
                   {FILTERS.map(f => (
                     <TouchableOpacity
                       key={f}
-                      style={[styles.filterChip, filter === f && { backgroundColor: COLOR.primary, borderColor: COLOR.primary }]}
+                      style={[
+                        styles.filterChip,
+                        { backgroundColor: T.card, borderColor: T.line },
+                        filter === f && { backgroundColor: T.accent, borderColor: T.accent },
+                      ]}
                       onPress={() => setFilter(f)}
                     >
-                      <Text style={[styles.filterText, filter === f && { color: '#FFF' }]}>{f}</Text>
+                      <Text style={[styles.filterText, { color: T.sub }, filter === f && { color: T.onAccent }]}>{f}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
 
               {isManager && (
-                <TouchableOpacity
-                  style={[styles.assignSchoolsBtn, { backgroundColor: '#7C3AED' }]}
+                <GradientButton
+                  label="Assign Schools"
                   onPress={() => setShowAssignModal(true)}
-                  activeOpacity={0.85}
-                >
-                  <Navigation size={15} color="#FFF" />
-                  <Text style={styles.assignSchoolsBtnText}>Assign Schools</Text>
-                </TouchableOpacity>
+                  icon={<Navigation size={16} color="#FFF" />}
+                  style={styles.assignSchoolsBtn}
+                />
               )}
 
               <View style={styles.countBar}>
-                <Text style={styles.countText}>{schools.length} Schools</Text>
+                <Text style={[styles.countText, { color: T.sub }]}>{schools.length} Schools</Text>
               </View>
             </View>
           }
@@ -619,13 +628,14 @@ export const SchoolsListScreen = ({ navigation }: any) => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); setPage(1); fetchSchools(1, true); }}
-              colors={[COLOR.primary]}
+              colors={[T.accent]}
+              tintColor={T.accent}
             />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={<EmptyState title="No schools found" subtitle="Try adjusting your search or filters" icon="🏫" />}
-          ListFooterComponent={loadingMore ? <LoadingSpinner color={COLOR.primary} /> : null}
+          ListFooterComponent={loadingMore ? <LoadingSpinner color={T.accent} /> : null}
         />
       )}
 
@@ -633,7 +643,6 @@ export const SchoolsListScreen = ({ navigation }: any) => {
       {showAssignModal && (
         <AssignModal
           onClose={() => setShowAssignModal(false)}
-          color={COLOR}
           isSca={isSca}
         />
       )}
@@ -644,7 +653,6 @@ export const SchoolsListScreen = ({ navigation }: any) => {
           school={reassignSchool}
           onClose={() => setReassignSchool(null)}
           onSaved={() => { setReassignSchool(null); fetchSchools(1, true); }}
-          color={COLOR}
           isSca={isSca}
         />
       )}
@@ -653,17 +661,17 @@ export const SchoolsListScreen = ({ navigation }: any) => {
       {deleteSchool && (
         <Modal visible animationType="fade" transparent onRequestClose={() => setDeleteSchool(null)}>
           <View style={styles.deleteOverlay}>
-            <View style={styles.deleteCard}>
-              <Text style={styles.deleteTitle}>Delete School?</Text>
-              <Text style={styles.deleteSub}>
-                <Text style={{ fontWeight: '700' }}>{deleteSchool.name}</Text> will be deactivated. You can reactivate it later.
+            <View style={[styles.deleteCard, { backgroundColor: T.card, borderColor: T.line }]}>
+              <Text style={[styles.deleteTitle, { color: T.text }]}>Delete School?</Text>
+              <Text style={[styles.deleteSub, { color: T.sub }]}>
+                <Text style={{ fontFamily: Fonts.bold, color: T.text }}>{deleteSchool.name}</Text> will be deactivated. You can reactivate it later.
               </Text>
               <View style={styles.deleteActions}>
-                <TouchableOpacity style={styles.deleteCancelBtn} onPress={() => setDeleteSchool(null)}>
-                  <Text style={styles.deleteCancelText}>Cancel</Text>
+                <TouchableOpacity style={[styles.deleteCancelBtn, { backgroundColor: T.cardAlt }]} onPress={() => setDeleteSchool(null)}>
+                  <Text style={[styles.deleteCancelText, { color: T.sub }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.deleteConfirmBtn, deleting && { opacity: 0.6 }]}
+                  style={[styles.deleteConfirmBtn, { backgroundColor: T.danger }, deleting && { opacity: 0.6 }]}
                   onPress={handleDelete}
                   disabled={deleting}
                 >
@@ -678,117 +686,112 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   );
 };
 
-// ── Styles ──
+// ── Styles (layout only; colors applied inline via theme) ──
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   controlsCard: {
-    backgroundColor: '#FFF', borderRadius: 16, padding: 12, marginBottom: 10,
-    borderWidth: 1, borderColor: '#EEF2F7',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1,
+    borderRadius: 18, padding: 12, marginBottom: 10,
+    borderWidth: 1,
   },
   controlsTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   searchBar: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB',
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8, flex: 1,
-    borderWidth: 1, borderColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, gap: 8, flex: 1,
+    borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14) },
   filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  filterChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  filterText: { fontSize: rf(12), color: '#374151', fontWeight: '700' },
-  assignSchoolsBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, marginHorizontal: 16, marginBottom: 10 },
-  assignSchoolsBtnText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  filterText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  assignSchoolsBtn: { marginHorizontal: 16, marginBottom: 10 },
   countBar: { paddingHorizontal: 16, paddingVertical: 8 },
-  countText: { fontSize: rf(12), color: '#6B7280', fontWeight: '600' },
+  countText: { fontFamily: Fonts.medium, fontSize: rf(12) },
   list: { padding: 12, gap: 10 },
   listEmpty: { flex: 1 },
   card: { marginBottom: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
-  schoolName: { flex: 1, fontSize: rf(15), fontWeight: '700', color: '#111827', marginRight: 8 },
+  schoolName: { flex: 1, fontFamily: Fonts.bold, fontSize: rf(15), marginRight: 8 },
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   priorityBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 100 },
-  priorityScore: { fontSize: rf(11), fontWeight: '700' },
+  priorityScore: { fontFamily: Fonts.bold, fontSize: rf(11) },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginBottom: 6 },
-  metaText: { fontSize: rf(12), color: '#9CA3AF' },
-  metaDot: { fontSize: rf(12), color: '#D1D5DB' },
+  metaText: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  metaDot: { fontFamily: Fonts.regular, fontSize: rf(12) },
   assignedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  assignedText: { fontSize: rf(12), color: '#16A34A', fontWeight: '600' },
-  unassignedText: { fontSize: rf(11), color: '#D1D5DB', marginBottom: 6 },
+  assignedText: { fontFamily: Fonts.medium, fontSize: rf(12) },
+  unassignedText: { fontFamily: Fonts.regular, fontSize: rf(11), marginBottom: 6 },
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statText: { fontSize: rf(12), color: '#6B7280' },
-  lastVisit: { fontSize: rf(11), color: '#9CA3AF' },
+  statText: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  lastVisit: { fontFamily: Fonts.regular, fontSize: rf(11) },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  category: { fontSize: rf(12), color: '#6B7280' },
-  actionRow: { flexDirection: 'row', gap: 6, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 8 },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, backgroundColor: '#DBEAFE', borderRadius: 8 },
-  actionText: { fontSize: rf(12), fontWeight: '600' },
+  category: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  actionRow: { flexDirection: 'row', gap: 6, borderTopWidth: 1, paddingTop: 8 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, borderRadius: 8 },
+  actionText: { fontFamily: Fonts.medium, fontSize: rf(12) },
   deleteOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
-  deleteCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 24, width: '85%', maxWidth: 360 },
-  deleteTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827', marginBottom: 8 },
-  deleteSub: { fontSize: rf(13), color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  deleteCard: { borderRadius: 20, borderWidth: 1, padding: 24, width: '85%', maxWidth: 360 },
+  deleteTitle: { fontFamily: Fonts.bold, fontSize: rf(17), marginBottom: 8 },
+  deleteSub: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20, marginBottom: 20 },
   deleteActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
-  deleteCancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F3F4F6' },
-  deleteCancelText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
-  deleteConfirmBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#DC2626', minWidth: 72, alignItems: 'center' },
-  deleteConfirmText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
+  deleteCancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  deleteCancelText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  deleteConfirmBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, minWidth: 72, alignItems: 'center' },
+  deleteConfirmText: { fontFamily: Fonts.bold, fontSize: rf(13), color: '#FFF' },
 });
 
-// ── AssignModal Styles ──
+// ── AssignModal Styles (layout only) ──
 const am = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  card: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%' },
+  card: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%' },
+  cardWide: { alignSelf: 'center', width: '100%', maxWidth: 720 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
-  label: { fontSize: rf(12), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  title: { fontFamily: Fonts.bold, fontSize: rf(17) },
+  label: { fontFamily: Fonts.medium, fontSize: rf(12), marginBottom: 6 },
   pickerContainer: { marginBottom: 4 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  loadingText: { fontSize: rf(13), color: '#9CA3AF' },
+  loadingText: { fontFamily: Fonts.regular, fontSize: rf(13) },
   row2: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  notesInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: rf(13), color: '#111827' },
+  notesInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, fontFamily: Fonts.regular, fontSize: rf(13) },
   existingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  existingLabel: { fontSize: rf(10), fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
-  existingPill: { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  existingPillText: { fontSize: rf(11), color: '#2563EB', fontWeight: '600' },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8 },
-  searchInput: { flex: 1, fontSize: rf(13), color: '#111827' },
+  existingLabel: { fontFamily: Fonts.bold, fontSize: rf(10), textTransform: 'uppercase' },
+  existingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  existingPillText: { fontFamily: Fonts.medium, fontSize: rf(11) },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8 },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13) },
   schoolList: { maxHeight: 280, marginBottom: 8 },
-  schoolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, marginBottom: 4, borderWidth: 1, borderColor: 'transparent' },
+  schoolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, marginBottom: 4, borderWidth: 1 },
   schoolRowDisabled: { opacity: 0.45 },
-  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
-  checkboxDisabled: { backgroundColor: '#E5E7EB', borderColor: '#D1D5DB' },
-  schoolName: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  schoolMeta: { fontSize: rf(11), color: '#9CA3AF', marginTop: 1 },
-  assignedLabel: { fontSize: rf(10), color: '#9CA3AF', fontWeight: '600' },
-  emptyText: { fontSize: rf(13), color: '#9CA3AF', textAlign: 'center', paddingVertical: 20 },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 12 },
-  selectedCount: { fontSize: rf(13), color: '#6B7280' },
-  footerBtns: { flexDirection: 'row', gap: 8 },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F3F4F6' },
-  cancelText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
-  assignBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingVertical: 10, backgroundColor: '#0D9488', borderRadius: 12 },
-  assignBtnText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
-  btnDisabled: { opacity: 0.4 },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  schoolName: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  schoolMeta: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 1 },
+  assignedLabel: { fontFamily: Fonts.medium, fontSize: rf(10) },
+  emptyText: { fontFamily: Fonts.regular, fontSize: rf(13), textAlign: 'center', paddingVertical: 20 },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 12 },
+  selectedCount: { fontFamily: Fonts.regular, fontSize: rf(13) },
+  footerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  cancelText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  submitBtn: { minWidth: 150, height: 46, borderRadius: 12, paddingHorizontal: 18 },
 });
 
-// ── ReassignModal Styles ──
+// ── ReassignModal Styles (layout only) ──
 const rm = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  card: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
+  card: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
+  cardWide: { alignSelf: 'center', width: '100%', maxWidth: 720 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  title: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
-  schoolInfo: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 12, marginBottom: 16 },
-  schoolInfoName: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  schoolInfoMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  currentAssignee: { fontSize: rf(12), color: '#6B7280', marginTop: 4 },
-  label: { fontSize: rf(12), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  footer: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 14, marginTop: 14 },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F3F4F6' },
-  cancelText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingVertical: 10, backgroundColor: '#7C3AED', borderRadius: 12 },
-  saveBtnText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
-  btnDisabled: { opacity: 0.4 },
+  title: { fontFamily: Fonts.bold, fontSize: rf(17) },
+  schoolInfo: { borderRadius: 14, padding: 12, marginBottom: 16 },
+  schoolInfoName: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  schoolInfoMeta: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  currentAssignee: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 4 },
+  label: { fontFamily: Fonts.medium, fontSize: rf(12), marginBottom: 6 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: 'flex-end', borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  cancelText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  submitBtn: { minWidth: 150, height: 46, borderRadius: 12, paddingHorizontal: 18 },
 });

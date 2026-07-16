@@ -8,7 +8,9 @@ import React, { useEffect } from 'react';
 import { Alert, DeviceEventEmitter, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { AuthProvider } from './src/context/AuthContext';
+import { ThemeProvider } from './src/context/ThemeContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import { OfflineProvider } from './src/context/OfflineContext';
 import { NotificationProvider } from './src/context/NotificationContext';
@@ -63,18 +65,22 @@ function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <KeyboardProvider>
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <LanguageProvider>
-          <OfflineProvider>
-            <AuthProvider>
-              <NotificationProvider>
-                <AppNavigator />
-              </NotificationProvider>
-            </AuthProvider>
-          </OfflineProvider>
-        </LanguageProvider>
+        <ThemeProvider>
+          <LanguageProvider>
+            <OfflineProvider>
+              <AuthProvider>
+                <NotificationProvider>
+                  <AppNavigator />
+                </NotificationProvider>
+              </AuthProvider>
+            </OfflineProvider>
+          </LanguageProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

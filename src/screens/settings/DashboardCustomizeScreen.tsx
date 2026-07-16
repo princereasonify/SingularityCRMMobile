@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GripVertical, Eye, EyeOff } from 'lucide-react-native';
+import { GripVertical } from 'lucide-react-native';
 import { settingsApi } from '../../api/settings';
 import { DashboardWidget } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
+import { AppHeader } from '../../components/ui';
+import { GradientButton } from '../../components/common/GradientButton';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: 'kpi_summary',    type: 'kpi',         title: 'KPI Summary',        position: 0, visible: true,  size: 'large' },
@@ -38,8 +39,9 @@ const TYPE_EMOJI: Record<string, string> = {
 };
 
 export const DashboardCustomizeScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
 
   const [widgets, setWidgets] = useState<DashboardWidget[]>(DEFAULT_WIDGETS);
   const [loading, setLoading] = useState(true);
@@ -103,123 +105,135 @@ export const DashboardCustomizeScreen = ({ navigation }: any) => {
     ]);
   };
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} />;
 
   const visibleCount = widgets.filter(w => w.visible).length;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top', 'bottom']}>
+      <AppHeader
         title="Customize Dashboard"
         subtitle={`${visibleCount} of ${widgets.length} widgets visible`}
-        color={COLOR.primary}
         onBack={() => navigation.goBack()}
       />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <View style={[styles.constrain, wide && styles.constrainWide]}>
 
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>
-            Toggle widgets on/off and use the arrows to reorder them on your dashboard.
-          </Text>
+          <View style={[styles.infoBox, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
+            <Text style={[styles.infoText, { color: T.sub }]}>
+              Toggle widgets on/off and use the arrows to reorder them on your dashboard.
+            </Text>
+          </View>
+
+          {widgets.map((widget, index) => {
+            const typeColor = TYPE_COLORS[widget.type] ?? T.sub;
+            const emoji = TYPE_EMOJI[widget.type] ?? '🔲';
+            const isFirst = index === 0;
+            const isLast = index === widgets.length - 1;
+            return (
+              <View
+                key={widget.id}
+                style={[
+                  styles.row,
+                  { backgroundColor: T.card, borderColor: T.line },
+                  !widget.visible && styles.rowDisabled,
+                ]}
+              >
+
+                {/* Order arrows */}
+                <View style={styles.orderCol}>
+                  <TouchableOpacity
+                    style={[styles.arrowBtn, isFirst && styles.arrowDisabled]}
+                    onPress={() => moveUp(index)}
+                    disabled={isFirst}
+                  >
+                    <Text style={[styles.arrowText, { color: isFirst ? T.dim : T.sub }]}>▲</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.orderNum, { color: T.dim }]}>{index + 1}</Text>
+                  <TouchableOpacity
+                    style={[styles.arrowBtn, isLast && styles.arrowDisabled]}
+                    onPress={() => moveDown(index)}
+                    disabled={isLast}
+                  >
+                    <Text style={[styles.arrowText, { color: isLast ? T.dim : T.sub }]}>▼</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Widget info */}
+                <View style={[styles.typeTag, { backgroundColor: typeColor + '18' }]}>
+                  <Text style={styles.typeEmoji}>{emoji}</Text>
+                </View>
+                <View style={styles.widgetInfo}>
+                  <Text style={[styles.widgetTitle, { color: widget.visible ? T.text : T.dim }]}>
+                    {widget.title}
+                  </Text>
+                  <Text style={[styles.widgetMeta, { color: typeColor }]}>
+                    {widget.type.toUpperCase()} · {widget.size}
+                  </Text>
+                </View>
+
+                {/* Grip icon */}
+                <GripVertical size={18} color={T.dim} style={styles.grip} />
+
+                {/* Visibility toggle */}
+                <Switch
+                  value={widget.visible}
+                  onValueChange={() => toggleWidget(widget.id)}
+                  trackColor={{ true: T.accent, false: T.line }}
+                  thumbColor={widget.visible ? '#FFF' : T.card}
+                />
+              </View>
+            );
+          })}
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.resetBtn, { backgroundColor: T.card, borderColor: T.line }]}
+              onPress={handleReset}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.resetText, { color: T.text }]}>Reset to Default</Text>
+            </TouchableOpacity>
+            <GradientButton
+              label="Save Layout"
+              onPress={handleSave}
+              loading={saving}
+              disabled={saving}
+              style={styles.saveBtn}
+            />
+          </View>
+
         </View>
-
-        {widgets.map((widget, index) => {
-          const typeColor = TYPE_COLORS[widget.type] ?? '#6B7280';
-          const emoji = TYPE_EMOJI[widget.type] ?? '🔲';
-          return (
-            <View key={widget.id} style={[styles.row, !widget.visible && styles.rowDisabled]}>
-
-              {/* Order arrows */}
-              <View style={styles.orderCol}>
-                <TouchableOpacity
-                  style={[styles.arrowBtn, index === 0 && styles.arrowDisabled]}
-                  onPress={() => moveUp(index)}
-                  disabled={index === 0}
-                >
-                  <Text style={[styles.arrowText, index === 0 && { color: '#D1D5DB' }]}>▲</Text>
-                </TouchableOpacity>
-                <Text style={styles.orderNum}>{index + 1}</Text>
-                <TouchableOpacity
-                  style={[styles.arrowBtn, index === widgets.length - 1 && styles.arrowDisabled]}
-                  onPress={() => moveDown(index)}
-                  disabled={index === widgets.length - 1}
-                >
-                  <Text style={[styles.arrowText, index === widgets.length - 1 && { color: '#D1D5DB' }]}>▼</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Widget info */}
-              <View style={[styles.typeTag, { backgroundColor: typeColor + '18' }]}>
-                <Text style={styles.typeEmoji}>{emoji}</Text>
-              </View>
-              <View style={styles.widgetInfo}>
-                <Text style={[styles.widgetTitle, !widget.visible && { color: '#9CA3AF' }]}>
-                  {widget.title}
-                </Text>
-                <Text style={[styles.widgetMeta, { color: typeColor }]}>
-                  {widget.type.toUpperCase()} · {widget.size}
-                </Text>
-              </View>
-
-              {/* Grip icon */}
-              <GripVertical size={18} color="#D1D5DB" style={styles.grip} />
-
-              {/* Visibility toggle */}
-              <Switch
-                value={widget.visible}
-                onValueChange={() => toggleWidget(widget.id)}
-                trackColor={{ true: COLOR.primary, false: '#E5E7EB' }}
-                thumbColor={widget.visible ? '#FFF' : '#F3F4F6'}
-              />
-            </View>
-          );
-        })}
-
-        <View style={styles.actions}>
-          <Button
-            title="Reset to Default"
-            onPress={handleReset}
-            variant="secondary"
-            style={styles.resetBtn}
-          />
-          <Button
-            title={saving ? 'Saving...' : 'Save Layout'}
-            onPress={handleSave}
-            variant="primary"
-            disabled={saving}
-            style={styles.saveBtn}
-          />
-        </View>
-
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 10, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 40 },
+
+  constrain: { gap: 10, width: '100%' },
+  constrainWide: { maxWidth: 720, alignSelf: 'center' },
 
   infoBox: {
-    backgroundColor: '#EFF6FF', borderRadius: 12, padding: 14, marginBottom: 4,
+    borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 4,
   },
-  infoText: { fontSize: rf(13), color: '#1D4ED8', lineHeight: 20 },
+  infoText: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFF', borderRadius: 14, padding: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
+    borderRadius: 18, borderWidth: 1, padding: 12,
   },
-  rowDisabled: { backgroundColor: '#FAFAFA' },
+  rowDisabled: { opacity: 0.6 },
 
   orderCol: { alignItems: 'center', gap: 2, width: 28 },
   arrowBtn: { padding: 2 },
   arrowDisabled: { opacity: 0.3 },
-  arrowText: { fontSize: rf(10), color: '#6B7280', fontWeight: '700' },
-  orderNum: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '600' },
+  arrowText: { fontFamily: Fonts.bold, fontSize: rf(10) },
+  orderNum: { fontFamily: Fonts.medium, fontSize: rf(11) },
 
   typeTag: {
     width: 38, height: 38, borderRadius: 10,
@@ -228,12 +242,16 @@ const styles = StyleSheet.create({
   typeEmoji: { fontSize: rf(18) },
 
   widgetInfo: { flex: 1 },
-  widgetTitle: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  widgetMeta: { fontSize: rf(11), fontWeight: '600', marginTop: 2 },
+  widgetTitle: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  widgetMeta: { fontFamily: Fonts.medium, fontSize: rf(11), marginTop: 2 },
 
   grip: { marginHorizontal: 2 },
 
-  actions: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  resetBtn: { flex: 1 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 8, alignItems: 'center' },
+  resetBtn: {
+    flex: 1, height: 54, borderRadius: 16, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  resetText: { fontFamily: Fonts.bold, fontSize: rf(15), letterSpacing: 0.2 },
   saveBtn: { flex: 1 },
 });

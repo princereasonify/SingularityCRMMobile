@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   useWindowDimensions, Animated, RefreshControl, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   PinchGestureHandler,
   PanGestureHandler,
@@ -12,12 +12,15 @@ import {
 } from 'react-native-gesture-handler';
 import { ZoomIn, ZoomOut, Maximize } from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { GradientBackground } from '../../components/common/GradientBackground';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS, KANBAN_COLUMNS, getScoreColor } from '../../utils/constants';
+import { KANBAN_COLUMNS, getScoreColor } from '../../utils/constants';
 import { formatCurrency, formatRelativeDate, isOverdue } from '../../utils/formatting';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,8 +36,9 @@ const GHOST_OFFSET_Y = 50;
 
 export const PipelineScreen = ({ navigation }: any) => {
   const { user } = useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role];
   useWindowDimensions(); // triggers re-render on rotation
 
   const [leads, setLeads] = useState<LeadListDto[]>([]);
@@ -218,20 +222,22 @@ export const PipelineScreen = ({ navigation }: any) => {
   const boardWidth = totalCols * COL_WIDTH + (totalCols - 1) * COL_GAP + BOARD_PADDING * 2;
   const isDragging = draggedLead !== null;
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} />;
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={[styles.safe, { backgroundColor: T.bg }]}>
 
-        {/* ── Header ── */}
-        <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
+        {/* ── Sunstone hero header ── */}
+        <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <View style={styles.headerLeft}>
             <DrawerMenuButton />
-            <Text style={styles.headerTitle}>Pipeline</Text>
-            <Text style={styles.headerSub}>
-              {leads.length} leads • {formatCurrency(leads.reduce((s, l) => s + l.value, 0))}
-            </Text>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.headerTitle}>Pipeline</Text>
+              <Text style={styles.headerSub}>
+                {leads.length} leads • {formatCurrency(leads.reduce((s, l) => s + l.value, 0))}
+              </Text>
+            </View>
           </View>
           <View style={styles.zoomControls}>
             <TouchableOpacity style={styles.zoomBtn} onPress={() => animateTo(Math.max(lastScale.current - 0.2, MIN_SCALE))}>
@@ -244,11 +250,11 @@ export const PipelineScreen = ({ navigation }: any) => {
               <Maximize size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
-        </View>
+        </GradientBackground>
 
         {/* ── Hint bar ── */}
-        <View style={[styles.hintBar, isDragging && { backgroundColor: '#FEF3C7' }]}>
-          <Text style={[styles.hintText, isDragging && { color: '#92400E', fontWeight: '700' as const }]}>
+        <View style={[styles.hintBar, { backgroundColor: T.cardAlt }, isDragging && { backgroundColor: T.warning + '22' }]}>
+          <Text style={[styles.hintText, { color: T.sub }, isDragging && { color: T.warning, fontFamily: Fonts.bold }]}>
             {isDragging
               ? '📦 Drag over a column to move this lead'
               : '🤏 Pinch to zoom  •  ✌️ Two-finger drag  •  👆 Long press card to move'}
@@ -292,7 +298,8 @@ export const PipelineScreen = ({ navigation }: any) => {
                     <RefreshControl
                       refreshing={refreshing}
                       onRefresh={() => { setRefreshing(true); fetchLeads(); }}
-                      colors={[COLOR.primary]}
+                      colors={[T.accent]}
+                      tintColor={T.accent}
                     />
                   }
                   style={{ flex: 1 }}
@@ -310,32 +317,35 @@ export const PipelineScreen = ({ navigation }: any) => {
                           ref={(r) => { colViewRefs.current[colIdx] = r as View; }}
                           style={[
                             styles.column,
-                            isDropTarget && { borderWidth: 2, borderColor: COLOR.primary },
+                            { backgroundColor: T.cardAlt, borderColor: T.line },
+                            isDropTarget && { borderWidth: 2, borderColor: T.accent },
                           ]}
                         >
                           {/* Column header */}
                           <View style={[
                             styles.colHeader,
-                            isWon && styles.colHeaderWon,
-                            isDropTarget && { backgroundColor: COLOR.primary + '18' },
+                            { backgroundColor: T.card },
+                            isWon && { backgroundColor: T.success + '18' },
+                            isDropTarget && { backgroundColor: T.accent + '18' },
                           ]}>
                             <Text
                               style={[
                                 styles.colTitle,
-                                isWon && styles.colTitleWon,
-                                isDropTarget && { color: COLOR.primary },
+                                { color: T.text },
+                                isWon && { color: T.success },
+                                isDropTarget && { color: T.accent },
                               ]}
                               numberOfLines={1}
                             >
                               {col.title}
                             </Text>
-                            <View style={[styles.colBadge, { backgroundColor: isWon ? '#22C55E' : COLOR.primary }]}>
-                              <Text style={styles.colCount}>{colLeads.length}</Text>
+                            <View style={[styles.colBadge, { backgroundColor: isWon ? T.success : T.accent }]}>
+                              <Text style={[styles.colCount, { color: T.onAccent }]}>{colLeads.length}</Text>
                             </View>
                           </View>
 
                           {colValue > 0 && (
-                            <Text style={styles.colValue}>{formatCurrency(colValue)}</Text>
+                            <Text style={[styles.colValue, { color: T.sub }]}>{formatCurrency(colValue)}</Text>
                           )}
 
                           {/* Cards — nested vertical scroll */}
@@ -347,8 +357,8 @@ export const PipelineScreen = ({ navigation }: any) => {
                           >
                             {/* Drop zone indicator */}
                             {isDropTarget && isDragging && (
-                              <View style={[styles.dropZone, { borderColor: COLOR.primary }]}>
-                                <Text style={[styles.dropZoneText, { color: COLOR.primary }]}>
+                              <View style={[styles.dropZone, { borderColor: T.accent }]}>
+                                <Text style={[styles.dropZoneText, { color: T.accent }]}>
                                   ↓ Drop here
                                 </Text>
                               </View>
@@ -356,7 +366,7 @@ export const PipelineScreen = ({ navigation }: any) => {
 
                             {colLeads.length === 0 && !isDropTarget && (
                               <View style={styles.emptyCol}>
-                                <Text style={styles.emptyColText}>No leads</Text>
+                                <Text style={[styles.emptyColText, { color: T.dim }]}>No leads</Text>
                               </View>
                             )}
 
@@ -376,25 +386,26 @@ export const PipelineScreen = ({ navigation }: any) => {
                                   minDist={0}
                                 >
                                   <Animated.View
-                                    style={isBeingDragged && styles.cardPlaceholder}
+                                    style={isBeingDragged && [styles.cardPlaceholder, { borderColor: T.line }]}
                                   >
                                     <TouchableOpacity
                                       style={[
                                         styles.leadCard,
-                                        hot && styles.hotCard,
-                                        overdue && !isWon && styles.overdueCard,
-                                        isWon && styles.wonCard,
+                                        { backgroundColor: T.card, borderColor: T.line, borderWidth: 1 },
+                                        hot && { borderWidth: 1.5, borderColor: T.warning, shadowColor: T.warning, shadowOpacity: 0.15 },
+                                        overdue && !isWon && { borderLeftWidth: 3, borderLeftColor: T.danger },
+                                        isWon && { borderLeftWidth: 3, borderLeftColor: T.success },
                                         isBeingDragged && { opacity: 0 },
                                       ]}
                                       onPress={() => !isDragging && navigation.navigate('LeadDetail', { leadId: lead.id })}
                                       activeOpacity={0.8}
                                     >
-                                      {hot && <Text style={styles.hotBadge}>🔥 Hot</Text>}
-                                      {overdue && !isWon && <View style={styles.overdueDot} />}
-                                      <Text style={styles.cardSchool} numberOfLines={2}>{lead.school}</Text>
-                                      <Text style={styles.cardCity}>{lead.city} • {lead.board}</Text>
+                                      {hot && <Text style={[styles.hotBadge, { color: T.warning }]}>🔥 Hot</Text>}
+                                      {overdue && !isWon && <View style={[styles.overdueDot, { backgroundColor: T.danger }]} />}
+                                      <Text style={[styles.cardSchool, { color: T.text }]} numberOfLines={2}>{lead.school}</Text>
+                                      <Text style={[styles.cardCity, { color: T.dim }]}>{lead.city} • {lead.board}</Text>
                                       <View style={styles.cardFooter}>
-                                        <Text style={styles.cardValue}>{formatCurrency(lead.value)}</Text>
+                                        <Text style={[styles.cardValue, { color: T.text }]}>{formatCurrency(lead.value)}</Text>
                                         <View style={[styles.scoreChip, { backgroundColor: getScoreColor(lead.score) + '22' }]}>
                                           <Text style={[styles.scoreText, { color: getScoreColor(lead.score) }]}>
                                             {lead.score}
@@ -402,10 +413,10 @@ export const PipelineScreen = ({ navigation }: any) => {
                                         </View>
                                       </View>
                                       {lead.lastActivityDate && (
-                                        <Text style={styles.cardDate}>{formatRelativeDate(lead.lastActivityDate)}</Text>
+                                        <Text style={[styles.cardDate, { color: T.dim }]}>{formatRelativeDate(lead.lastActivityDate)}</Text>
                                       )}
                                       {lead.foName && role !== 'FO' && (
-                                        <Text style={styles.cardFO} numberOfLines={1}>👤 {lead.foName}</Text>
+                                        <Text style={[styles.cardFO, { color: T.sub }]} numberOfLines={1}>👤 {lead.foName}</Text>
                                       )}
                                     </TouchableOpacity>
                                   </Animated.View>
@@ -433,31 +444,32 @@ export const PipelineScreen = ({ navigation }: any) => {
               { transform: [{ translateX: ghostTransX }, { translateY: ghostTransY }] },
             ]}
           >
-            <View style={[styles.ghostInner, { borderLeftColor: COLOR.primary }]}>
-              <Text style={styles.cardSchool} numberOfLines={1}>{draggedLead!.school}</Text>
-              <Text style={styles.cardCity} numberOfLines={1}>{draggedLead!.city}</Text>
-              <Text style={styles.cardValue}>{formatCurrency(draggedLead!.value)}</Text>
+            <View style={[styles.ghostInner, { backgroundColor: T.card, borderLeftColor: T.accent }]}>
+              <Text style={[styles.cardSchool, { color: T.text }]} numberOfLines={1}>{draggedLead!.school}</Text>
+              <Text style={[styles.cardCity, { color: T.dim }]} numberOfLines={1}>{draggedLead!.city}</Text>
+              <Text style={[styles.cardValue, { color: T.text }]}>{formatCurrency(draggedLead!.value)}</Text>
             </View>
           </Animated.View>
         )}
 
-      </SafeAreaView>
+      </View>
     </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  safe: { flex: 1, backgroundColor: '#F1F5F9' },
+  safe: { flex: 1 },
 
   // ── Header ──
   header: {
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
+    paddingHorizontal: 16, paddingBottom: 14,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  headerLeft: { flex: 1 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
-  headerSub: { fontSize: rf(13), color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  headerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerTextWrap: { flex: 1 },
+  headerTitle: { fontSize: rf(22), fontFamily: Fonts.bold, color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontSize: rf(13), fontFamily: Fonts.regular, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   zoomControls: { flexDirection: 'row', gap: 4 },
   zoomBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -467,9 +479,9 @@ const styles = StyleSheet.create({
 
   // ── Hint ──
   hintBar: {
-    backgroundColor: '#E0E7FF', paddingVertical: 5, paddingHorizontal: 12,
+    paddingVertical: 6, paddingHorizontal: 12,
   },
-  hintText: { fontSize: rf(11), color: '#4338CA', textAlign: 'center' },
+  hintText: { fontSize: rf(11), fontFamily: Fonts.regular, textAlign: 'center' },
 
   // ── Canvas ──
   canvas: { flex: 1, overflow: 'hidden' },
@@ -489,20 +501,18 @@ const styles = StyleSheet.create({
   },
   column: {
     width: COL_WIDTH,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
+    borderRadius: 18,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   colHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 12, backgroundColor: '#F3F4F6',
+    padding: 12,
   },
-  colHeaderWon: { backgroundColor: '#F0FDF4' },
-  colTitle: { fontSize: rf(13), fontWeight: '700', color: '#374151', flex: 1 },
-  colTitleWon: { color: '#16A34A' },
+  colTitle: { fontSize: rf(13), fontFamily: Fonts.bold, flex: 1 },
   colBadge: { borderRadius: 100, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
-  colCount: { fontSize: rf(11), fontWeight: '700', color: '#FFF' },
-  colValue: { fontSize: rf(12), color: '#6B7280', paddingHorizontal: 12, paddingTop: 4 },
+  colCount: { fontSize: rf(11), fontFamily: Fonts.bold },
+  colValue: { fontSize: rf(12), fontFamily: Fonts.regular, paddingHorizontal: 12, paddingTop: 4 },
   colScroll: { height: 480, padding: 8 },
 
   // ── Drop zone ──
@@ -511,41 +521,34 @@ const styles = StyleSheet.create({
     marginBottom: 8, paddingVertical: 14,
     alignItems: 'center',
   },
-  dropZoneText: { fontSize: rf(13), fontWeight: '700' },
+  dropZoneText: { fontSize: rf(13), fontFamily: Fonts.bold },
 
   // ── Lead cards ──
   emptyCol: { padding: 16, alignItems: 'center' },
-  emptyColText: { fontSize: rf(12), color: '#D1D5DB' },
+  emptyColText: { fontSize: rf(12), fontFamily: Fonts.regular },
   cardPlaceholder: {
-    borderRadius: 12, borderWidth: 1.5, borderColor: '#D1D5DB',
+    borderRadius: 14, borderWidth: 1.5,
     marginBottom: 8, height: 80,
   },
   leadCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 12, padding: 12, marginBottom: 8,
+    borderRadius: 14, padding: 12, marginBottom: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
     position: 'relative',
   },
-  hotCard: {
-    borderWidth: 1.5, borderColor: '#F59E0B',
-    shadowColor: '#F59E0B', shadowOpacity: 0.15,
-  },
-  overdueCard: { borderLeftWidth: 3, borderLeftColor: '#EF4444' },
-  wonCard: { borderLeftWidth: 3, borderLeftColor: '#22C55E' },
-  hotBadge: { fontSize: rf(10), color: '#D97706', fontWeight: '700', marginBottom: 4 },
+  hotBadge: { fontSize: rf(10), fontFamily: Fonts.bold, marginBottom: 4 },
   overdueDot: {
     position: 'absolute', top: 10, right: 10,
-    width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444',
+    width: 8, height: 8, borderRadius: 4,
   },
-  cardSchool: { fontSize: rf(13), fontWeight: '700', color: '#111827', marginBottom: 3 },
-  cardCity: { fontSize: rf(11), color: '#9CA3AF', marginBottom: 8 },
+  cardSchool: { fontSize: rf(13), fontFamily: Fonts.bold, marginBottom: 3 },
+  cardCity: { fontSize: rf(11), fontFamily: Fonts.regular, marginBottom: 8 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardValue: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  cardValue: { fontSize: rf(14), fontFamily: Fonts.bold },
   scoreChip: { borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
-  scoreText: { fontSize: rf(11), fontWeight: '700' },
-  cardDate: { fontSize: rf(10), color: '#9CA3AF', marginTop: 4 },
-  cardFO: { fontSize: rf(10), color: '#6B7280', marginTop: 2 },
+  scoreText: { fontSize: rf(11), fontFamily: Fonts.bold },
+  cardDate: { fontSize: rf(10), fontFamily: Fonts.regular, marginTop: 4 },
+  cardFO: { fontSize: rf(10), fontFamily: Fonts.regular, marginTop: 2 },
 
   // ── Ghost card ──
   ghostCard: {
@@ -555,8 +558,7 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   ghostInner: {
-    backgroundColor: '#FFF',
-    borderRadius: 12, padding: 12,
+    borderRadius: 14, padding: 12,
     borderLeftWidth: 4,
     shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2, shadowRadius: 10, elevation: 20,

@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl,
+  View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ArrowLeft } from 'lucide-react-native';
 import { aiApi } from '../../api/ai';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card, Badge, SectionLabel } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
-
-const SEVERITY_COLORS: Record<string, string> = {
-  High: '#DC2626', Medium: '#F59E0B', Low: '#16A34A', Info: '#2563EB',
-};
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
+import type { AppTheme } from '../../theme';
 
 interface Insight {
   title: string;
@@ -24,8 +23,21 @@ interface Insight {
 }
 
 export const AiInsightsScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'ZH') as keyof typeof ROLE_COLORS];
+  useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+
+  const severityColor = (sev?: string): string => {
+    switch (sev) {
+      case 'High': return T.danger;
+      case 'Medium': return T.warning;
+      case 'Low': return T.success;
+      case 'Info': return T.info;
+      default: return T.dim;
+    }
+  };
 
   const [insights, setInsights] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -46,19 +58,19 @@ export const AiInsightsScreen = ({ navigation }: any) => {
   useEffect(() => { loadInsights(); }, []);
 
   const renderInsightCard = (insight: Insight, i: number) => (
-    <Card key={i} style={styles.insightCard}>
+    <Card key={i}>
       <View style={styles.insightHeader}>
-        <Text style={styles.insightTitle}>{insight.title}</Text>
+        <Text style={[styles.insightTitle, { color: T.text }]}>{insight.title}</Text>
         {insight.severity && (
-          <Badge label={insight.severity} color={SEVERITY_COLORS[insight.severity] || '#9CA3AF'} />
+          <Badge label={insight.severity} color={severityColor(insight.severity)} />
         )}
       </View>
-      {insight.category && <Text style={styles.insightCategory}>{insight.category}</Text>}
-      <Text style={styles.insightDesc}>{insight.description}</Text>
+      {insight.category && <Text style={[styles.insightCategory, { color: T.dim }]}>{insight.category}</Text>}
+      <Text style={[styles.insightDesc, { color: T.sub }]}>{insight.description}</Text>
     </Card>
   );
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading insights..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading insights..." />;
 
   const teamInsights: Insight[] = insights?.teamPerformance ?? [];
   const pipelineInsights: Insight[] = insights?.pipelineHealth ?? [];
@@ -66,55 +78,81 @@ export const AiInsightsScreen = ({ navigation }: any) => {
   const hasAny = teamInsights.length + pipelineInsights.length + recommendations.length > 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader title="AI Insights" subtitle="Updated daily" color={COLOR.primary} onBack={() => navigation.goBack()} />
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
+            <ArrowLeft size={20} color="#FFF" />
+          </TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>AI Insights</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>Updated daily</Text>
+          </View>
+        </View>
+      </GradientBackground>
+
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadInsights(); }} colors={[COLOR.primary]} />}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 32 },
+          wide && styles.contentWide,
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadInsights(); }} tintColor={T.accent} />}
       >
         {!hasAny ? (
           <EmptyState title="No insights available" subtitle="AI insights are generated daily based on your team's activity" icon="🧠" />
         ) : (
           <>
             {teamInsights.length > 0 && (
-              <Section title="👥 Team Performance" color={COLOR.primary}>
+              <Section title="👥 Team Performance" T={T}>
                 {teamInsights.map((ins, i) => renderInsightCard(ins, i))}
               </Section>
             )}
             {pipelineInsights.length > 0 && (
-              <Section title="📊 Pipeline Health" color={COLOR.primary}>
+              <Section title="📊 Pipeline Health" T={T}>
                 {pipelineInsights.map((ins, i) => renderInsightCard(ins, i))}
               </Section>
             )}
             {recommendations.length > 0 && (
-              <Section title="💡 Recommended Actions" color={COLOR.primary}>
+              <Section title="💡 Recommended Actions" T={T}>
                 {recommendations.map((ins, i) => renderInsightCard(ins, i))}
               </Section>
             )}
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
-const Section = ({ title, color, children }: { title: string; color: string; children: React.ReactNode }) => (
+const Section = ({ title, T, children }: { title: string; T: AppTheme; children: React.ReactNode }) => (
   <View style={styles.section}>
-    <Text style={[styles.sectionTitle, { color }]}>{title}</Text>
+    <SectionLabel style={{ color: T.accent }}>{title}</SectionLabel>
     {children}
   </View>
 );
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerText: { flex: 1 },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 16, paddingBottom: 32 },
+  content: { padding: 16, gap: 16 },
+  contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
   section: { gap: 10 },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', marginBottom: 4 },
-  insightCard: {},
   insightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 },
-  insightTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
-  insightCategory: { fontSize: rf(12), color: '#9CA3AF', marginBottom: 6 },
-  insightDesc: { fontSize: rf(13), color: '#374151', lineHeight: 20 },
+  insightTitle: { fontFamily: Fonts.bold, fontSize: rf(14), flex: 1 },
+  insightCategory: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 6 },
+  insightDesc: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
 });

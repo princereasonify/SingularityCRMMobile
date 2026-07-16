@@ -15,10 +15,9 @@ import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
 
 const ROLES = ['FO', 'ZH', 'RH', 'SH', 'SCA'];
-// Backend AllowanceScope.Role uses int — keep in sync with UserRole enum
-const ROLE_TO_INT: Record<string, number> = { FO: 0, ZH: 1, RH: 2, SH: 3, SCA: 4 };
 
-const SCOPES = ['Role', 'User', 'Zone', 'Region', 'Global'] as const;
+// Two scopes only: Global (everyone) or User (a specific person).
+const SCOPES = ['Global', 'User'] as const;
 
 const VEHICLE_OPTIONS = [
   { value: '', label: 'All Vehicles' },
@@ -43,7 +42,7 @@ function fmtDate(d: string) {
 }
 
 const blankForm = {
-  scope: 'Role' as typeof SCOPES[number],
+  scope: 'Global' as typeof SCOPES[number],
   scopeId: '',
   targetRole: '',
   vehicleType: '',
@@ -147,18 +146,12 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
       } else {
         // Create mode: validate scope identity
         if (form.scope === 'User' && !form.scopeId) { Alert.alert('Error', 'Select a user'); setSubmitting(false); return; }
-        if (form.scope === 'Role' && !form.targetRole) { Alert.alert('Error', 'Select a role'); setSubmitting(false); return; }
-        if ((form.scope === 'Region' || form.scope === 'Zone') && !form.scopeId) {
-          Alert.alert('Error', `${form.scope} ID is required`); setSubmitting(false); return;
-        }
-        const resolvedScopeId = form.scope === 'Role'
-          ? ROLE_TO_INT[form.targetRole]
-          : (form.scopeId ? parseInt(form.scopeId) : undefined);
+        const resolvedScopeId = form.scope === 'User' && form.scopeId ? parseInt(form.scopeId) : undefined;
 
         await allowanceConfigApi.create({
           scope: form.scope,
           scopeId: resolvedScopeId,
-          targetRole: (form.scope === 'User' || form.scope === 'Role') ? (form.targetRole || undefined) : undefined,
+          targetRole: form.scope === 'User' ? (form.targetRole || undefined) : undefined,
           vehicleType: form.vehicleType || undefined,
           ratePerKm: parseFloat(form.ratePerKm),
           maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : undefined,
@@ -326,42 +319,29 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
                 accentColor={COLOR.primary}
               />
 
-              {/* Role picker — when scope = Role or User */}
-              {(form.scope === 'Role' || form.scope === 'User') && (
-                <SelectPicker
-                  label="Role *"
-                  placeholder="Select role"
-                  options={ROLES.map(r => ({ value: r, label: r }))}
-                  value={form.targetRole}
-                  onChange={v => setField('targetRole', String(v))}
-                  accentColor={COLOR.primary}
-                />
-              )}
-
-              {/* User picker — when scope = User (needs targetRole first) */}
+              {/* Role filter + User picker — when scope = User */}
               {form.scope === 'User' && (
-                <SelectPicker
-                  label="User *"
-                  placeholder={form.targetRole ? `Select ${form.targetRole}` : 'Pick role first'}
-                  options={usersForRole.map((u: any) => ({
-                    value: u.id,
-                    label: `${u.name}${u.zone ? ` — ${u.zone}` : u.region ? ` — ${u.region}` : ''}`,
-                  }))}
-                  value={form.scopeId ? Number(form.scopeId) : undefined}
-                  onChange={v => setField('scopeId', String(v))}
-                  accentColor={COLOR.primary}
-                />
-              )}
-
-              {/* Zone / Region ID */}
-              {(form.scope === 'Zone' || form.scope === 'Region') && (
-                <Field
-                  label={`${form.scope} ID *`}
-                  value={form.scopeId}
-                  onChange={v => setField('scopeId', v)}
-                  placeholder="Enter numeric ID"
-                  keyboardType="numeric"
-                />
+                <>
+                  <SelectPicker
+                    label="Role *"
+                    placeholder="Select role"
+                    options={ROLES.map(r => ({ value: r, label: r }))}
+                    value={form.targetRole}
+                    onChange={v => setField('targetRole', String(v))}
+                    accentColor={COLOR.primary}
+                  />
+                  <SelectPicker
+                    label="User *"
+                    placeholder={form.targetRole ? `Select ${form.targetRole}` : 'Pick role first'}
+                    options={usersForRole.map((u: any) => ({
+                      value: u.id,
+                      label: `${u.name}${u.zone ? ` — ${u.zone}` : u.region ? ` — ${u.region}` : ''}`,
+                    }))}
+                    value={form.scopeId ? Number(form.scopeId) : undefined}
+                    onChange={v => setField('scopeId', String(v))}
+                    accentColor={COLOR.primary}
+                  />
+                </>
               )}
 
               {/* Vehicle Type */}

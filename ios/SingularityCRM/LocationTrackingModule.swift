@@ -113,6 +113,45 @@ class LocationTrackingModule: NSObject {
         }
     }
 
+    // MARK: – Credentials
+
+    /// Current access token. UserDefaults is authoritative: JS refreshes the token
+    /// periodically and writes it here, whereas `authToken` is only a snapshot taken
+    /// when tracking started. Preferring the snapshot is what left this module pinging
+    /// (and posting geofence visits) with a long-expired token.
+    private var currentToken: String? {
+        UserDefaults.standard.string(forKey: LocationTrackingModule.tokenKey) ?? authToken
+    }
+
+    private var currentBaseUrl: String? {
+        UserDefaults.standard.string(forKey: LocationTrackingModule.urlKey) ?? apiBaseUrl
+    }
+
+    /// Replaces the token used by the ping timer and the geofence handlers, without
+    /// restarting tracking. Called by JS on login and after every token refresh.
+    /// An empty token clears the stored credentials (logout).
+    @objc
+    func updateAuthToken(_ token: String,
+                         apiBaseUrl url: String,
+                         resolve: @escaping RCTPromiseResolveBlock,
+                         reject: @escaping RCTPromiseRejectBlock) {
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { resolve(false); return }
+
+            if token.isEmpty {
+                self.authToken = nil
+                UserDefaults.standard.removeObject(forKey: LocationTrackingModule.tokenKey)
+            } else {
+                self.authToken  = token
+                self.apiBaseUrl = url
+                UserDefaults.standard.set(token, forKey: LocationTrackingModule.tokenKey)
+                UserDefaults.standard.set(url,   forKey: LocationTrackingModule.urlKey)
+            }
+            resolve(true)
+        }
+    }
+
     // MARK: – Start / Stop
 
     @objc
@@ -407,8 +446,9 @@ extension LocationTrackingModule: CLLocationManagerDelegate {
 extension LocationTrackingModule {
 
     private func sendPing() {
-        let token   = authToken   ?? UserDefaults.standard.string(forKey: LocationTrackingModule.tokenKey)
-        let baseUrl = apiBaseUrl  ?? UserDefaults.standard.string(forKey: LocationTrackingModule.urlKey)
+        // Read per-ping so a token refreshed by JS is picked up immediately.
+        let token   = currentToken
+        let baseUrl = currentBaseUrl
 
         guard let token, let baseUrl else {
             NSLog("[LocationTracking] No token/url — skip ping"); return
@@ -455,8 +495,10 @@ extension LocationTrackingModule {
                                    center: CLLocationCoordinate2D,
                                    durationMin: Int?) {
 
-        let token   = authToken   ?? UserDefaults.standard.string(forKey: LocationTrackingModule.tokenKey)
-        let baseUrl = apiBaseUrl  ?? UserDefaults.standard.string(forKey: LocationTrackingModule.urlKey)
+        // Read per-event: a school visit can fire days into a tracking session, long
+        // after the token that started it has expired.
+        let token   = currentToken
+        let baseUrl = currentBaseUrl
         guard let token, let baseUrl,
               let url = URL(string: "\(baseUrl)/tracking/geofence-event") else { return }
 

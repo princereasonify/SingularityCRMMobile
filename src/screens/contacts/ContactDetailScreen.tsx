@@ -1,30 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Linking,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Edit2, Phone, Mail, Building2, MessageCircle, History } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Edit2, Phone, Mail, Building2, MessageCircle, History, ArrowLeft } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
 import { Contact } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card, Badge } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
 import { formatRelativeDate } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
-
-const RELATIONSHIP_COLORS: Record<string, string> = {
-  New: '#9CA3AF', Warm: '#F59E0B', Strong: '#16A34A',
-  Champion: '#7C3AED', Detractor: '#DC2626',
-};
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 export const ContactDetailScreen = ({ navigation, route }: any) => {
   const { contactId } = route.params;
   const { user } = useAuth();
   const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
+
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
+
+  const RELATIONSHIP_COLORS: Record<string, string> = {
+    New: T.dim, Warm: T.warning, Strong: T.success,
+    Champion: T.info, Detractor: T.danger,
+  };
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,12 +41,31 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
       .finally(() => setLoading(false));
   }, [contactId]);
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
+  const Hero = ({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) => (
+    <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.headerBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={20} color="#FFF" />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+          {!!subtitle && <Text style={styles.headerSub} numberOfLines={1}>{subtitle}</Text>}
+        </View>
+        {right}
+      </View>
+    </GradientBackground>
+  );
+
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading..." />;
   if (!contact) return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader title="Contact" color={COLOR.primary} onBack={() => navigation.goBack()} />
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      <Hero title="Contact" />
       <EmptyState title="Contact not found" icon="👤" />
-    </SafeAreaView>
+    </View>
   );
 
   const canEdit = role === 'FO' || role === 'ZH';
@@ -60,156 +84,167 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      <Hero
         title={contact.name}
         subtitle={contact.designation}
-        color={COLOR.primary}
-        onBack={() => navigation.goBack()}
-        rightAction={
+        right={
           <View style={styles.headerActions}>
             <TouchableOpacity
+              style={styles.headerBtn}
               onPress={() => navigation.navigate('AuditHistory', { entityType: 'Contact', entityId: contact.id, title: contact.name })}
             >
               <History size={18} color="#FFF" />
             </TouchableOpacity>
             {canEdit && (
-              <TouchableOpacity onPress={() => navigation.navigate('AddContact', { contact })}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('AddContact', { contact })}>
                 <Edit2 size={18} color="#FFF" />
               </TouchableOpacity>
             )}
           </View>
         }
       />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        {/* Avatar + Name */}
-        <View style={styles.profileCard}>
-          <View style={[styles.avatar, { backgroundColor: COLOR.light }]}>
-            <Text style={[styles.avatarText, { color: COLOR.primary }]}>
-              {contact.name.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.profileName}>{contact.name}</Text>
-          {contact.designation && <Text style={styles.profileDes}>{contact.designation}</Text>}
-          {contact.department && <Text style={styles.profileDept}>{contact.department}</Text>}
-          <View style={styles.badgeRow}>
-            <Badge label={contact.relationship} color={RELATIONSHIP_COLORS[contact.relationship] || '#9CA3AF'} />
-            {contact.isDecisionMaker && <Badge label="Decision Maker" color="#16A34A" />}
-            {contact.isInfluencer && <Badge label="Influencer" color="#2563EB" />}
-          </View>
-        </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.wrap, twoWide && styles.wrapWide]}>
+          {/* Avatar + Name */}
+          <Card style={styles.profileCard}>
+            <View style={[styles.avatar, { backgroundColor: T.accentSoft }]}>
+              <Text style={[styles.avatarText, { color: T.accent }]}>
+                {contact.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={[styles.profileName, { color: T.text }]}>{contact.name}</Text>
+            {contact.designation && <Text style={[styles.profileDes, { color: T.sub }]}>{contact.designation}</Text>}
+            {contact.department && <Text style={[styles.profileDept, { color: T.dim }]}>{contact.department}</Text>}
+            <View style={styles.badgeRow}>
+              <Badge label={contact.relationship} color={RELATIONSHIP_COLORS[contact.relationship] || T.dim} />
+              {contact.isDecisionMaker && <Badge label="Decision Maker" color={T.success} />}
+              {contact.isInfluencer && <Badge label="Influencer" color={T.info} />}
+            </View>
+          </Card>
 
-        {/* Contact Info */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Details</Text>
-          {contact.phone && (
-            <>
-              <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
-                <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
-                  <Phone size={16} color="#16A34A" />
+          {/* Contact Info */}
+          <Card>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Contact Details</Text>
+            {contact.phone && (
+              <>
+                <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
+                  <View style={[styles.iconBox, { backgroundColor: T.success + '22' }]}>
+                    <Phone size={16} color={T.success} />
+                  </View>
+                  <View style={styles.actionContent}>
+                    <Text style={[styles.actionLabel, { color: T.dim }]}>Phone</Text>
+                    <Text style={[styles.actionValue, { color: T.success }]}>{contact.phone}</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={openWhatsApp}>
+                  <View style={[styles.iconBox, { backgroundColor: T.success + '22' }]}>
+                    <MessageCircle size={16} color="#25D366" />
+                  </View>
+                  <View style={styles.actionContent}>
+                    <Text style={[styles.actionLabel, { color: T.dim }]}>WhatsApp</Text>
+                    <Text style={[styles.actionValue, { color: '#25D366' }]}>Open in WhatsApp</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
+            {contact.email && (
+              <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
+                <View style={[styles.iconBox, { backgroundColor: T.info + '22' }]}>
+                  <Mail size={16} color={T.info} />
                 </View>
                 <View style={styles.actionContent}>
-                  <Text style={styles.actionLabel}>Phone</Text>
-                  <Text style={[styles.actionValue, { color: '#16A34A' }]}>{contact.phone}</Text>
+                  <Text style={[styles.actionLabel, { color: T.dim }]}>Email</Text>
+                  <Text style={[styles.actionValue, { color: T.info }]}>{contact.email}</Text>
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionRow} onPress={openWhatsApp}>
-                <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
-                  <MessageCircle size={16} color="#25D366" />
+            )}
+            {contact.schoolName && (
+              <TouchableOpacity
+                style={[styles.actionRow, { borderBottomColor: T.line }]}
+                onPress={() => contact.schoolId && navigation.navigate('SchoolDetail', { schoolId: contact.schoolId })}
+              >
+                <View style={[styles.iconBox, { backgroundColor: T.accent + '22' }]}>
+                  <Building2 size={16} color={T.accent} />
                 </View>
                 <View style={styles.actionContent}>
-                  <Text style={styles.actionLabel}>WhatsApp</Text>
-                  <Text style={[styles.actionValue, { color: '#25D366' }]}>Open in WhatsApp</Text>
+                  <Text style={[styles.actionLabel, { color: T.dim }]}>School</Text>
+                  <Text style={[styles.actionValue, { color: T.accent }]}>{contact.schoolName}</Text>
                 </View>
               </TouchableOpacity>
-            </>
-          )}
-          {contact.email && (
-            <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
-              <View style={[styles.iconBox, { backgroundColor: '#EFF6FF' }]}>
-                <Mail size={16} color="#2563EB" />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionLabel}>Email</Text>
-                <Text style={[styles.actionValue, { color: '#2563EB' }]}>{contact.email}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          {contact.schoolName && (
-            <TouchableOpacity
-              style={styles.actionRow}
-              onPress={() => contact.schoolId && navigation.navigate('SchoolDetail', { schoolId: contact.schoolId })}
-            >
-              <View style={[styles.iconBox, { backgroundColor: '#FFF7ED' }]}>
-                <Building2 size={16} color="#EA580C" />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionLabel}>School</Text>
-                <Text style={[styles.actionValue, { color: '#EA580C' }]}>{contact.schoolName}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        </Card>
-
-        {/* Additional Info */}
-        {(contact.profession || contact.personalityNotes || contact.lastContactedAt) && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Additional Info</Text>
-            {contact.profession && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Profession</Text>
-                <Text style={styles.infoValue}>{contact.profession}</Text>
-              </View>
-            )}
-            {contact.lastContactedAt && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Last Contacted</Text>
-                <Text style={styles.infoValue}>{formatRelativeDate(contact.lastContactedAt)}</Text>
-              </View>
-            )}
-            {contact.personalityNotes && (
-              <View style={styles.notesBox}>
-                <Text style={styles.infoLabel}>Personality Notes</Text>
-                <Text style={styles.notesText}>{contact.personalityNotes}</Text>
-              </View>
             )}
           </Card>
-        )}
+
+          {/* Additional Info */}
+          {(contact.profession || contact.personalityNotes || contact.lastContactedAt) && (
+            <Card>
+              <Text style={[styles.sectionTitle, { color: T.text }]}>Additional Info</Text>
+              {contact.profession && (
+                <View style={[styles.infoRow, { borderBottomColor: T.line }]}>
+                  <Text style={[styles.infoLabel, { color: T.sub }]}>Profession</Text>
+                  <Text style={[styles.infoValue, { color: T.text }]}>{contact.profession}</Text>
+                </View>
+              )}
+              {contact.lastContactedAt && (
+                <View style={[styles.infoRow, { borderBottomColor: T.line }]}>
+                  <Text style={[styles.infoLabel, { color: T.sub }]}>Last Contacted</Text>
+                  <Text style={[styles.infoValue, { color: T.text }]}>{formatRelativeDate(contact.lastContactedAt)}</Text>
+                </View>
+              )}
+              {contact.personalityNotes && (
+                <View style={styles.notesBox}>
+                  <Text style={[styles.infoLabel, { color: T.sub }]}>Personality Notes</Text>
+                  <Text style={[styles.notesText, { color: T.text }]}>{contact.personalityNotes}</Text>
+                </View>
+              )}
+            </Card>
+          )}
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
-  profileCard: {
-    backgroundColor: '#FFF', borderRadius: 16, padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
   },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+
+  scroll: { flex: 1 },
+  content: { padding: 16 },
+  wrap: { gap: 12 },
+  wrapWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
+
+  profileCard: { alignItems: 'center', paddingVertical: 20 },
   avatar: {
     width: 72, height: 72, borderRadius: 36,
     alignItems: 'center', justifyContent: 'center', marginBottom: 12,
   },
-  avatarText: { fontSize: rf(28), fontWeight: '700' },
-  profileName: { fontSize: rf(20), fontWeight: '700', color: '#111827', marginBottom: 4 },
-  profileDes: { fontSize: rf(14), color: '#6B7280', marginBottom: 2 },
-  profileDept: { fontSize: rf(13), color: '#9CA3AF', marginBottom: 10 },
+  avatarText: { fontFamily: Fonts.bold, fontSize: rf(28) },
+  profileName: { fontFamily: Fonts.bold, fontSize: rf(20), marginBottom: 4 },
+  profileDes: { fontFamily: Fonts.regular, fontSize: rf(14), marginBottom: 2 },
+  profileDept: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 10 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
-  section: {},
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 12 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  iconBox: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  iconBox: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   actionContent: { flex: 1 },
-  actionLabel: { fontSize: rf(11), color: '#9CA3AF', marginBottom: 2 },
-  actionValue: { fontSize: rf(14), fontWeight: '600' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  infoLabel: { fontSize: rf(13), color: '#6B7280' },
-  infoValue: { fontSize: rf(13), color: '#111827', fontWeight: '500' },
+  actionLabel: { fontFamily: Fonts.regular, fontSize: rf(11), marginBottom: 2 },
+  actionValue: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  infoLabel: { fontFamily: Fonts.regular, fontSize: rf(13) },
+  infoValue: { fontFamily: Fonts.medium, fontSize: rf(13) },
   notesBox: { paddingTop: 8 },
-  notesText: { fontSize: rf(13), color: '#374151', marginTop: 4, lineHeight: 20 },
-  headerActions: { flexDirection: 'row', gap: 14 },
+  notesText: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 4, lineHeight: 20 },
 });

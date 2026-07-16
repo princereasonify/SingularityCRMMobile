@@ -15,7 +15,10 @@ export const authApi = {
     role: string;
   }) => apiClient.post('/auth/signup', data),
 
-  logout: () => apiClient.post('/auth/logout'),
+  // Sends the refresh token so the server can revoke it — otherwise it stays
+  // valid for its full lifetime after the user has "logged out".
+  logout: (refreshToken?: string | null) =>
+    apiClient.post('/auth/logout', { refreshToken: refreshToken ?? '' }),
 
   getPendingUsers: () => apiClient.get<UserDto[]>('/auth/pending-users'),
 

@@ -10,18 +10,19 @@ import {
   PermissionsAndroid,
   ActivityIndicator,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Navigation, MapPin, Home, Search, CheckCircle } from 'lucide-react-native';
 import Geolocation from '@react-native-community/geolocation';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
-import { Button } from '../../components/common/Button';
-import { Card } from '../../components/common/Card';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
+import { AppHeader, Card } from '../../components/ui';
+import { GradientButton } from '../../components/common/GradientButton';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 // Safe import — react-native-maps may not be configured on all setups
 let MapView: any = null;
@@ -43,8 +44,10 @@ const ZOOM_REGION = (lat: number, lng: number) => ({
 
 export const HomeLocationScreen = ({ navigation }: any) => {
   const { user } = useAuth();
-  const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
   const mapRef = useRef<any>(null);
 
   // All hooks declared unconditionally at the top
@@ -149,219 +152,215 @@ export const HomeLocationScreen = ({ navigation }: any) => {
     }
   };
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
+    <View style={[styles.safe, { backgroundColor: T.bg, paddingTop: insets.top }]}>
+      <AppHeader
         title="Home Location"
-        color={COLOR.primary}
+        subtitle="Set your geofenced base"
         onMenu={() => navigation.toggleDrawer()}
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} nestedScrollEnabled>
-        <Card style={styles.section}>
-          {/* Header */}
-          <View style={styles.infoHeader}>
-            <View style={[styles.infoIconWrap, { backgroundColor: COLOR.light || '#F0FDF4' }]}>
-              <Home size={22} color={COLOR.primary} />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.inner, wide && styles.innerWide]}>
+          <Card style={styles.section}>
+            {/* Header */}
+            <View style={styles.infoHeader}>
+              <View style={[styles.infoIconWrap, { backgroundColor: T.accentSoft }]}>
+                <Home size={22} color={T.accent} />
+              </View>
+              <View style={styles.infoText}>
+                <Text style={[styles.infoTitle, { color: T.text }]}>Set Home Location</Text>
+                <Text style={[styles.infoSub, { color: T.sub }]}>Use GPS, tap the map, or search your address</Text>
+              </View>
             </View>
-            <View style={styles.infoText}>
-              <Text style={styles.infoTitle}>Set Home Location</Text>
-              <Text style={styles.infoSub}>Use GPS, tap the map, or search your address</Text>
+
+            {/* Address Field */}
+            <View>
+              <Text style={[styles.fieldLabel, { color: T.sub }]}>Home Address</Text>
+              <View style={[styles.searchBar, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+                <Search size={16} color={T.dim} />
+                <TextInput
+                  style={[styles.searchInput, { color: T.text }]}
+                  value={address}
+                  onChangeText={setAddress}
+                  placeholder="Type your home address or area"
+                  placeholderTextColor={T.dim}
+                />
+              </View>
             </View>
-          </View>
 
-          {/* Address Field */}
-          <View>
-            <Text style={styles.fieldLabel}>Home Address</Text>
-            <View style={styles.searchBar}>
-              <Search size={16} color="#9CA3AF" />
-              <TextInput
-                style={styles.searchInput}
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Type your home address or area"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-          </View>
-
-          {/* GPS Button */}
-          <TouchableOpacity
-            style={[styles.gpsBtn, { borderColor: COLOR.primary + '30', backgroundColor: COLOR.light || '#F0FDF4' }]}
-            onPress={detectLocation}
-            disabled={detecting}
-            activeOpacity={0.7}
-          >
-            {detecting ? (
-              <ActivityIndicator size="small" color={COLOR.primary} />
-            ) : (
-              <Navigation size={18} color={COLOR.primary} />
-            )}
-            <Text style={[styles.gpsBtnText, { color: COLOR.primary }]}>
-              {detecting ? 'Detecting...' : 'Use My Current Location'}
-            </Text>
-          </TouchableOpacity>
-        </Card>
-
-        {/* Map */}
-        {MapView ? (
-          <Card style={styles.mapCard}>
-            <View style={styles.mapContainer}>
-              <MapView
-                ref={mapRef}
-                style={styles.map}
-                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                initialRegion={
-                  latitude && longitude
-                    ? ZOOM_REGION(latitude, longitude)
-                    : DEFAULT_REGION
-                }
-                onPress={handleMapPress}
-                showsUserLocation
-                showsMyLocationButton={false}
-                mapType="standard"
-              >
-                {locationSet && latitude != null && longitude != null && Circle && (
-                  <Circle
-                    center={{ latitude, longitude }}
-                    radius={50}
-                    fillColor="rgba(13,148,136,0.15)"
-                    strokeColor="rgba(13,148,136,0.6)"
-                    strokeWidth={2}
-                  />
-                )}
-                {locationSet && latitude != null && longitude != null && Marker && (
-                  <Marker
-                    coordinate={{ latitude, longitude }}
-                    title="Home Location"
-                    description="50m geofence"
-                    pinColor="#0d9488"
-                  />
-                )}
-              </MapView>
-
-              {/* Status Overlay */}
-              {locationSet && latitude != null && longitude != null ? (
-                <View style={styles.mapBadgeSet}>
-                  <CheckCircle size={14} color="#16A34A" />
-                  <Text style={styles.mapBadgeSetText}>Location set</Text>
-                  <Text style={styles.mapBadgeCoords}>{latitude.toFixed(4)}, {longitude.toFixed(4)}</Text>
-                </View>
+            {/* GPS Button */}
+            <TouchableOpacity
+              style={[styles.gpsBtn, { borderColor: T.accent + '30', backgroundColor: T.accentSoft }]}
+              onPress={detectLocation}
+              disabled={detecting}
+              activeOpacity={0.7}
+            >
+              {detecting ? (
+                <ActivityIndicator size="small" color={T.accent} />
               ) : (
-                <View style={styles.mapBadgeNotSet}>
-                  <MapPin size={14} color="#D97706" />
-                  <Text style={styles.mapBadgeNotSetText}>Tap on map or use GPS to set location</Text>
-                </View>
+                <Navigation size={18} color={T.accent} />
               )}
+              <Text style={[styles.gpsBtnText, { color: T.accent }]}>
+                {detecting ? 'Detecting...' : 'Use My Current Location'}
+              </Text>
+            </TouchableOpacity>
+          </Card>
 
-              {/* Geofence Legend */}
-              {locationSet && (
-                <View style={styles.geofenceLegend}>
-                  <View style={styles.geofenceDot} />
-                  <Text style={styles.geofenceLegendText}>50m geofence</Text>
-                </View>
+          {/* Map */}
+          {MapView ? (
+            <Card padded={false} style={styles.mapCard}>
+              <View style={styles.mapContainer}>
+                <MapView
+                  ref={mapRef}
+                  style={styles.map}
+                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  initialRegion={
+                    latitude && longitude
+                      ? ZOOM_REGION(latitude, longitude)
+                      : DEFAULT_REGION
+                  }
+                  onPress={handleMapPress}
+                  showsUserLocation
+                  showsMyLocationButton={false}
+                  mapType="standard"
+                >
+                  {locationSet && latitude != null && longitude != null && Circle && (
+                    <Circle
+                      center={{ latitude, longitude }}
+                      radius={50}
+                      fillColor={T.accentSoft}
+                      strokeColor={T.accent}
+                      strokeWidth={2}
+                    />
+                  )}
+                  {locationSet && latitude != null && longitude != null && Marker && (
+                    <Marker
+                      coordinate={{ latitude, longitude }}
+                      title="Home Location"
+                      description="50m geofence"
+                      pinColor={T.accent}
+                    />
+                  )}
+                </MapView>
+
+                {/* Status Overlay */}
+                {locationSet && latitude != null && longitude != null ? (
+                  <View style={[styles.mapBadge, { backgroundColor: T.card, borderColor: T.line }]}>
+                    <CheckCircle size={14} color={T.success} />
+                    <Text style={[styles.mapBadgeSetText, { color: T.success }]}>Location set</Text>
+                    <Text style={[styles.mapBadgeCoords, { color: T.sub }]}>{latitude.toFixed(4)}, {longitude.toFixed(4)}</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.mapBadge, { backgroundColor: T.card, borderColor: T.line }]}>
+                    <MapPin size={14} color={T.warning} />
+                    <Text style={[styles.mapBadgeNotSetText, { color: T.warning }]}>Tap on map or use GPS to set location</Text>
+                  </View>
+                )}
+
+                {/* Geofence Legend */}
+                {locationSet && (
+                  <View style={[styles.geofenceLegend, { backgroundColor: T.card }]}>
+                    <View style={[styles.geofenceDot, { backgroundColor: T.accentSoft, borderColor: T.accent }]} />
+                    <Text style={[styles.geofenceLegendText, { color: T.sub }]}>50m geofence</Text>
+                  </View>
+                )}
+              </View>
+            </Card>
+          ) : (
+            <Card style={styles.mapFallback}>
+              {locationSet && latitude != null && longitude != null ? (
+                <>
+                  <CheckCircle size={32} color={T.success} />
+                  <Text style={[styles.infoTitle, { color: T.text, marginTop: 8 }]}>Location Set</Text>
+                  <Text style={[styles.infoSub, { color: T.sub }]}>{latitude.toFixed(6)}, {longitude.toFixed(6)}</Text>
+                  <Text style={[styles.infoSub, { color: T.accent }]}>50m geofence active</Text>
+                </>
+              ) : (
+                <>
+                  <MapPin size={32} color={T.warning} />
+                  <Text style={[styles.infoTitle, { color: T.text, marginTop: 8 }]}>Map unavailable</Text>
+                  <Text style={[styles.infoSub, { color: T.sub }]}>Use GPS button above to set your location</Text>
+                </>
               )}
-            </View>
-          </Card>
-        ) : (
-          <Card style={styles.mapFallback}>
-            {locationSet && latitude != null && longitude != null ? (
-              <>
-                <CheckCircle size={32} color="#16A34A" />
-                <Text style={[styles.infoTitle, { marginTop: 8 }]}>Location Set</Text>
-                <Text style={styles.infoSub}>{latitude.toFixed(6)}, {longitude.toFixed(6)}</Text>
-                <Text style={[styles.infoSub, { color: '#0D9488', fontWeight: '600' }]}>50m geofence active</Text>
-              </>
-            ) : (
-              <>
-                <MapPin size={32} color="#D97706" />
-                <Text style={[styles.infoTitle, { marginTop: 8 }]}>Map unavailable</Text>
-                <Text style={styles.infoSub}>Use GPS button above to set your location</Text>
-              </>
-            )}
-          </Card>
-        )}
+            </Card>
+          )}
 
-        {/* Save */}
-        <Button
-          title={saving ? 'Saving...' : 'Save Home Location'}
-          onPress={handleSave}
-          loading={saving}
-          disabled={!locationSet}
-          color={COLOR.primary}
-          size="lg"
-        />
+          {/* Save */}
+          <GradientButton
+            label={saving ? 'Saving...' : 'Save Home Location'}
+            onPress={handleSave}
+            loading={saving}
+            disabled={!locationSet}
+          />
 
-        <View style={{ height: 24 }} />
+          <View style={{ height: 24 }} />
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 32 },
+  content: { padding: 16 },
+  inner: { gap: 14 },
+  innerWide: { width: '100%', maxWidth: 720, alignSelf: 'center' },
   section: { padding: 16, gap: 16 },
   infoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   infoIconWrap: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 44, height: 44, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center',
   },
   infoText: { flex: 1 },
-  infoTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  infoSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
-  fieldLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  infoTitle: { fontFamily: Fonts.bold, fontSize: rf(15) },
+  infoSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
   },
-  searchInput: { flex: 1, fontSize: rf(14), color: '#111827', padding: 0 },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), padding: 0 },
   gpsBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1,
+    gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1,
   },
-  gpsBtnText: { fontSize: rf(14), fontWeight: '600' },
+  gpsBtnText: { fontFamily: Fonts.bold, fontSize: rf(14) },
 
   // Map
-  mapCard: { padding: 0, overflow: 'hidden' },
+  mapCard: { overflow: 'hidden' },
   mapContainer: { position: 'relative' },
-  map: { width: '100%', height: 350, borderRadius: 16 },
+  map: { width: '100%', height: 350, borderRadius: 18 },
 
   // Map overlays
-  mapBadgeSet: {
+  mapBadge: {
     position: 'absolute', top: 12, left: 12,
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 8, borderWidth: 1, borderColor: '#BBF7D0',
+    borderRadius: 10, borderWidth: 1,
   },
-  mapBadgeSetText: { fontSize: rf(11), fontWeight: '700', color: '#16A34A' },
-  mapBadgeCoords: { fontSize: rf(11), color: '#6B7280', marginLeft: 4 },
-  mapBadgeNotSet: {
-    position: 'absolute', top: 12, left: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 8, borderWidth: 1, borderColor: '#FDE68A',
-  },
-  mapBadgeNotSetText: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
+  mapBadgeSetText: { fontFamily: Fonts.bold, fontSize: rf(11) },
+  mapBadgeCoords: { fontFamily: Fonts.regular, fontSize: rf(11), marginLeft: 4 },
+  mapBadgeNotSetText: { fontFamily: Fonts.bold, fontSize: rf(11) },
   geofenceLegend: {
     position: 'absolute', bottom: 12, left: 12,
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   geofenceDot: {
     width: 12, height: 12, borderRadius: 6,
-    backgroundColor: 'rgba(13,148,136,0.3)',
-    borderWidth: 1.5, borderColor: '#0D9488',
+    borderWidth: 1.5,
   },
-  geofenceLegendText: { fontSize: rf(11), color: '#6B7280' },
+  geofenceLegendText: { fontFamily: Fonts.regular, fontSize: rf(11) },
   mapFallback: {
     padding: 16, alignItems: 'center' as const, paddingVertical: 32,
   },

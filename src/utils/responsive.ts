@@ -1,4 +1,5 @@
 import { Dimensions, PixelRatio, Platform } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -11,6 +12,18 @@ export const BREAKPOINTS = {
 
 export const isTablet = () => SCREEN_WIDTH >= BREAKPOINTS.tablet;
 export const isLargeTablet = () => SCREEN_WIDTH >= BREAKPOINTS.largeTablet;
+
+/**
+ * Device-class constant used for the orientation lock (phones → portrait, tablets →
+ * landscape) and the login two-pane decision. Evaluated once at import time because a
+ * device's class never changes at runtime.
+ *
+ * Primary signal is DeviceInfo.isTablet() (the OS's own physical-size classification);
+ * the >= 600dp shortest-side check is only an `||` fallback for budget Android tablets
+ * that misreport density and would otherwise be misread as phones.
+ */
+export const isTabletDevice: boolean =
+  DeviceInfo.isTablet() || Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) >= 600;
 
 // Base design width (iPhone 14 Pro = 393pt)
 const BASE_WIDTH = 393;

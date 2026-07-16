@@ -12,6 +12,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import { API_BASE_URL } from '../utils/constants';
+import { ensureFreshToken, refreshAccessToken } from '../api/client';
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 
@@ -25,8 +26,13 @@ const getPosition = (): Promise<any> =>
   });
 
 export const sendLocationPing = async (): Promise<void> => {
+  // Hoisted so the outer catch can still queue the fix if the request throws.
+  let pingBody: string | null = null;
+
   try {
-    const token = await AsyncStorage.getItem('auth_token');
+    // Runs from a headless task after the app has been backgrounded for a long time,
+    // so the stored access token may well be expired. Roll it forward before using it.
+    const token = (await ensureFreshToken()) ?? (await AsyncStorage.getItem('auth_token'));
     if (!token) {
       console.log('[PingService] No auth token — skipping');
       return;
@@ -41,7 +47,7 @@ export const sendLocationPing = async (): Promise<void> => {
     }
 
     const { latitude, longitude, accuracy, speed, altitude } = position.coords;
-    const pingBody = JSON.stringify({
+    pingBody = JSON.stringify({
       latitude,
       longitude,
       accuracyMetres: accuracy ?? undefined,
@@ -54,23 +60,41 @@ export const sendLocationPing = async (): Promise<void> => {
 
     console.log('[PingService] Sending ping:', latitude, longitude);
 
-    const res = await fetch(`${API_BASE_URL}/tracking/ping`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: pingBody,
-    });
+    const body = pingBody;
+    const post = (bearer: string) =>
+      fetch(`${API_BASE_URL}/tracking/ping`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${bearer}`,
+        },
+        body,
+      });
+
+    let res = await post(token);
+
+    // Token went stale mid-flight (or ensureFreshToken had nothing to go on) — refresh
+    // once and retry rather than losing the fix.
+    if (res.status === 401) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        res = await post(refreshed);
+      }
+    }
 
     if (res.ok) {
       console.log('[PingService] Ping sent successfully');
+    } else if (res.status === 403) {
+      // No active tracking session — the day is over. Queueing would never drain.
+      console.log('[PingService] No active session — dropping ping');
     } else {
       console.warn('[PingService] Server error:', res.status, '— queuing');
       await queuePing(pingBody);
     }
   } catch (err: any) {
     console.warn('[PingService] Network error — queuing:', err?.message);
+    // The catch used to drop the ping outright, so every offline fix was lost.
+    if (pingBody) await queuePing(pingBody);
   }
 };
 

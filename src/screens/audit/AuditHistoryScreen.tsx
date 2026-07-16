@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, RefreshControl,
+  View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { PlusCircle, Edit3, Trash2 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PlusCircle, Edit3, Trash2, ArrowLeft } from 'lucide-react-native';
 import { auditApi } from '../../api/audit';
 import { AuditLog } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Card } from '../../components/common/Card';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card, Badge } from '../../components/ui';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { formatDateTime } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
+import type { AppTheme } from '../../theme';
 
-const ACTION_CONFIG = {
-  Created: { icon: PlusCircle, color: '#16A34A', bg: '#F0FDF4' },
-  Updated: { icon: Edit3, color: '#2563EB', bg: '#EFF6FF' },
-  Deleted: { icon: Trash2, color: '#DC2626', bg: '#FEF2F2' },
-};
+const actionConfig = (T: AppTheme) => ({
+  Created: { icon: PlusCircle, color: T.success },
+  Updated: { icon: Edit3, color: T.info },
+  Deleted: { icon: Trash2, color: T.danger },
+});
 
 export const AuditHistoryScreen = ({ navigation, route }: any) => {
   const { entityType, entityId, title } = route.params as {
@@ -26,8 +27,9 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
     entityId: number;
     title?: string;
   };
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const CONFIG = actionConfig(T);
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
   useEffect(() => { loadLogs(); }, [entityType, entityId]);
 
   const renderLog = ({ item, index }: { item: AuditLog; index: number }) => {
-    const cfg = ACTION_CONFIG[item.action] ?? ACTION_CONFIG.Updated;
+    const cfg = CONFIG[item.action] ?? CONFIG.Updated;
     const Icon = cfg.icon;
     const fields = item.changedFields ? Object.entries(item.changedFields) : [];
     const isLast = index === logs.length - 1;
@@ -57,37 +59,35 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
       <View style={styles.logRow}>
         {/* Timeline line */}
         <View style={styles.timelineCol}>
-          <View style={[styles.iconCircle, { backgroundColor: cfg.bg }]}>
+          <View style={[styles.iconCircle, { backgroundColor: cfg.color + '22' }]}>
             <Icon size={14} color={cfg.color} />
           </View>
-          {!isLast && <View style={styles.timelineLine} />}
+          {!isLast && <View style={[styles.timelineLine, { backgroundColor: T.line }]} />}
         </View>
 
         <Card style={styles.logCard}>
           <View style={styles.logHeader}>
-            <View style={[styles.actionBadge, { backgroundColor: cfg.bg }]}>
-              <Text style={[styles.actionText, { color: cfg.color }]}>{item.action}</Text>
-            </View>
-            <Text style={styles.logTime}>{formatDateTime(item.performedAt)}</Text>
+            <Badge label={item.action} color={cfg.color} />
+            <Text style={[styles.logTime, { color: T.dim }]}>{formatDateTime(item.performedAt)}</Text>
           </View>
-          <Text style={styles.logBy}>by {item.performedByName}</Text>
+          <Text style={[styles.logBy, { color: T.sub }]}>by {item.performedByName}</Text>
 
           {fields.length > 0 && (
-            <View style={styles.fieldsTable}>
-              <View style={styles.fieldsHeader}>
-                <Text style={[styles.fieldHeaderCell, { flex: 1.2 }]}>Field</Text>
-                <Text style={styles.fieldHeaderCell}>Before</Text>
-                <Text style={styles.fieldHeaderCell}>After</Text>
+            <View style={[styles.fieldsTable, { borderColor: T.line }]}>
+              <View style={[styles.fieldsHeader, { backgroundColor: T.cardAlt }]}>
+                <Text style={[styles.fieldHeaderCell, { flex: 1.2, color: T.sub }]}>Field</Text>
+                <Text style={[styles.fieldHeaderCell, { color: T.sub }]}>Before</Text>
+                <Text style={[styles.fieldHeaderCell, { color: T.sub }]}>After</Text>
               </View>
               {fields.map(([field, change]) => (
-                <View key={field} style={styles.fieldRow}>
-                  <Text style={[styles.fieldCell, styles.fieldName, { flex: 1.2 }]} numberOfLines={1}>
+                <View key={field} style={[styles.fieldRow, { borderTopColor: T.line }]}>
+                  <Text style={[styles.fieldCell, styles.fieldName, { flex: 1.2, color: T.text }]} numberOfLines={1}>
                     {field}
                   </Text>
-                  <Text style={[styles.fieldCell, styles.oldValue]} numberOfLines={1}>
+                  <Text style={[styles.fieldCell, { color: T.danger }]} numberOfLines={1}>
                     {change.old != null ? String(change.old) : '—'}
                   </Text>
-                  <Text style={[styles.fieldCell, styles.newValue]} numberOfLines={1}>
+                  <Text style={[styles.fieldCell, { color: T.success }]} numberOfLines={1}>
                     {change.new != null ? String(change.new) : '—'}
                   </Text>
                 </View>
@@ -100,26 +100,42 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
-        title="Change History"
-        subtitle={title ?? `${entityType} #${entityId}`}
-        color={COLOR.primary}
-        onBack={() => navigation.goBack()}
-      />
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* ── Sunstone hero header ──────────────────────────────────────── */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={20} color="#FFF" />
+          </TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>Change History</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>{title ?? `${entityType} #${entityId}`}</Text>
+          </View>
+        </View>
+      </GradientBackground>
+
       {loading ? (
-        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading history..." />
+        <LoadingSpinner fullScreen color={T.accent} message="Loading history..." />
       ) : (
         <FlatList
           data={logs}
           keyExtractor={item => String(item.id)}
           renderItem={renderLog}
-          contentContainerStyle={[styles.list, logs.length === 0 && styles.listEmpty]}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: insets.bottom + 24 },
+            logs.length === 0 && styles.listEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); loadLogs(); }}
-              colors={[COLOR.primary]}
+              tintColor={T.accent}
             />
           }
           ListEmptyComponent={
@@ -127,12 +143,24 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  root: { flex: 1 },
+
+  // Hero header
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  headerText: { flex: 1 },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+
   list: { padding: 16, gap: 0 },
   listEmpty: { flex: 1 },
   logRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
@@ -141,26 +169,22 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', zIndex: 1,
   },
-  timelineLine: { flex: 1, width: 2, backgroundColor: '#E5E7EB', marginVertical: 4 },
+  timelineLine: { flex: 1, width: 2, marginVertical: 4 },
   logCard: { flex: 1, marginBottom: 12 },
   logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  actionBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  actionText: { fontSize: rf(12), fontWeight: '700' },
-  logTime: { fontSize: rf(11), color: '#9CA3AF' },
-  logBy: { fontSize: rf(12), color: '#6B7280', marginBottom: 8 },
+  logTime: { fontFamily: Fonts.regular, fontSize: rf(11) },
+  logBy: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 8 },
   fieldsTable: {
-    borderWidth: 1, borderColor: '#F3F4F6', borderRadius: 8, overflow: 'hidden',
+    borderWidth: 1, borderRadius: 8, overflow: 'hidden',
   },
   fieldsHeader: {
-    flexDirection: 'row', backgroundColor: '#F9FAFB', paddingHorizontal: 10, paddingVertical: 6,
+    flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6,
   },
-  fieldHeaderCell: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#6B7280' },
+  fieldHeaderCell: { flex: 1, fontFamily: Fonts.bold, fontSize: rf(11) },
   fieldRow: {
     flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  fieldCell: { flex: 1, fontSize: rf(12) },
-  fieldName: { color: '#374151', fontWeight: '600' },
-  oldValue: { color: '#DC2626' },
-  newValue: { color: '#16A34A' },
+  fieldCell: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(12) },
+  fieldName: { fontFamily: Fonts.medium },
 });

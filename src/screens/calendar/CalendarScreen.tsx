@@ -3,16 +3,19 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Modal, TextInput, RefreshControl, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, X, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import { calendarApi } from '../../api/calendar';
 import { weeklyPlanApi } from '../../api/weeklyPlan';
 import { CalendarEvent } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { Badge } from '../../components/common/Badge';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Card, Badge, Chip, SectionLabel } from '../../components/ui';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 // ─── Match web event types exactly ────────────────────────────────────────────
 const EVENT_TYPES = ['Meeting', 'Demo', 'FollowUp', 'Visit', 'Onboarding', 'Other'] as const;
@@ -44,11 +47,14 @@ const MONTH_NAMES = [
 ];
 
 export const CalendarScreen = (_: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
-  const { width } = useWindowDimensions();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
+  // Constrain content on tablet landscape for breathing room; grid generation is untouched.
+  const contentW = twoWide ? Math.min(width, 720) : width;
   // Total horizontal insets: content padding (16*2) + calCard padding (4*2) + grid padding (4*2) = 48
-  const cellWidth = Math.floor((width - 48) / 7);
+  const cellWidth = Math.floor((contentW - 48) / 7);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -190,332 +196,338 @@ export const CalendarScreen = (_: any) => {
     !!day && day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* ── Sunstone hero header ──────────────────────────────────────── */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTop}>
+          <View style={styles.headerLeft}>
+            <DrawerMenuButton />
+            <Text style={styles.headerTitle}>Calendar</Text>
+          </View>
+          <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
+            <Plus size={20} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Month navigation */}
+        <View style={styles.monthNav}>
+          <TouchableOpacity style={styles.monthNavBtn} onPress={prevMonth}>
+            <ChevronLeft size={20} color="#FFF" />
+          </TouchableOpacity>
+          <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+          <TouchableOpacity style={styles.monthNavBtn} onPress={nextMonth}>
+            <ChevronRight size={20} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      </GradientBackground>
+
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); loadEvents(); }}
-            colors={[COLOR.primary]}
+            tintColor={T.accent}
           />
         }
       >
-        <View style={styles.controlsRow}>
-          <Text style={styles.controlsTitle}>Calendar</Text>
-          <TouchableOpacity style={[styles.addBtn, { backgroundColor: COLOR.primary }]} onPress={() => setShowModal(true)}>
-            <Plus size={18} color="#FFF" />
-          </TouchableOpacity>
-        </View>
+        <View style={[styles.contentInner, twoWide && { maxWidth: 720, alignSelf: 'center', width: '100%' }]}>
+          {/* ── Monthly grid card ────────────────────────────────────────── */}
+          <Card style={styles.calCard} padded={false}>
+            {/* Day-of-week headers */}
+            <View style={styles.dayHeaderRow}>
+              {DAY_HEADERS.map(d => (
+                <Text key={d} style={[styles.dayHeader, { width: cellWidth, color: T.dim }]}>{d}</Text>
+              ))}
+            </View>
 
-        {/* ── Monthly grid card ────────────────────────────────────────── */}
-        <View style={styles.calCard}>
-          {/* Month navigation header */}
-          <View style={styles.monthNav}>
-            <TouchableOpacity style={styles.monthNavBtn} onPress={prevMonth}>
-              <ChevronLeft size={20} color="#374151" />
-            </TouchableOpacity>
-            <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-            <TouchableOpacity style={styles.monthNavBtn} onPress={nextMonth}>
-              <ChevronRight size={20} color="#374151" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Day-of-week headers */}
-          <View style={styles.dayHeaderRow}>
-            {DAY_HEADERS.map(d => (
-              <Text key={d} style={[styles.dayHeader, { width: cellWidth }]}>{d}</Text>
-            ))}
-          </View>
-
-          {/* Grid cells */}
-          <View style={styles.grid}>
-            {gridCells.map((day, idx) => {
-              const dayEvs = eventsForDay(day);
-              const selected = day === selectedDay;
-              const todayCell = isToday(day);
-              return (
-                <TouchableOpacity
-                  key={idx}
-                  style={[
-                    styles.cell,
-                    { width: cellWidth, minHeight: cellWidth + 12 },
-                    todayCell && [styles.cellToday, { borderColor: COLOR.primary }],
-                    selected && !todayCell && styles.cellSelected,
-                  ]}
-                  onPress={() => day && setSelectedDay(day)}
-                  activeOpacity={day ? 0.7 : 1}
-                >
-                  {day != null && (
-                    <>
-                      <Text style={[
-                        styles.cellDay,
-                        todayCell && [styles.cellDayToday, { color: COLOR.primary }],
-                        selected && !todayCell && styles.cellDaySelected,
-                      ]}>
-                        {day}
-                      </Text>
-                      {/* Up to 3 event pills per day */}
-                      {dayEvs.slice(0, 3).map(ev => (
-                        <View
-                          key={ev.id}
-                          style={[styles.eventPill, { backgroundColor: (TYPE_COLORS[ev.eventType as EventType] || '#6B7280') + '22' }]}
-                        >
-                          <Text
-                            style={[styles.eventPillText, { color: TYPE_COLORS[ev.eventType as EventType] || '#6B7280' }]}
-                            numberOfLines={1}
-                          >
-                            {ev.title}
+            {/* Grid cells */}
+            <View style={styles.grid}>
+              {gridCells.map((day, idx) => {
+                const dayEvs = eventsForDay(day);
+                const selected = day === selectedDay;
+                const todayCell = isToday(day);
+                const highlight = todayCell || (selected && day != null);
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.cell,
+                      { width: cellWidth, minHeight: cellWidth + 12, borderColor: T.line },
+                      todayCell && { borderWidth: 2, borderColor: T.accent, backgroundColor: T.accentSoft },
+                      selected && !todayCell && { backgroundColor: T.cardAlt },
+                    ]}
+                    onPress={() => day && setSelectedDay(day)}
+                    activeOpacity={day ? 0.7 : 1}
+                  >
+                    {day != null && (
+                      <>
+                        <View style={[styles.dayNumWrap, highlight && { backgroundColor: T.accent }]}>
+                          <Text style={[styles.cellDay, { color: highlight ? T.onAccent : T.sub }]}>
+                            {day}
                           </Text>
                         </View>
-                      ))}
-                      {dayEvs.length > 3 && (
-                        <Text style={styles.moreText}>+{dayEvs.length - 3}</Text>
-                      )}
-                    </>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                        {/* Up to 3 event pills per day */}
+                        {dayEvs.slice(0, 3).map(ev => (
+                          <View
+                            key={ev.id}
+                            style={[styles.eventPill, { backgroundColor: (TYPE_COLORS[ev.eventType as EventType] || TYPE_COLORS.Other) + '22' }]}
+                          >
+                            <Text
+                              style={[styles.eventPillText, { color: TYPE_COLORS[ev.eventType as EventType] || TYPE_COLORS.Other }]}
+                              numberOfLines={1}
+                            >
+                              {ev.title}
+                            </Text>
+                          </View>
+                        ))}
+                        {dayEvs.length > 3 && (
+                          <Text style={[styles.moreText, { color: T.dim }]}>+{dayEvs.length - 3}</Text>
+                        )}
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-          {/* Event type legend */}
-          <View style={styles.legend}>
-            {EVENT_TYPES.map(t => (
-              <View key={t} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: TYPE_COLORS[t] }]} />
-                <Text style={styles.legendText}>{t}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+            {/* Event type legend */}
+            <View style={[styles.legend, { borderTopColor: T.line }]}>
+              {EVENT_TYPES.map(t => (
+                <View key={t} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: TYPE_COLORS[t] }]} />
+                  <Text style={[styles.legendText, { color: T.sub }]}>{t}</Text>
+                </View>
+              ))}
+            </View>
+          </Card>
 
-        {/* ── Selected day events ──────────────────────────────────────── */}
-        <View style={styles.daySection}>
-          <Text style={styles.daySectionTitle}>
+          {/* ── Selected day events ──────────────────────────────────────── */}
+          <SectionLabel style={styles.daySectionLabel}>
             {new Date(year, month, selectedDay).toLocaleDateString('en-IN', {
               weekday: 'long', day: 'numeric', month: 'long',
             })}
-          </Text>
-        </View>
+          </SectionLabel>
 
-        {loading ? (
-          <LoadingSpinner color={COLOR.primary} />
-        ) : selectedEvents.length === 0 ? (
-          <EmptyState title="No events" subtitle="Tap + to add an event" icon="📅" />
-        ) : (
-          <View style={styles.eventList}>
-            {selectedEvents.map(ev => (
-              <View key={ev.id} style={styles.eventCard}>
-                <View style={[styles.eventBar, { backgroundColor: TYPE_COLORS[ev.eventType as EventType] || '#6B7280' }]} />
-                <View style={styles.eventBody}>
-                  <View style={styles.eventTopRow}>
-                    <Text style={[styles.eventTitle, ev.isCompleted && styles.eventTitleDone]} numberOfLines={1}>
-                      {ev.title}
+          {loading ? (
+            <LoadingSpinner color={T.accent} />
+          ) : selectedEvents.length === 0 ? (
+            <EmptyState title="No events" subtitle="Tap + to add an event" icon="📅" />
+          ) : (
+            <View style={[styles.eventList, twoWide && styles.eventListTwoCol]}>
+              {selectedEvents.map(ev => (
+                <Card key={ev.id} style={[styles.eventCard, twoWide && styles.eventCardTwoCol]} padded={false}>
+                  <View style={[styles.eventBar, { backgroundColor: TYPE_COLORS[ev.eventType as EventType] || TYPE_COLORS.Other }]} />
+                  <View style={styles.eventBody}>
+                    <View style={styles.eventTopRow}>
+                      <Text
+                        style={[styles.eventTitle, { color: T.text }, ev.isCompleted && { color: T.dim, textDecorationLine: 'line-through' }]}
+                        numberOfLines={1}
+                      >
+                        {ev.title}
+                      </Text>
+                      <Badge label={ev.eventType} color={TYPE_COLORS[ev.eventType as EventType] || TYPE_COLORS.Other} />
+                    </View>
+                    <Text style={[styles.eventTime, { color: T.sub }]}>
+                      {formatTime(ev.startTime)} – {formatTime(ev.endTime)}
                     </Text>
-                    <Badge label={ev.eventType} color={TYPE_COLORS[ev.eventType as EventType] || '#6B7280'} />
+                    {ev.schoolName && <Text style={[styles.eventSchool, { color: T.dim }]}>🏫 {ev.schoolName}</Text>}
+                    {ev.description && <Text style={[styles.eventDesc, { color: T.sub }]}>{ev.description}</Text>}
                   </View>
-                  <Text style={styles.eventTime}>
-                    {formatTime(ev.startTime)} – {formatTime(ev.endTime)}
-                  </Text>
-                  {ev.schoolName && <Text style={styles.eventSchool}>🏫 {ev.schoolName}</Text>}
-                  {ev.description && <Text style={styles.eventDesc}>{ev.description}</Text>}
-                </View>
-                {!ev.isCompleted ? (
-                  <TouchableOpacity style={styles.checkBtn} onPress={() => handleMarkComplete(ev.id)}>
-                    <Check size={15} color="#16A34A" />
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.doneBtn}>
-                    <Check size={14} color="#FFF" />
-                  </View>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={{ height: 24 }} />
+                  {!ev.isCompleted ? (
+                    <TouchableOpacity
+                      style={[styles.checkBtn, { borderColor: T.success }]}
+                      onPress={() => handleMarkComplete(ev.id)}
+                    >
+                      <Check size={15} color={T.success} />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={[styles.doneBtn, { backgroundColor: T.success }]}>
+                      <Check size={14} color={T.onAccent} />
+                    </View>
+                  )}
+                </Card>
+              ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* ── Create Event Modal ───────────────────────────────────────────── */}
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { backgroundColor: T.card }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Event</Text>
+              <Text style={[styles.modalTitle, { color: T.text }]}>New Event</Text>
               <TouchableOpacity onPress={() => setShowModal(false)}>
-                <X size={20} color="#6B7280" />
+                <X size={20} color={T.sub} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.formLabel}>Event Type</Text>
+            <Text style={[styles.formLabel, { color: T.sub }]}>Event Type</Text>
             <View style={styles.chipRow}>
               {EVENT_TYPES.map(t => (
-                <TouchableOpacity
+                <Chip
                   key={t}
-                  style={[styles.chip, newType === t && { backgroundColor: TYPE_COLORS[t] }]}
+                  label={t}
+                  color={TYPE_COLORS[t]}
+                  active={newType === t}
                   onPress={() => setNewType(t)}
-                >
-                  <Text style={[styles.chipText, newType === t && { color: '#FFF' }]}>{t}</Text>
-                </TouchableOpacity>
+                />
               ))}
             </View>
 
-            <Text style={styles.formLabel}>Title *</Text>
+            <Text style={[styles.formLabel, { color: T.sub }]}>Title *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
               value={newTitle}
               onChangeText={setNewTitle}
               placeholder="Event title"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.dim}
             />
 
             <View style={styles.timeRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.formLabel}>Start (HH:MM) *</Text>
+                <Text style={[styles.formLabel, { color: T.sub }]}>Start (HH:MM) *</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
                   value={newStart}
                   onChangeText={setNewStart}
                   placeholder="09:00"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.dim}
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.formLabel}>End (HH:MM)</Text>
+                <Text style={[styles.formLabel, { color: T.sub }]}>End (HH:MM)</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
                   value={newEnd}
                   onChangeText={setNewEnd}
                   placeholder="10:00"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.dim}
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
             </View>
 
-            <Text style={styles.formLabel}>Description</Text>
+            <Text style={[styles.formLabel, { color: T.sub }]}>Description</Text>
             <TextInput
-              style={[styles.input, styles.inputMulti]}
+              style={[styles.input, styles.inputMulti, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
               value={newDesc}
               onChangeText={setNewDesc}
               placeholder="Optional description"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.dim}
               multiline
             />
 
-            <TouchableOpacity
-              style={[styles.createBtn, { backgroundColor: COLOR.primary }, saving && { opacity: 0.7 }]}
+            <GradientButton
+              label={saving ? 'Creating…' : 'Create Event'}
               onPress={handleCreate}
+              loading={saving}
               disabled={saving || !newTitle.trim() || !newStart}
-            >
-              <Text style={styles.createBtnText}>{saving ? 'Creating…' : 'Create Event'}</Text>
-            </TouchableOpacity>
+              style={styles.createBtn}
+            />
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  root: { flex: 1 },
+
+  // Hero header
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  addBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  monthNavBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center',
+  },
+  monthTitle: { fontFamily: Fonts.bold, fontSize: rf(17), color: '#FFF', letterSpacing: -0.3 },
+
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 32 },
-  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  controlsTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
-  addBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  content: { padding: 16, gap: 14 },
+  contentInner: { gap: 14 },
 
   // Calendar card
-  calCard: {
-    backgroundColor: '#FFF', borderRadius: 18,
-    paddingVertical: 14, paddingHorizontal: 4,
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
-  },
-  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 12 },
-  monthNavBtn: { padding: 8, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  monthTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  calCard: { paddingVertical: 14, paddingHorizontal: 4 },
 
   dayHeaderRow: { flexDirection: 'row', marginBottom: 4, paddingHorizontal: 4 },
-  dayHeader: { textAlign: 'center', fontSize: rf(11), fontWeight: '600', color: '#9CA3AF', paddingVertical: 4 },
+  dayHeader: { textAlign: 'center', fontFamily: Fonts.bold, fontSize: rf(11), paddingVertical: 4 },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 4 },
   cell: {
-    borderWidth: 1, borderColor: '#F3F4F6', borderRadius: 8,
+    borderWidth: 1, borderRadius: 8,
     padding: 3, alignItems: 'flex-start',
   },
-  cellToday: { borderWidth: 2, borderRadius: 8 },
-  cellSelected: { backgroundColor: '#F3F4F6' },
-  cellDay: { fontSize: rf(12), fontWeight: '500', color: '#6B7280', marginBottom: 2, paddingLeft: 2 },
-  cellDayToday: { fontWeight: '800' },
-  cellDaySelected: { color: '#111827', fontWeight: '700' },
+  dayNumWrap: { borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginBottom: 2 },
+  cellDay: { fontFamily: Fonts.medium, fontSize: rf(12) },
 
   eventPill: {
     borderRadius: 3, paddingHorizontal: 2, paddingVertical: 1,
     marginBottom: 1, width: '100%',
   },
-  eventPillText: { fontSize: 9, fontWeight: '600' },
-  moreText: { fontSize: 9, color: '#9CA3AF', paddingLeft: 2 },
+  eventPillText: { fontFamily: Fonts.medium, fontSize: 9 },
+  moreText: { fontFamily: Fonts.regular, fontSize: 9, paddingLeft: 2 },
 
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 8 },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 8 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: rf(11), color: '#6B7280' },
+  legendText: { fontFamily: Fonts.regular, fontSize: rf(11) },
 
   // Day section
-  daySection: { paddingHorizontal: 4 },
-  daySectionTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  daySectionLabel: { marginBottom: 0, paddingHorizontal: 4 },
 
   // Event list
   eventList: { gap: 10 },
+  eventListTwoCol: { flexDirection: 'row', flexWrap: 'wrap' },
   eventCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#FFF', borderRadius: 14, padding: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 12,
   },
+  eventCardTwoCol: { width: '48.5%' },
   eventBar: { width: 4, borderRadius: 2, alignSelf: 'stretch', minHeight: 40 },
   eventBody: { flex: 1 },
   eventTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 4 },
-  eventTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', flex: 1 },
-  eventTitleDone: { color: '#9CA3AF', textDecorationLine: 'line-through' },
-  eventTime: { fontSize: rf(12), color: '#6B7280', marginBottom: 2 },
-  eventSchool: { fontSize: rf(12), color: '#9CA3AF' },
-  eventDesc: { fontSize: rf(12), color: '#374151', marginTop: 3 },
+  eventTitle: { fontFamily: Fonts.bold, fontSize: rf(14), flex: 1 },
+  eventTime: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 2 },
+  eventSchool: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  eventDesc: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 3 },
   checkBtn: {
     width: 30, height: 30, borderRadius: 15,
-    borderWidth: 2, borderColor: '#16A34A',
-    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
   },
   doneBtn: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: '#16A34A', alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 40,
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
-  formLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  modalTitle: { fontFamily: Fonts.bold, fontSize: rf(18) },
+  formLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
-  chip: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  chipText: { fontSize: rf(12), color: '#374151', fontWeight: '500' },
   input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+    borderWidth: 1, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: rf(14), color: '#111827', marginBottom: 12,
+    fontFamily: Fonts.regular, fontSize: rf(14), marginBottom: 12,
   },
   inputMulti: { height: 64, textAlignVertical: 'top' },
   timeRow: { flexDirection: 'row', gap: 10 },
-  createBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  createBtnText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
+  createBtn: { marginTop: 4 },
 });

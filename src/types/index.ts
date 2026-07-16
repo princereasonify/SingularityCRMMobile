@@ -443,6 +443,10 @@ export interface PaginatedResult<T> {
 export interface LoginResponse {
   token: string;
   user: UserDto;
+  refreshToken: string;
+  /** ISO-8601 UTC instant at which `token` stops being accepted. */
+  expiresAt: string;
+  expiresIn: number;
 }
 
 // ─── API Requests ──────────────────────────────────────────────────────────────
@@ -547,7 +551,7 @@ export interface LiveLocationDto {
   latitude: number;
   longitude: number;
   speedKmh?: number;
-  lastSeen: string;
+  lastSeen?: string;
   totalDistanceKm: number;
   allowanceAmount: number;
   status: string;
@@ -651,6 +655,41 @@ export interface School {
   lastVisitDate?: string;
   assignedFoId?: number;
   assignedFoName?: string;
+}
+
+// ── Bulk school upload ──
+export interface BulkSchoolRow {
+  rowNumber: number;
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  mapLink?: string;
+  board?: string;
+  type?: string;
+  phone?: string;
+  email?: string;
+  principalName?: string;
+  principalPhone?: string;
+  studentCount?: number;
+  staffCount?: number;
+  latitude: number;
+  longitude: number;
+  geocoded: boolean;
+  duplicateExisting: boolean;
+  error?: string;
+  /** How coords were obtained: 'link' | 'coords' | 'geocode'. */
+  source?: string;
+}
+
+export interface BulkUploadResult {
+  rows: BulkSchoolRow[];
+  total: number;
+  geocoded: number;
+  failed: number;
+  duplicates: number;
 }
 
 export interface CreateSchoolRequest {

@@ -4,16 +4,16 @@ import {
 } from 'react-native';
 import RNShare from 'react-native-share';
 import { generatePDF } from 'react-native-html-to-pdf';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BookOpen, Download, ChevronDown, ChevronRight,
   LogIn, Users, LayoutDashboard, ClipboardList,
   GitBranch, Building2, Contact2, Activity,
   Target, MapPin, Zap, Settings, Wifi, Clock,
 } from 'lucide-react-native';
-import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { ROLE_COLORS } from '../../utils/constants';
+import { AppHeader } from '../../components/ui';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { Fonts } from '../../theme';
 import { rf } from '../../utils/responsive';
 import { MANUAL_HTML } from '../../assets/manualHtml';
 
@@ -845,8 +845,8 @@ const SECTIONS = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export const UserManualScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
@@ -879,44 +879,43 @@ export const UserManualScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
+    <View style={[styles.safe, { backgroundColor: T.bg, paddingTop: insets.top }]}>
+      <AppHeader
         title="User Manual"
         subtitle="SingularityCRM v1.0.0"
-        color={COLOR.primary}
         onBack={() => navigation.goBack()}
-        rightAction={
-          <TouchableOpacity onPress={handleShareManual} style={styles.shareBtn} disabled={generating}>
+        right={
+          <TouchableOpacity onPress={handleShareManual} style={[styles.shareBtn, { backgroundColor: T.accentSoft }]} disabled={generating}>
             {generating
-              ? <ActivityIndicator size="small" color="#FFF" />
-              : <Download size={18} color="#FFF" />}
+              ? <ActivityIndicator size="small" color={T.accent} />
+              : <Download size={18} color={T.accent} />}
           </TouchableOpacity>
         }
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 48 }]}>
 
         {/* Hero card */}
-        <View style={[styles.hero, { backgroundColor: COLOR.primary + '12', borderColor: COLOR.primary + '30' }]}>
-          <BookOpen size={28} color={COLOR.primary} />
+        <View style={[styles.hero, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
+          <BookOpen size={28} color={T.accent} />
           <View style={styles.heroText}>
-            <Text style={[styles.heroTitle, { color: COLOR.primary }]}>SingularityCRM</Text>
-            <Text style={styles.heroSub}>Complete User Manual · 14 sections · Version 1.0.0</Text>
+            <Text style={[styles.heroTitle, { color: T.accent }]}>SingularityCRM</Text>
+            <Text style={[styles.heroSub, { color: T.sub }]}>Complete User Manual · 14 sections · Version 1.0.0</Text>
           </View>
         </View>
 
         {/* Download PDF card */}
-        <TouchableOpacity style={styles.downloadCard} onPress={handleShareManual} activeOpacity={0.8} disabled={generating}>
+        <TouchableOpacity style={[styles.downloadCard, { backgroundColor: T.card, borderColor: T.line }]} onPress={handleShareManual} activeOpacity={0.8} disabled={generating}>
           {generating
-            ? <ActivityIndicator size="small" color={COLOR.primary} />
-            : <Download size={16} color={COLOR.primary} />}
+            ? <ActivityIndicator size="small" color={T.accent} />
+            : <Download size={16} color={T.accent} />}
           <View style={{ flex: 1 }}>
-            <Text style={[styles.downloadTitle, { color: COLOR.primary }]}>
+            <Text style={[styles.downloadTitle, { color: T.accent }]}>
               {generating ? 'Generating PDF…' : 'Download as PDF'}
             </Text>
-            <Text style={styles.downloadSub}>Tap to generate and share a professional PDF</Text>
+            <Text style={[styles.downloadSub, { color: T.dim }]}>Tap to generate and share a professional PDF</Text>
           </View>
-          {!generating && <ChevronRight size={16} color={COLOR.primary} />}
+          {!generating && <ChevronRight size={16} color={T.accent} />}
         </TouchableOpacity>
 
         {/* Sections */}
@@ -925,44 +924,44 @@ export const UserManualScreen = ({ navigation }: any) => {
           const isOpen = expandedId === section.id;
 
           return (
-            <View key={section.id} style={styles.sectionCard}>
+            <View key={section.id} style={[styles.sectionCard, { backgroundColor: T.card, borderColor: T.line }]}>
               <TouchableOpacity
                 style={styles.sectionRow}
                 onPress={() => toggle(section.id)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.iconBox, { backgroundColor: section.color + '18' }]}>
-                  <Icon size={18} color={section.color} />
+                <View style={[styles.iconBox, { backgroundColor: T.accentSoft }]}>
+                  <Icon size={18} color={T.accent} />
                 </View>
                 <View style={styles.sectionMeta}>
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                  <Text style={styles.sectionSummary} numberOfLines={isOpen ? undefined : 1}>
+                  <Text style={[styles.sectionTitle, { color: T.text }]}>{section.title}</Text>
+                  <Text style={[styles.sectionSummary, { color: T.sub }]} numberOfLines={isOpen ? undefined : 1}>
                     {section.summary}
                   </Text>
                 </View>
                 {isOpen
-                  ? <ChevronDown size={18} color="#9CA3AF" />
-                  : <ChevronRight size={18} color="#9CA3AF" />
+                  ? <ChevronDown size={18} color={T.dim} />
+                  : <ChevronRight size={18} color={T.dim} />
                 }
               </TouchableOpacity>
 
               {isOpen && (
-                <View style={styles.sectionBody}>
+                <View style={[styles.sectionBody, { borderTopColor: T.line }]}>
                   {/* Phone mockup snapshot */}
                   {renderMockup(section.id)}
 
                   {section.content.map((block, bi) => (
                     <View key={bi} style={styles.block}>
-                      <Text style={[styles.blockTitle, { color: section.color }]}>{block.title}</Text>
+                      <Text style={[styles.blockTitle, { color: T.accent }]}>{block.title}</Text>
 
                       {block.type === 'steps' && (
                         <View style={styles.stepsList}>
                           {(block.items as string[]).map((item, ii) => (
                             <View key={ii} style={styles.stepItem}>
-                              <View style={[styles.stepNum, { backgroundColor: section.color }]}>
-                                <Text style={styles.stepNumText}>{ii + 1}</Text>
+                              <View style={[styles.stepNum, { backgroundColor: T.accent }]}>
+                                <Text style={[styles.stepNumText, { color: T.onAccent }]}>{ii + 1}</Text>
                               </View>
-                              <Text style={styles.stepText}>{item}</Text>
+                              <Text style={[styles.stepText, { color: T.text }]}>{item}</Text>
                             </View>
                           ))}
                         </View>
@@ -972,24 +971,24 @@ export const UserManualScreen = ({ navigation }: any) => {
                         <View style={styles.bulletList}>
                           {(block.items as string[]).map((item, ii) => (
                             <View key={ii} style={styles.bulletItem}>
-                              <View style={[styles.bullet, { backgroundColor: section.color }]} />
-                              <Text style={styles.bulletText}>{item}</Text>
+                              <View style={[styles.bullet, { backgroundColor: T.accent }]} />
+                              <Text style={[styles.bulletText, { color: T.text }]}>{item}</Text>
                             </View>
                           ))}
                         </View>
                       )}
 
                       {block.type === 'table' && (
-                        <View style={styles.table}>
-                          <View style={styles.tableHeader}>
+                        <View style={[styles.table, { borderColor: T.line }]}>
+                          <View style={[styles.tableHeader, { backgroundColor: T.cardAlt, borderBottomColor: T.line }]}>
                             {(block.headers as string[]).map((h, hi) => (
-                              <Text key={hi} style={[styles.tableHeaderCell, { flex: hi === 0 ? 1 : 1.4 }]}>{h.toUpperCase()}</Text>
+                              <Text key={hi} style={[styles.tableHeaderCell, { color: T.dim, flex: hi === 0 ? 1 : 1.4 }]}>{h.toUpperCase()}</Text>
                             ))}
                           </View>
                           {(block.rows as string[][]).map((row, ri) => (
-                            <View key={ri} style={[styles.tableRow, ri % 2 === 0 && styles.tableRowAlt]}>
+                            <View key={ri} style={[styles.tableRow, { borderTopColor: T.line }, ri % 2 === 0 && { backgroundColor: T.cardAlt }]}>
                               {row.map((cell, ci) => (
-                                <Text key={ci} style={[styles.tableCell, { flex: ci === 0 ? 1 : 1.4 }]}>{cell}</Text>
+                                <Text key={ci} style={[styles.tableCell, { color: T.text, flex: ci === 0 ? 1 : 1.4 }]}>{cell}</Text>
                               ))}
                             </View>
                           ))}
@@ -1003,42 +1002,41 @@ export const UserManualScreen = ({ navigation }: any) => {
           );
         })}
 
-        <Text style={styles.footer}>SingularityCRM · EduCRM Sales Portal · v1.0.0</Text>
+        <Text style={[styles.footer, { color: T.dim }]}>SingularityCRM · EduCRM Sales Portal · v1.0.0</Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 10, paddingBottom: 48 },
+  content: { padding: 16, gap: 10 },
 
   shareBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
 
   hero: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    borderRadius: 16, padding: 18, borderWidth: 1,
+    borderRadius: 18, padding: 18, borderWidth: 1,
   },
   heroText: { flex: 1 },
-  heroTitle: { fontSize: rf(18), fontWeight: '800' },
-  heroSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
+  heroTitle: { fontFamily: Fonts.bold, fontSize: rf(18) },
+  heroSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
 
   downloadCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFF', borderRadius: 14, padding: 14,
+    borderRadius: 18, borderWidth: 1, padding: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  downloadTitle: { fontSize: rf(14), fontWeight: '700' },
-  downloadSub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
+  downloadTitle: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  downloadSub: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
 
   sectionCard: {
-    backgroundColor: '#FFF', borderRadius: 14,
+    borderRadius: 18, borderWidth: 1,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
     overflow: 'hidden',
@@ -1046,34 +1044,33 @@ const styles = StyleSheet.create({
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   iconBox: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sectionMeta: { flex: 1 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  sectionSummary: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
+  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  sectionSummary: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
 
-  sectionBody: { borderTopWidth: 1, borderTopColor: '#F3F4F6', padding: 14, gap: 16 },
+  sectionBody: { borderTopWidth: 1, padding: 14, gap: 16 },
   block: { gap: 8 },
-  blockTitle: { fontSize: rf(13), fontWeight: '700' },
+  blockTitle: { fontFamily: Fonts.bold, fontSize: rf(13) },
 
   stepsList: { gap: 8 },
   stepItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   stepNum: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
-  stepNumText: { fontSize: rf(11), fontWeight: '700', color: '#FFF' },
-  stepText: { flex: 1, fontSize: rf(13), color: '#374151', lineHeight: 20 },
+  stepNumText: { fontFamily: Fonts.bold, fontSize: rf(11) },
+  stepText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
 
   bulletList: { gap: 6 },
   bulletItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7, flexShrink: 0 },
-  bulletText: { flex: 1, fontSize: rf(13), color: '#374151', lineHeight: 20 },
+  bulletText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
 
-  table: { borderRadius: 10, borderWidth: 1, borderColor: '#F3F4F6', overflow: 'hidden' },
+  table: { borderRadius: 10, borderWidth: 1, overflow: 'hidden' },
   tableHeader: {
-    flexDirection: 'row', backgroundColor: '#F9FAFB',
+    flexDirection: 'row',
     paddingHorizontal: 10, paddingVertical: 7,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1,
   },
-  tableHeaderCell: { fontSize: rf(10), fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5 },
-  tableRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F9FAFB' },
-  tableRowAlt: { backgroundColor: '#FAFAFA' },
-  tableCell: { fontSize: rf(12), color: '#374151', lineHeight: 18 },
+  tableHeaderCell: { fontFamily: Fonts.medium, fontSize: rf(10), letterSpacing: 0.5 },
+  tableRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: 1 },
+  tableCell: { fontFamily: Fonts.regular, fontSize: rf(12), lineHeight: 18 },
 
-  footer: { textAlign: 'center', fontSize: rf(11), color: '#D1D5DB', marginTop: 8 },
+  footer: { fontFamily: Fonts.regular, textAlign: 'center', fontSize: rf(11), marginTop: 8 },
 });

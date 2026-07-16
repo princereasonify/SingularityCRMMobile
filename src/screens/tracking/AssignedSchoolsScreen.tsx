@@ -9,9 +9,12 @@ import Geolocation from '@react-native-community/geolocation';
 import { ArrowLeft, Navigation, CheckCircle, ExternalLink } from 'lucide-react-native';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { SchoolAssignment } from '../../types';
-import { ROLE_COLORS } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
 import { updateGeofences } from '../../services/nativeLocationTracking';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 // ─── Pin colors per visit index (for unvisited schools) ──────────────────────
 // Index 0 = first school to visit today, gets a unique accent color so FO
@@ -69,7 +72,7 @@ const todayISO = (): string => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AssignedSchoolsScreen = ({ navigation }: any) => {
-  const COLOR = ROLE_COLORS.FO;
+  const T = useAppTheme();
   const mapRef = useRef<MapView>(null);
 
   const [assignments, setAssignments] = useState<SchoolAssignment[]>([]);
@@ -179,25 +182,25 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
   // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top']}>
+        <GradientBackground glow style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <ArrowLeft size={22} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Today's Schools</Text>
-        </View>
+        </GradientBackground>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={COLOR.primary} />
-          <Text style={styles.loadingText}>Loading your schools…</Text>
+          <ActivityIndicator size="large" color={T.accent} />
+          <Text style={[styles.loadingText, { color: T.sub }]}>Loading your schools…</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top']}>
+      {/* ── Sunstone hero header ─────────────────────────────────────────── */}
+      <GradientBackground glow style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ArrowLeft size={22} color="#FFF" />
         </TouchableOpacity>
@@ -212,7 +215,7 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
           {/* Compact visited/total badge in the header corner */}
           <Text style={styles.progressText}>{visitedCount}/{total}</Text>
         </View>
-      </View>
+      </GradientBackground>
 
       {/* ── Map (takes ~55% of the screen height) ───────────────────────── */}
       <View style={styles.mapContainer}>
@@ -223,11 +226,11 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
           showsScale
         >
           {/* ── Planned route line ──────────────────────────────────────── */}
-          {/* Polyline draws a blue dashed line connecting schools in order */}
+          {/* Polyline draws a dashed line connecting schools in order */}
           {routeCoords.length > 1 && (
             <Polyline
               coordinates={routeCoords}
-              strokeColor={COLOR.primary}
+              strokeColor={T.accent}
               strokeWidth={3}
               lineDashPattern={[6, 4]}  // dashes show it's a plan, not a tracked path
             />
@@ -280,8 +283,8 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
               tracksViewChanges={false}
               anchor={{ x: 0.5, y: 0.5 }}   // center the custom view on the coordinate
             >
-              {/* Blue "You" pill — clearly different from school pins */}
-              <View style={styles.youPin}>
+              {/* "You" pill — clearly different from school pins */}
+              <View style={[styles.youPin, { backgroundColor: T.accent }]}>
                 <Navigation size={12} color="#FFF" />
                 <Text style={styles.youText}>You</Text>
               </View>
@@ -291,25 +294,23 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 
         {/* ── Empty overlay when no schools assigned ───────────────────── */}
         {assignments.length === 0 && (
-          <View style={styles.emptyOverlay} pointerEvents="none">
+          <View style={[styles.emptyOverlay, { backgroundColor: T.bg }]} pointerEvents="none">
             <Text style={styles.emptyIcon}>🏫</Text>
-            <Text style={styles.emptyTitle}>No Schools Assigned</Text>
-            <Text style={styles.emptySub}>Your manager hasn't assigned any schools for today.</Text>
+            <Text style={[styles.emptyTitle, { color: T.text }]}>No Schools Assigned</Text>
+            <Text style={[styles.emptySub, { color: T.dim }]}>Your manager hasn't assigned any schools for today.</Text>
           </View>
         )}
       </View>
 
       {/* ── Bottom panel ────────────────────────────────────────────────── */}
-      <View style={styles.bottomPanel}>
+      <View style={[styles.bottomPanel, { backgroundColor: T.card, borderTopColor: T.line }]}>
         {/* Google Maps button — opens native navigation with all schools as stops */}
-        <TouchableOpacity
-          style={[styles.gmapsBtn, { backgroundColor: COLOR.primary }]}
+        <GradientButton
+          label="Open Route in Google Maps"
           onPress={openGoogleMaps}
-          activeOpacity={0.85}
-        >
-          <ExternalLink size={16} color="#FFF" />
-          <Text style={styles.gmapsBtnText}>Open Route in Google Maps</Text>
-        </TouchableOpacity>
+          icon={<ExternalLink size={16} color="#FFF" />}
+          style={styles.gmapsBtn}
+        />
 
         {/* Scrollable school list — tap a row to pan the map */}
         <ScrollView
@@ -323,7 +324,7 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
             return (
               <TouchableOpacity
                 key={school.id}
-                style={[styles.listRow, isSelected && { backgroundColor: color + '14' }]}
+                style={[styles.listRow, { borderBottomColor: T.line }, isSelected && { backgroundColor: color + '14' }]}
                 onPress={() => handleSchoolRowPress(school)}
                 activeOpacity={0.7}
               >
@@ -334,13 +335,13 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 
                 {/* School name + city */}
                 <View style={styles.listInfo}>
-                  <Text style={styles.listName} numberOfLines={1}>{school.schoolName}</Text>
-                  <Text style={styles.listCity}>{school.schoolCity}</Text>
+                  <Text style={[styles.listName, { color: T.text }]} numberOfLines={1}>{school.schoolName}</Text>
+                  <Text style={[styles.listCity, { color: T.sub }]}>{school.schoolCity}</Text>
                 </View>
 
                 {/* Visited / Pending status badge */}
-                <View style={[styles.listStatus, { backgroundColor: school.isVisited ? '#DCFCE7' : '#F3F4F6' }]}>
-                  <Text style={[styles.listStatusText, { color: school.isVisited ? '#16A34A' : '#9CA3AF' }]}>
+                <View style={[styles.listStatus, { backgroundColor: (school.isVisited ? T.success : T.dim) + '22' }]}>
+                  <Text style={[styles.listStatusText, { color: school.isVisited ? T.success : T.dim }]}>
                     {school.isVisited ? 'Visited' : 'Pending'}
                   </Text>
                 </View>
@@ -357,34 +358,37 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: rf(14), color: '#6B7280' },
+  loadingText: { fontFamily: Fonts.regular, fontSize: rf(14) },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14, gap: 10,
   },
-  backBtn: { padding: 4 },
-  headerTitle: { fontSize: rf(17), fontWeight: '700', color: '#FFF' },
-  headerSub: { fontSize: rf(12), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(18), color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   progressPill: {
     backgroundColor: 'rgba(255,255,255,0.25)',
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
   },
-  progressText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
+  progressText: { fontFamily: Fonts.bold, fontSize: rf(13), color: '#FFF' },
 
   // Map
   mapContainer: { flex: 1 },   // takes all space above the bottom panel
   emptyOverlay: {
     position: 'absolute', inset: 0,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(249,250,251,0.88)',
+    opacity: 0.92,
   },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyTitle: { fontSize: rf(16), fontWeight: '700', color: '#374151' },
-  emptySub: { fontSize: rf(13), color: '#9CA3AF', marginTop: 4, textAlign: 'center', paddingHorizontal: 32 },
+  emptyTitle: { fontFamily: Fonts.bold, fontSize: rf(16) },
+  emptySub: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 4, textAlign: 'center', paddingHorizontal: 32 },
 
   // Custom map pins
   pin: {
@@ -393,7 +397,7 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, elevation: 6,
   },
-  pinNumber: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
+  pinNumber: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
   pinCheck: {
     position: 'absolute', bottom: -2, right: -2,
     backgroundColor: '#FFF', borderRadius: 8, padding: 1,
@@ -402,52 +406,38 @@ const styles = StyleSheet.create({
   // "You" GPS pin
   youPin: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#1D4ED8', paddingHorizontal: 10, paddingVertical: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 14, borderWidth: 2, borderColor: '#FFF',
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, elevation: 8,
   },
-  youText: { fontSize: rf(11), fontWeight: '800', color: '#FFF' },
-
-  // Callout bubble
-  callout: { width: 190, padding: 10 },
-  calloutName: { fontSize: rf(13), fontWeight: '700', color: '#111827', marginBottom: 2 },
-  calloutCity: { fontSize: rf(11), color: '#6B7280', marginBottom: 2 },
-  calloutAddr: { fontSize: rf(11), color: '#9CA3AF', marginBottom: 6 },
-  calloutRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  calloutBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  calloutBadgeText: { fontSize: rf(11), fontWeight: '700' },
-  calloutTime: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  calloutTimeText: { fontSize: rf(11), color: '#6B7280' },
+  youText: { fontFamily: Fonts.bold, fontSize: rf(11), color: '#FFF' },
 
   // Bottom panel
   bottomPanel: {
-    backgroundColor: '#FFF',
-    borderTopWidth: 1, borderTopColor: '#E5E7EB',
+    borderTopWidth: 1,
     // fixed height so the map always gets its fair share of the screen
     maxHeight: 280,
   },
   gmapsBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     marginHorizontal: 16, marginTop: 12, marginBottom: 10,
-    paddingVertical: 12, borderRadius: 14,
+    height: 48,
   },
-  gmapsBtnText: { fontSize: rf(14), fontWeight: '700', color: '#FFF' },
 
   // School list
   listScroll: { flex: 1 },
   listRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1,
   },
   listBadge: {
     width: 30, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
   },
-  listBadgeText: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
+  listBadgeText: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
   listInfo: { flex: 1 },
-  listName: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
-  listCity: { fontSize: rf(11), color: '#9CA3AF', marginTop: 1 },
+  listName: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  listCity: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 1 },
   listStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  listStatusText: { fontSize: rf(11), fontWeight: '700' },
+  listStatusText: { fontFamily: Fonts.bold, fontSize: rf(11) },
 });

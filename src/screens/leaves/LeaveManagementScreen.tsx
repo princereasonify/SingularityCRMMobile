@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
-  TextInput, ActivityIndicator, FlatList,
+  TextInput, FlatList, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Plus, Check, X, ChevronDown, ChevronUp, Send, Ban, AlertTriangle,
 } from 'lucide-react-native';
@@ -13,8 +13,12 @@ import { authApi } from '../../api/auth';
 import { DateInput } from '../../components/common/DateInput';
 import { SelectPicker } from '../../components/common/SelectPicker';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import type { AppTheme } from '../../theme/appTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -40,20 +44,23 @@ const STATUS_OPTIONS = [
   { value: 'Cancelled', label: 'Cancelled' },
 ];
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  Pending:     { bg: '#FEF3C7', text: '#D97706' },
-  Approved:    { bg: '#D1FAE5', text: '#059669' },
-  AutoApproved:{ bg: '#CCFBF1', text: '#0D9488' },
-  Rejected:    { bg: '#FEE2E2', text: '#DC2626' },
-  Cancelled:   { bg: '#F3F4F6', text: '#6B7280' },
-};
+// Map leave status / category to a theme token so badges flip with light/dark.
+const statusToken = (T: AppTheme, status: string): string =>
+  (({
+    Pending: T.warning,
+    Approved: T.success,
+    AutoApproved: T.info,
+    Rejected: T.danger,
+    Cancelled: T.sub,
+  } as Record<string, string>)[status]) || T.sub;
 
-const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  Casual:    { bg: '#DBEAFE', text: '#2563EB' },
-  Sick:      { bg: '#FFEDD5', text: '#EA580C' },
-  Personal:  { bg: '#EDE9FE', text: '#7C3AED' },
-  Emergency: { bg: '#FEE2E2', text: '#DC2626' },
-};
+const categoryToken = (T: AppTheme, cat: string): string =>
+  (({
+    Casual: T.info,
+    Sick: T.warning,
+    Personal: T.accent,
+    Emergency: T.danger,
+  } as Record<string, string>)[cat]) || T.sub;
 
 function getToday() {
   return new Date().toISOString().split('T')[0];
@@ -71,6 +78,7 @@ function initials(name: string) {
 // ─── Apply Form Modal ────────────────────────────────────────────────────────
 
 function ApplyModal({ visible, onClose, onSubmit, submitting }: any) {
+  const T = useAppTheme();
   const [form, setForm] = useState({
     leaveDate: '',
     leaveType: 'FullDay',
@@ -91,22 +99,22 @@ function ApplyModal({ visible, onClose, onSubmit, submitting }: any) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }} edges={['top']}>
-        <View style={fm.header}>
-          <Text style={fm.title}>Apply for Leave</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }} edges={['top']}>
+        <View style={[fm.header, { backgroundColor: T.card, borderBottomColor: T.line }]}>
+          <Text style={[fm.title, { color: T.text }]}>Apply for Leave</Text>
           <TouchableOpacity onPress={() => { reset(); onClose(); }} hitSlop={8}>
-            <X size={22} color="#6B7280" />
+            <X size={22} color={T.sub} />
           </TouchableOpacity>
         </View>
-        <ScrollView contentContainerStyle={fm.content}>
+        <ScrollView contentContainerStyle={fm.content} keyboardShouldPersistTaps="handled">
           <DateInput
             label="Leave Date *"
             value={form.leaveDate}
             onChange={v => setForm(f => ({ ...f, leaveDate: v }))}
-            accentColor="#0D9488"
+            accentColor={T.accent}
           />
           {isSameDay && form.leaveDate ? (
-            <Text style={fm.autoNote}>Same-day leave will be auto-approved</Text>
+            <Text style={[fm.autoNote, { color: T.accent }]}>Same-day leave will be auto-approved</Text>
           ) : null}
 
           <SelectPicker
@@ -114,54 +122,47 @@ function ApplyModal({ visible, onClose, onSubmit, submitting }: any) {
             options={LEAVE_TYPES}
             value={form.leaveType}
             onChange={v => setForm(f => ({ ...f, leaveType: String(v) }))}
-            accentColor="#0D9488"
+            accentColor={T.accent}
           />
           <SelectPicker
             label="Leave Category *"
             options={LEAVE_CATEGORIES}
             value={form.leaveCategory}
             onChange={v => setForm(f => ({ ...f, leaveCategory: String(v) }))}
-            accentColor="#0D9488"
+            accentColor={T.accent}
           />
 
-          <Text style={fm.label}>Reason *</Text>
+          <Text style={[fm.label, { color: T.text }]}>Reason *</Text>
           <TextInput
-            style={fm.textarea}
+            style={[fm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={form.reason}
             onChangeText={t => setForm(f => ({ ...f, reason: t }))}
             placeholder="Why are you taking leave?"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             multiline
             numberOfLines={3}
             textAlignVertical="top"
           />
 
-          <Text style={[fm.label, { marginTop: 12 }]}>Cover Arrangement (optional)</Text>
+          <Text style={[fm.label, { color: T.text, marginTop: 12 }]}>Cover Arrangement (optional)</Text>
           <TextInput
-            style={fm.textarea}
+            style={[fm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={form.coverArrangement}
             onChangeText={t => setForm(f => ({ ...f, coverArrangement: t }))}
             placeholder="Who will handle your responsibilities?"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             multiline
             numberOfLines={2}
             textAlignVertical="top"
           />
 
-          <TouchableOpacity
-            style={[fm.submitBtn, submitting && { opacity: 0.6 }]}
+          <GradientButton
+            label={submitting ? 'Submitting...' : isSameDay ? 'Submit (Auto-Approve)' : 'Submit for Approval'}
             onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Send size={16} color="#FFF" />
-            )}
-            <Text style={fm.submitText}>
-              {submitting ? 'Submitting...' : isSameDay ? 'Submit (Auto-Approve)' : 'Submit for Approval'}
-            </Text>
-          </TouchableOpacity>
+            loading={submitting}
+            icon={!submitting ? <Send size={16} color="#FFF" /> : undefined}
+            style={{ marginTop: 20 }}
+          />
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -169,19 +170,18 @@ function ApplyModal({ visible, onClose, onSubmit, submitting }: any) {
 }
 
 const fm = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: '#FFF' },
-  title: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: rf(17), fontFamily: Fonts.bold },
   content: { padding: 16, gap: 4 },
-  label: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  autoNote: { fontSize: rf(12), color: '#0D9488', fontWeight: '500', marginBottom: 12, marginTop: -8 },
-  textarea: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', minHeight: 80, marginBottom: 4 },
-  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0D9488', borderRadius: 14, paddingVertical: 14, marginTop: 20 },
-  submitText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
+  label: { fontSize: rf(13), fontFamily: Fonts.medium, marginBottom: 6 },
+  autoNote: { fontSize: rf(12), fontFamily: Fonts.medium, marginBottom: 12, marginTop: -8 },
+  textarea: { borderWidth: 1, borderRadius: 14, padding: 12, fontSize: rf(14), fontFamily: Fonts.regular, minHeight: 80, marginBottom: 4 },
 });
 
 // ─── Reject Modal ────────────────────────────────────────────────────────────
 
 function RejectModal({ visible, onClose, onReject, rejecting }: any) {
+  const T = useAppTheme();
   const [reason, setReason] = useState('');
   const handle = () => {
     if (!reason.trim()) { Alert.alert('Error', 'Please provide a rejection reason'); return; }
@@ -190,23 +190,23 @@ function RejectModal({ visible, onClose, onReject, rejecting }: any) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={rm.overlay}>
-        <View style={rm.box}>
-          <Text style={rm.title}>Reject Leave Request</Text>
+        <View style={[rm.box, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Text style={[rm.title, { color: T.text }]}>Reject Leave Request</Text>
           <TextInput
-            style={rm.textarea}
+            style={[rm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={reason}
             onChangeText={setReason}
             placeholder="Provide a reason for rejection (required)"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             multiline
             numberOfLines={3}
             textAlignVertical="top"
           />
           <View style={rm.actions}>
-            <TouchableOpacity style={rm.cancelBtn} onPress={onClose}>
-              <Text style={rm.cancelText}>Cancel</Text>
+            <TouchableOpacity style={[rm.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={onClose}>
+              <Text style={[rm.cancelText, { color: T.sub }]}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[rm.rejectBtn, rejecting && { opacity: 0.6 }]} onPress={handle} disabled={rejecting}>
+            <TouchableOpacity style={[rm.rejectBtn, { backgroundColor: T.danger }, rejecting && { opacity: 0.6 }]} onPress={handle} disabled={rejecting}>
               <Text style={rm.rejectText}>{rejecting ? 'Rejecting...' : 'Reject Leave'}</Text>
             </TouchableOpacity>
           </View>
@@ -218,97 +218,98 @@ function RejectModal({ visible, onClose, onReject, rejecting }: any) {
 
 const rm = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  box: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400 },
-  title: { fontSize: rf(16), fontWeight: '700', color: '#111827', marginBottom: 12 },
-  textarea: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', minHeight: 80, marginBottom: 16, textAlignVertical: 'top' },
+  box: { borderRadius: 18, borderWidth: 1, padding: 20, width: '100%', maxWidth: 400 },
+  title: { fontSize: rf(16), fontFamily: Fonts.bold, marginBottom: 12 },
+  textarea: { borderWidth: 1, borderRadius: 14, padding: 12, fontSize: rf(14), fontFamily: Fonts.regular, minHeight: 80, marginBottom: 16, textAlignVertical: 'top' },
   actions: { flexDirection: 'row', gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  cancelText: { fontSize: rf(14), fontWeight: '600', color: '#374151' },
-  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#DC2626', alignItems: 'center' },
-  rejectText: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  cancelText: { fontSize: rf(14), fontFamily: Fonts.medium },
+  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  rejectText: { fontSize: rf(14), fontFamily: Fonts.bold, color: '#FFF' },
 });
 
 // ─── Leave Card ──────────────────────────────────────────────────────────────
 
 function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: any) {
+  const T = useAppTheme();
   const [expanded, setExpanded] = useState(false);
-  const sc = STATUS_COLORS[leave.status] || { bg: '#F3F4F6', text: '#6B7280' };
-  const cc = CATEGORY_COLORS[leave.leaveCategory] || { bg: '#F3F4F6', text: '#6B7280' };
+  const sc = statusToken(T, leave.status);
+  const cc = categoryToken(T, leave.leaveCategory);
   const leaveTypeLabel = LEAVE_TYPES.find(t => t.value === leave.leaveType)?.label || leave.leaveType;
   const canCancel = ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
     new Date(leave.leaveDate) >= new Date(getToday());
 
   return (
-    <View style={lc.card}>
+    <View style={[lc.card, { backgroundColor: T.card, borderColor: T.line }]}>
       <TouchableOpacity style={lc.row} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
         {isTeam ? (
-          <View style={lc.avatar}>
-            <Text style={lc.avatarText}>{initials(leave.userName || '')}</Text>
+          <View style={[lc.avatar, { backgroundColor: T.accentSoft }]}>
+            <Text style={[lc.avatarText, { color: T.accent }]}>{initials(leave.userName || '')}</Text>
           </View>
         ) : (
           <View style={lc.dateBox}>
-            <Text style={lc.dateDay}>{new Date(leave.leaveDate).getDate()}</Text>
-            <Text style={lc.dateMon}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { month: 'short' })}</Text>
-            <Text style={lc.dateWkd}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { weekday: 'short' })}</Text>
+            <Text style={[lc.dateDay, { color: T.text }]}>{new Date(leave.leaveDate).getDate()}</Text>
+            <Text style={[lc.dateMon, { color: T.sub }]}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { month: 'short' })}</Text>
+            <Text style={[lc.dateWkd, { color: T.dim }]}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { weekday: 'short' })}</Text>
           </View>
         )}
 
         <View style={{ flex: 1 }}>
           {isTeam && (
-            <Text style={lc.name}>{leave.userName} <Text style={lc.role}>({leave.userRole})</Text></Text>
+            <Text style={[lc.name, { color: T.text }]}>{leave.userName} <Text style={[lc.role, { color: T.sub }]}>({leave.userRole})</Text></Text>
           )}
           {isTeam && (
-            <Text style={lc.dateStr}>{formatDate(leave.leaveDate)}</Text>
+            <Text style={[lc.dateStr, { color: T.sub }]}>{formatDate(leave.leaveDate)}</Text>
           )}
           <View style={lc.badges}>
-            <View style={[lc.badge, { backgroundColor: sc.bg }]}>
-              <Text style={[lc.badgeText, { color: sc.text }]}>{leave.status === 'AutoApproved' ? 'Auto-Approved' : leave.status}</Text>
+            <View style={[lc.badge, { backgroundColor: sc + '22' }]}>
+              <Text style={[lc.badgeText, { color: sc }]}>{leave.status === 'AutoApproved' ? 'Auto-Approved' : leave.status}</Text>
             </View>
-            <View style={[lc.badge, { backgroundColor: cc.bg }]}>
-              <Text style={[lc.badgeText, { color: cc.text }]}>{leave.leaveCategory}</Text>
+            <View style={[lc.badge, { backgroundColor: cc + '22' }]}>
+              <Text style={[lc.badgeText, { color: cc }]}>{leave.leaveCategory}</Text>
             </View>
-            <Text style={lc.typeText}>{leaveTypeLabel}</Text>
+            <Text style={[lc.typeText, { color: T.dim }]}>{leaveTypeLabel}</Text>
           </View>
-          <Text style={lc.reason} numberOfLines={expanded ? undefined : 2}>{leave.reason}</Text>
+          <Text style={[lc.reason, { color: T.sub }]} numberOfLines={expanded ? undefined : 2}>{leave.reason}</Text>
         </View>
 
         <View style={lc.actions}>
           {isTeam && leave.status === 'Pending' && (
             <>
-              <TouchableOpacity style={lc.approveBtn} onPress={() => onApprove(leave)}>
+              <TouchableOpacity style={[lc.approveBtn, { backgroundColor: T.success }]} onPress={() => onApprove(leave)}>
                 <Check size={14} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={lc.rejectBtn} onPress={() => onReject(leave.id)}>
+              <TouchableOpacity style={[lc.rejectBtn, { backgroundColor: T.danger }]} onPress={() => onReject(leave.id)}>
                 <X size={14} color="#FFF" />
               </TouchableOpacity>
             </>
           )}
           {!isTeam && canCancel && (
-            <TouchableOpacity style={lc.cancelBtn} onPress={() => onCancel(leave.id)}>
-              <Ban size={12} color="#DC2626" />
+            <TouchableOpacity style={[lc.cancelBtn, { backgroundColor: T.danger + '22' }]} onPress={() => onCancel(leave.id)}>
+              <Ban size={12} color={T.danger} />
             </TouchableOpacity>
           )}
-          {expanded ? <ChevronUp size={16} color="#9CA3AF" /> : <ChevronDown size={16} color="#9CA3AF" />}
+          {expanded ? <ChevronUp size={16} color={T.dim} /> : <ChevronDown size={16} color={T.dim} />}
         </View>
       </TouchableOpacity>
 
       {expanded && (
-        <View style={lc.expanded}>
-          {leave.coverArrangement ? <Text style={lc.expandText}><Text style={lc.expandLabel}>Cover: </Text>{leave.coverArrangement}</Text> : null}
+        <View style={[lc.expanded, { borderTopColor: T.line }]}>
+          {leave.coverArrangement ? <Text style={[lc.expandText, { color: T.sub }]}><Text style={[lc.expandLabel, { color: T.text }]}>Cover: </Text>{leave.coverArrangement}</Text> : null}
           {leave.actionedByName ? (
-            <Text style={lc.expandText}>
-              <Text style={lc.expandLabel}>{leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by: </Text>
+            <Text style={[lc.expandText, { color: T.sub }]}>
+              <Text style={[lc.expandLabel, { color: T.text }]}>{leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by: </Text>
               {leave.actionedByName}{leave.actionedAt ? ` on ${new Date(leave.actionedAt).toLocaleDateString('en-IN')}` : ''}
             </Text>
           ) : null}
-          {leave.rejectionReason ? <Text style={[lc.expandText, { color: '#DC2626' }]}><Text style={lc.expandLabel}>Rejection reason: </Text>{leave.rejectionReason}</Text> : null}
+          {leave.rejectionReason ? <Text style={[lc.expandText, { color: T.danger }]}><Text style={[lc.expandLabel, { color: T.danger }]}>Rejection reason: </Text>{leave.rejectionReason}</Text> : null}
           {leave.planImpactMessage ? (
-            <View style={lc.impactBox}>
-              <AlertTriangle size={12} color="#D97706" />
-              <Text style={lc.impactText}>{leave.planImpactMessage}</Text>
+            <View style={[lc.impactBox, { backgroundColor: T.warning + '22' }]}>
+              <AlertTriangle size={12} color={T.warning} />
+              <Text style={[lc.impactText, { color: T.warning }]}>{leave.planImpactMessage}</Text>
             </View>
           ) : null}
-          <Text style={lc.appliedAt}>Applied: {leave.createdAt ? new Date(leave.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</Text>
+          <Text style={[lc.appliedAt, { color: T.dim }]}>Applied: {leave.createdAt ? new Date(leave.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</Text>
         </View>
       )}
     </View>
@@ -316,41 +317,44 @@ function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: any) {
 }
 
 const lc = StyleSheet.create({
-  card: { backgroundColor: '#FFF', borderRadius: 14, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 1 },
+  card: { borderRadius: 18, marginBottom: 10, overflow: 'hidden', borderWidth: 1 },
   row: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
   dateBox: { alignItems: 'center', minWidth: 44 },
-  dateDay: { fontSize: rf(20), fontWeight: '800', color: '#111827' },
-  dateMon: { fontSize: rf(11), color: '#6B7280' },
-  dateWkd: { fontSize: rf(10), color: '#9CA3AF' },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#CCFBF1', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: rf(13), fontWeight: '700', color: '#0D9488' },
-  name: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  role: { fontSize: rf(12), color: '#6B7280', fontWeight: '400' },
-  dateStr: { fontSize: rf(12), color: '#6B7280', marginBottom: 4 },
+  dateDay: { fontSize: rf(20), fontFamily: Fonts.bold },
+  dateMon: { fontSize: rf(11), fontFamily: Fonts.regular },
+  dateWkd: { fontSize: rf(10), fontFamily: Fonts.regular },
+  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: rf(13), fontFamily: Fonts.bold },
+  name: { fontSize: rf(14), fontFamily: Fonts.bold },
+  role: { fontSize: rf(12), fontFamily: Fonts.regular },
+  dateStr: { fontSize: rf(12), fontFamily: Fonts.regular, marginBottom: 4 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  badgeText: { fontSize: rf(11), fontWeight: '700' },
-  typeText: { fontSize: rf(11), color: '#9CA3AF', alignSelf: 'center' },
-  reason: { fontSize: rf(13), color: '#374151' },
+  badgeText: { fontSize: rf(11), fontFamily: Fonts.bold },
+  typeText: { fontSize: rf(11), fontFamily: Fonts.regular, alignSelf: 'center' },
+  reason: { fontSize: rf(13), fontFamily: Fonts.regular },
   actions: { alignItems: 'center', gap: 6 },
-  approveBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' },
-  rejectBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  cancelBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' },
-  expanded: { paddingHorizontal: 14, paddingBottom: 14, gap: 4, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  expandLabel: { fontWeight: '600', color: '#374151' },
-  expandText: { fontSize: rf(12), color: '#6B7280' },
-  impactBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 4 },
-  impactText: { fontSize: rf(12), color: '#D97706', flex: 1 },
-  appliedAt: { fontSize: rf(11), color: '#9CA3AF', marginTop: 4 },
+  approveBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  rejectBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  cancelBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  expanded: { paddingHorizontal: 14, paddingBottom: 14, gap: 4, borderTopWidth: 1 },
+  expandLabel: { fontFamily: Fonts.medium },
+  expandText: { fontSize: rf(12), fontFamily: Fonts.regular },
+  impactBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: 8, padding: 8, marginTop: 4 },
+  impactText: { fontSize: rf(12), fontFamily: Fonts.regular, flex: 1 },
+  appliedAt: { fontSize: rf(11), fontFamily: Fonts.regular, marginTop: 4 },
 });
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export const LeaveManagementScreen = () => {
   const { user } = useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
   const role = user?.role || 'FO';
   const isManager = role !== 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
 
   const [tab, setTab] = useState<'my' | 'team'>('my');
   const [showApply, setShowApply] = useState(false);
@@ -369,7 +373,6 @@ export const LeaveManagementScreen = () => {
 
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState(false);
-  const [approveLeave, setApproveLeave] = useState<any>(null);
 
   // Fetch team members for manager filter
   useEffect(() => {
@@ -480,28 +483,39 @@ export const LeaveManagementScreen = () => {
     ...teamMembers.map(m => ({ value: String(m.id), label: `${m.name} (${m.role})` })),
   ];
 
+  const listContent = [s.list, { paddingBottom: insets.bottom + 32 }, twoWide && s.contentMax];
+  const filterWrap = [s.filterRow, twoWide && s.contentMax];
+
   return (
-    <SafeAreaView style={s.safe} edges={['bottom']}>
-      {/* Header */}
-      <View style={s.headerBar}>
-        <View>
-          <Text style={s.pageTitle}>Leave Management</Text>
-          <Text style={s.pageSub}>Apply for leaves and track your leave history</Text>
+    <View style={[s.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <View style={s.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.pageTitle}>Leave Management</Text>
+            <Text style={s.pageSub}>Apply for leaves and track your leave history</Text>
+          </View>
+          <TouchableOpacity style={s.applyBtn} onPress={() => setShowApply(true)}>
+            <Plus size={16} color={T.accent} />
+            <Text style={[s.applyBtnText, { color: T.accent }]}>Apply</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={[s.applyBtn, { backgroundColor: COLOR.primary }]} onPress={() => setShowApply(true)}>
-          <Plus size={16} color="#FFF" />
-          <Text style={s.applyBtnText}>Apply</Text>
-        </TouchableOpacity>
-      </View>
+      </GradientBackground>
 
       {/* Tabs */}
-      <View style={s.tabs}>
-        <TouchableOpacity style={[s.tabBtn, tab === 'my' && { backgroundColor: COLOR.primary }]} onPress={() => setTab('my')}>
-          <Text style={[s.tabText, tab === 'my' && { color: '#FFF' }]}>My Leaves</Text>
+      <View style={[s.tabsWrap, twoWide && s.contentMax]}>
+        <TouchableOpacity
+          style={[s.tabBtn, { backgroundColor: tab === 'my' ? T.accent : T.cardAlt }]}
+          onPress={() => setTab('my')}
+        >
+          <Text style={[s.tabText, { color: tab === 'my' ? T.onAccent : T.sub }]}>My Leaves</Text>
         </TouchableOpacity>
         {isManager && (
-          <TouchableOpacity style={[s.tabBtn, tab === 'team' && { backgroundColor: COLOR.primary }]} onPress={() => setTab('team')}>
-            <Text style={[s.tabText, tab === 'team' && { color: '#FFF' }]}>Team Leaves</Text>
+          <TouchableOpacity
+            style={[s.tabBtn, { backgroundColor: tab === 'team' ? T.accent : T.cardAlt }]}
+            onPress={() => setTab('team')}
+          >
+            <Text style={[s.tabText, { color: tab === 'team' ? T.onAccent : T.sub }]}>Team Leaves</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -510,13 +524,13 @@ export const LeaveManagementScreen = () => {
       {tab === 'my' && (
         <View style={{ flex: 1 }}>
           {/* Filters */}
-          <View style={s.filterRow}>
+          <View style={filterWrap}>
             <SelectPicker
               placeholder="Status"
               options={STATUS_OPTIONS}
               value={myStatusFilter}
               onChange={v => setMyStatusFilter(String(v))}
-              accentColor={COLOR.primary}
+              accentColor={T.accent}
               containerStyle={{ flex: 1, marginBottom: 0 }}
             />
             <SelectPicker
@@ -524,13 +538,13 @@ export const LeaveManagementScreen = () => {
               options={[{ value: '', label: 'All Categories' }, ...LEAVE_CATEGORIES]}
               value={myCatFilter}
               onChange={v => setMyCatFilter(String(v))}
-              accentColor={COLOR.primary}
+              accentColor={T.accent}
               containerStyle={{ flex: 1, marginBottom: 0 }}
             />
           </View>
 
           {myLoading ? (
-            <LoadingSpinner fullScreen color={COLOR.primary} message="Loading leaves..." />
+            <LoadingSpinner fullScreen color={T.accent} message="Loading leaves..." />
           ) : (
             <FlatList
               data={myLeaves}
@@ -544,11 +558,11 @@ export const LeaveManagementScreen = () => {
                   onReject={() => {}}
                 />
               )}
-              contentContainerStyle={s.list}
+              contentContainerStyle={listContent}
               ListEmptyComponent={
                 <View style={s.empty}>
                   <Text style={s.emptyIcon}>📋</Text>
-                  <Text style={s.emptyText}>No leave records found</Text>
+                  <Text style={[s.emptyText, { color: T.dim }]}>No leave records found</Text>
                 </View>
               }
             />
@@ -559,13 +573,13 @@ export const LeaveManagementScreen = () => {
       {/* Team Leaves Tab */}
       {tab === 'team' && isManager && (
         <View style={{ flex: 1 }}>
-          <View style={s.filterRow}>
+          <View style={filterWrap}>
             <SelectPicker
               placeholder="Status"
               options={STATUS_OPTIONS}
               value={teamStatusFilter}
               onChange={v => setTeamStatusFilter(String(v))}
-              accentColor={COLOR.primary}
+              accentColor={T.accent}
               containerStyle={{ flex: 1, marginBottom: 0 }}
             />
             {teamMemberOptions.length > 1 && (
@@ -574,14 +588,14 @@ export const LeaveManagementScreen = () => {
                 options={teamMemberOptions}
                 value={userFilter}
                 onChange={v => setUserFilter(String(v))}
-                accentColor={COLOR.primary}
+                accentColor={T.accent}
                 containerStyle={{ flex: 1, marginBottom: 0 }}
               />
             )}
           </View>
 
           {teamLoading ? (
-            <LoadingSpinner fullScreen color={COLOR.primary} message="Loading team leaves..." />
+            <LoadingSpinner fullScreen color={T.accent} message="Loading team leaves..." />
           ) : (
             <FlatList
               data={teamLeaves}
@@ -595,11 +609,11 @@ export const LeaveManagementScreen = () => {
                   onReject={(id: number) => setRejectId(id)}
                 />
               )}
-              contentContainerStyle={s.list}
+              contentContainerStyle={listContent}
               ListEmptyComponent={
                 <View style={s.empty}>
                   <Text style={s.emptyIcon}>👥</Text>
-                  <Text style={s.emptyText}>No team leave requests</Text>
+                  <Text style={[s.emptyText, { color: T.dim }]}>No team leave requests</Text>
                 </View>
               }
             />
@@ -622,25 +636,27 @@ export const LeaveManagementScreen = () => {
         onReject={handleReject}
         rejecting={rejecting}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  pageTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
-  pageSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
-  applyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
-  applyBtnText: { color: '#FFF', fontSize: rf(13), fontWeight: '700' },
-  tabs: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  tabBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  tabText: { fontSize: rf(13), fontWeight: '700', color: '#6B7280' },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  pageTitle: { fontSize: rf(20), fontFamily: Fonts.bold, color: '#FFF', letterSpacing: -0.3 },
+  pageSub: { fontSize: rf(12), fontFamily: Fonts.regular, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  applyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.92)' },
+  applyBtnText: { fontSize: rf(13), fontFamily: Fonts.bold },
+  tabsWrap: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 12 },
+  tabBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
+  tabText: { fontSize: rf(13), fontFamily: Fonts.bold },
   filterRow: { flexDirection: 'row', gap: 8, padding: 12 },
-  list: { padding: 12, paddingBottom: 32 },
+  contentMax: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+  list: { padding: 12, paddingBottom: 32, width: '100%', maxWidth: 720, alignSelf: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48 },
   emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyText: { fontSize: rf(14), color: '#9CA3AF', textAlign: 'center' },
+  emptyText: { fontSize: rf(14), fontFamily: Fonts.regular, textAlign: 'center' },
 });

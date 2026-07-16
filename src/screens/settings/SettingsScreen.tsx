@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, Alert,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Globe, Bell, MessageSquare, Wifi, WifiOff, Database,
   RefreshCw, LayoutDashboard, LogOut, ChevronRight, Settings,
@@ -13,9 +14,11 @@ import { useOffline } from '../../context/OfflineContext';
 import { settingsApi } from '../../api/settings';
 import { aiApi } from '../../api/ai';
 import { OfflineCache } from '../../services/OfflineCache';
-import { Card } from '../../components/common/Card';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card } from '../../components/ui';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 import { Language } from '../../i18n';
 import { AiUsageQuota } from '../../types';
 
@@ -29,7 +32,10 @@ export const SettingsScreen = ({ navigation }: any) => {
   const { user, logout } = useAuth();
   const { language, setLang, t } = useLanguage();
   const { isOnline, pendingCount, isSyncing, syncManually } = useOffline();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
 
   const [whatsapp, setWhatsapp] = useState(false);
   const [push, setPush] = useState(true);
@@ -109,265 +115,306 @@ export const SettingsScreen = ({ navigation }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-
-        {/* Offline status banner */}
-        {!isOnline && (
-          <View style={styles.offlineBanner}>
-            <WifiOff size={16} color="#FFF" />
-            <Text style={styles.offlineBannerText}>{t('offline.banner')}</Text>
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerIcon}>
+            <Settings size={20} color="#FFF" />
           </View>
-        )}
-
-        {/* Language */}
-        <Card style={styles.section}>
-          <SectionTitle icon={<Globe size={16} color={COLOR.primary} />} title={t('settings.language')} />
-          <View style={styles.langRow}>
-            {(['en', 'hi'] as Language[]).map(lang => (
-              <TouchableOpacity
-                key={lang}
-                style={[styles.langChip, language === lang && { backgroundColor: COLOR.primary }]}
-                onPress={() => setLang(lang)}
-              >
-                <Text style={[styles.langChipText, language === lang && { color: '#FFF' }]}>
-                  {lang === 'en' ? t('settings.english') : t('settings.hindi')}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{t('settings.title') || 'Settings'}</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>Preferences & account</Text>
           </View>
-        </Card>
+        </View>
+      </GradientBackground>
 
-        {/* Notifications */}
-        <Card style={styles.section}>
-          <SectionTitle icon={<Bell size={16} color={COLOR.primary} />} title={t('settings.notifications')} />
-          <ToggleRow
-            icon={<MessageSquare size={16} color="#25D366" />}
-            label={t('settings.whatsappNotifications')}
-            value={whatsapp}
-            onValueChange={toggleWhatsapp}
-            trackColor={COLOR.primary}
-          />
-          <ToggleRow
-            icon={<Bell size={16} color="#2563EB" />}
-            label={t('settings.pushNotifications')}
-            value={push}
-            onValueChange={togglePush}
-            trackColor={COLOR.primary}
-            last
-          />
-        </Card>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 12 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={twoWide ? styles.centeredWide : undefined}>
 
-        {/* Offline Mode */}
-        <Card style={styles.section}>
-          <SectionTitle
-            icon={isOnline
-              ? <Wifi size={16} color="#16A34A" />
-              : <WifiOff size={16} color="#DC2626" />}
-            title={t('settings.offlineMode')}
-          />
-          <View style={styles.offlineRow}>
-            <View style={[styles.statusDot, { backgroundColor: isOnline ? '#16A34A' : '#DC2626' }]} />
-            <Text style={styles.offlineStatus}>{isOnline ? 'Online' : 'Offline'}</Text>
-            {pendingCount > 0 && (
-              <Text style={styles.pendingBadge}>{pendingCount} {t('settings.pendingSync')}</Text>
-            )}
-          </View>
-          <View style={styles.cacheButtons}>
-            <TouchableOpacity
-              style={[styles.cacheBtn, { borderColor: COLOR.primary }]}
-              onPress={handleSync}
-              disabled={isSyncing || !isOnline}
-            >
-              <RefreshCw size={14} color={COLOR.primary} />
-              <Text style={[styles.cacheBtnText, { color: COLOR.primary }]}>
-                {isSyncing ? t('offline.syncing') : t('settings.syncNow')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.cacheBtn, { borderColor: '#9CA3AF' }]}
-              onPress={handleClearCache}
-            >
-              <Database size={14} color="#9CA3AF" />
-              <Text style={[styles.cacheBtnText, { color: '#9CA3AF' }]}>{t('settings.clearCache')}</Text>
-            </TouchableOpacity>
-          </View>
-        </Card>
-
-        {/* AI Usage */}
-        {!loadingPrefs && aiQuotas.length > 0 && (
-          <Card style={styles.section}>
-            <SectionTitle icon={<RefreshCw size={16} color={COLOR.primary} />} title={t('settings.aiUsage')} />
-            {aiQuotas.map(q => {
-              const pct = q.limit > 0 ? (q.used / q.limit) * 100 : 0;
-              const barColor = pct >= 100 ? '#DC2626' : pct >= 66 ? '#F59E0B' : '#16A34A';
-              return (
-                <View key={q.endpoint} style={styles.quotaRow}>
-                  <View style={styles.quotaInfo}>
-                    <Text style={styles.quotaLabel}>{getQuotaLabel(q.endpoint)}</Text>
-                    <Text style={[styles.quotaCount, { color: barColor }]}>
-                      {q.used}/{q.limit}
-                    </Text>
-                  </View>
-                  <View style={styles.quotaBarBg}>
-                    <View style={[styles.quotaBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }]} />
-                  </View>
-                </View>
-              );
-            })}
-          </Card>
-        )}
-
-        {/* Dashboard Customization */}
-        <Card style={styles.section}>
-          <SectionTitle icon={<LayoutDashboard size={16} color={COLOR.primary} />} title={t('settings.dashboard')} />
-          <TouchableOpacity
-            style={styles.navRow}
-            onPress={() => navigation.navigate('DashboardCustomize')}
-          >
-            <Text style={styles.navRowText}>{t('settings.customizeDashboard')}</Text>
-            <ChevronRight size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.navRow, { borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 2 }]}
-            onPress={() => navigation.navigate('UserManual')}
-          >
-            <Text style={styles.navRowText}>📖 User Manual</Text>
-            <ChevronRight size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-        </Card>
-
-        {/* SH Admin Config */}
-        {(user?.role === 'SH' || user?.role === 'SCA') && (
-          <Card style={styles.section}>
-            <SectionTitle icon={<Settings size={16} color={COLOR.primary} />} title="Admin Configuration" />
-            <TouchableOpacity
-              style={styles.navRow}
-              onPress={() => navigation.navigate('AllowanceConfig')}
-            >
-              <Text style={styles.navRowText}>💰 Allowance Config</Text>
-              <ChevronRight size={16} color="#9CA3AF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.navRow, { borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 2 }]}
-              onPress={() => navigation.navigate('VisitFieldConfig')}
-            >
-              <Text style={styles.navRowText}>📝 Visit Field Config</Text>
-              <ChevronRight size={16} color="#9CA3AF" />
-            </TouchableOpacity>
-          </Card>
-        )}
-
-        {/* Account */}
-        <Card style={styles.section}>
-          <SectionTitle icon={<LogOut size={16} color="#DC2626" />} title={t('settings.account')} />
-          {user && (
-            <View style={styles.userRow}>
-              <View style={[styles.userAvatar, { backgroundColor: COLOR.light }]}>
-                <Text style={[styles.userAvatarText, { color: COLOR.primary }]}>
-                  {user.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.userInfo}>
-                <Text style={styles.userName}>{user.name}</Text>
-                <Text style={styles.userEmail}>{user.email}</Text>
-                <Text style={[styles.userRole, { color: COLOR.primary }]}>{user.role}</Text>
-              </View>
+          {/* Offline status banner */}
+          {!isOnline && (
+            <View style={[styles.offlineBanner, { backgroundColor: T.danger }]}>
+              <WifiOff size={16} color="#FFF" />
+              <Text style={styles.offlineBannerText}>{t('offline.banner')}</Text>
             </View>
           )}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <LogOut size={16} color="#DC2626" />
-            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
-          </TouchableOpacity>
-        </Card>
 
-        <Text style={styles.version}>{t('settings.version')} 1.0.0</Text>
+          {/* Language */}
+          <Card style={styles.section}>
+            <SectionTitle icon={<Globe size={16} color={T.accent} />} title={t('settings.language')} />
+            <View style={styles.langRow}>
+              {(['en', 'hi'] as Language[]).map(lang => (
+                <TouchableOpacity
+                  key={lang}
+                  style={[
+                    styles.langChip,
+                    { backgroundColor: T.cardAlt, borderColor: T.line },
+                    language === lang && { backgroundColor: T.accent, borderColor: T.accent },
+                  ]}
+                  onPress={() => setLang(lang)}
+                >
+                  <Text style={[styles.langChipText, { color: language === lang ? '#FFF' : T.sub }]}>
+                    {lang === 'en' ? t('settings.english') : t('settings.hindi')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Card>
+
+          {/* Notifications */}
+          <Card style={styles.section}>
+            <SectionTitle icon={<Bell size={16} color={T.accent} />} title={t('settings.notifications')} />
+            <ToggleRow
+              icon={<MessageSquare size={16} color={T.success} />}
+              label={t('settings.whatsappNotifications')}
+              value={whatsapp}
+              onValueChange={toggleWhatsapp}
+              trackColor={T.accent}
+            />
+            <ToggleRow
+              icon={<Bell size={16} color={T.info} />}
+              label={t('settings.pushNotifications')}
+              value={push}
+              onValueChange={togglePush}
+              trackColor={T.accent}
+              last
+            />
+          </Card>
+
+          {/* Offline Mode */}
+          <Card style={styles.section}>
+            <SectionTitle
+              icon={isOnline
+                ? <Wifi size={16} color={T.success} />
+                : <WifiOff size={16} color={T.danger} />}
+              title={t('settings.offlineMode')}
+            />
+            <View style={styles.offlineRow}>
+              <View style={[styles.statusDot, { backgroundColor: isOnline ? T.success : T.danger }]} />
+              <Text style={[styles.offlineStatus, { color: T.text }]}>{isOnline ? 'Online' : 'Offline'}</Text>
+              {pendingCount > 0 && (
+                <Text style={[styles.pendingBadge, { color: T.warning }]}>{pendingCount} {t('settings.pendingSync')}</Text>
+              )}
+            </View>
+            <View style={styles.cacheButtons}>
+              <TouchableOpacity
+                style={[styles.cacheBtn, { borderColor: T.accent }]}
+                onPress={handleSync}
+                disabled={isSyncing || !isOnline}
+              >
+                <RefreshCw size={14} color={T.accent} />
+                <Text style={[styles.cacheBtnText, { color: T.accent }]}>
+                  {isSyncing ? t('offline.syncing') : t('settings.syncNow')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cacheBtn, { borderColor: T.line }]}
+                onPress={handleClearCache}
+              >
+                <Database size={14} color={T.dim} />
+                <Text style={[styles.cacheBtnText, { color: T.dim }]}>{t('settings.clearCache')}</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+
+          {/* AI Usage */}
+          {!loadingPrefs && aiQuotas.length > 0 && (
+            <Card style={styles.section}>
+              <SectionTitle icon={<RefreshCw size={16} color={T.accent} />} title={t('settings.aiUsage')} />
+              {aiQuotas.map(q => {
+                const pct = q.limit > 0 ? (q.used / q.limit) * 100 : 0;
+                const barColor = pct >= 100 ? T.danger : pct >= 66 ? T.warning : T.success;
+                return (
+                  <View key={q.endpoint} style={styles.quotaRow}>
+                    <View style={styles.quotaInfo}>
+                      <Text style={[styles.quotaLabel, { color: T.text }]}>{getQuotaLabel(q.endpoint)}</Text>
+                      <Text style={[styles.quotaCount, { color: barColor }]}>
+                        {q.used}/{q.limit}
+                      </Text>
+                    </View>
+                    <View style={[styles.quotaBarBg, { backgroundColor: T.cardAlt }]}>
+                      <View style={[styles.quotaBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }]} />
+                    </View>
+                  </View>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Dashboard Customization */}
+          <Card style={styles.section}>
+            <SectionTitle icon={<LayoutDashboard size={16} color={T.accent} />} title={t('settings.dashboard')} />
+            <TouchableOpacity
+              style={styles.navRow}
+              onPress={() => navigation.navigate('DashboardCustomize')}
+            >
+              <Text style={[styles.navRowText, { color: T.text }]}>{t('settings.customizeDashboard')}</Text>
+              <ChevronRight size={16} color={T.dim} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.navRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.line, marginTop: 2 }]}
+              onPress={() => navigation.navigate('UserManual')}
+            >
+              <Text style={[styles.navRowText, { color: T.text }]}>📖 User Manual</Text>
+              <ChevronRight size={16} color={T.dim} />
+            </TouchableOpacity>
+          </Card>
+
+          {/* SH Admin Config */}
+          {(user?.role === 'SH' || user?.role === 'SCA') && (
+            <Card style={styles.section}>
+              <SectionTitle icon={<Settings size={16} color={T.accent} />} title="Admin Configuration" />
+              <TouchableOpacity
+                style={styles.navRow}
+                onPress={() => navigation.navigate('AllowanceConfig')}
+              >
+                <Text style={[styles.navRowText, { color: T.text }]}>💰 Allowance Config</Text>
+                <ChevronRight size={16} color={T.dim} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.navRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.line, marginTop: 2 }]}
+                onPress={() => navigation.navigate('VisitFieldConfig')}
+              >
+                <Text style={[styles.navRowText, { color: T.text }]}>📝 Visit Field Config</Text>
+                <ChevronRight size={16} color={T.dim} />
+              </TouchableOpacity>
+            </Card>
+          )}
+
+          {/* Account */}
+          <Card style={styles.section}>
+            <SectionTitle icon={<LogOut size={16} color={T.danger} />} title={t('settings.account')} />
+            {user && (
+              <View style={styles.userRow}>
+                <View style={[styles.userAvatar, { backgroundColor: T.accentSoft }]}>
+                  <Text style={[styles.userAvatarText, { color: T.accent }]}>
+                    {user.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.userInfo}>
+                  <Text style={[styles.userName, { color: T.text }]}>{user.name}</Text>
+                  <Text style={[styles.userEmail, { color: T.sub }]}>{user.email}</Text>
+                  <Text style={[styles.userRole, { color: T.accent }]}>{user.role}</Text>
+                </View>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.logoutBtn, { borderColor: T.danger + '33', backgroundColor: T.danger + '14' }]}
+              onPress={handleLogout}
+            >
+              <LogOut size={16} color={T.danger} />
+              <Text style={[styles.logoutText, { color: T.danger }]}>{t('settings.logout')}</Text>
+            </TouchableOpacity>
+          </Card>
+
+          <Text style={[styles.version, { color: T.dim }]}>{t('settings.version')} 1.0.0</Text>
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
-const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string }) => (
-  <View style={styles.sectionHeader}>
-    {icon}
-    <Text style={styles.sectionTitle}>{title}</Text>
-  </View>
-);
-
-const ToggleRow = ({ icon, label, value, onValueChange, trackColor, last }: any) => (
-  <View style={[styles.toggleRow, last && styles.toggleRowLast]}>
-    <View style={styles.toggleLeft}>
+const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={styles.sectionHeader}>
       {icon}
-      <Text style={styles.toggleLabel}>{label}</Text>
+      <Text style={[styles.sectionTitle, { color: T.text }]}>{title}</Text>
     </View>
-    <Switch value={value} onValueChange={onValueChange} trackColor={{ true: trackColor }} />
-  </View>
-);
+  );
+};
+
+const ToggleRow = ({ icon, label, value, onValueChange, trackColor, last }: any) => {
+  const T = useAppTheme();
+  return (
+    <View style={[styles.toggleRow, { borderBottomColor: T.line }, last && styles.toggleRowLast]}>
+      <View style={styles.toggleLeft}>
+        {icon}
+        <Text style={[styles.toggleLabel, { color: T.text }]}>{label}</Text>
+      </View>
+      <Switch value={value} onValueChange={onValueChange} trackColor={{ true: trackColor }} />
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerIcon: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: 'rgba(255,255,255,0.8)', marginTop: 1 },
+
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 12, paddingBottom: 40 },
+  centeredWide: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 12 },
+
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#DC2626', borderRadius: 10, padding: 12,
+    borderRadius: 12, padding: 12,
   },
-  offlineBannerText: { color: '#FFF', fontSize: rf(13), fontWeight: '600', flex: 1 },
+  offlineBannerText: { color: '#FFF', fontSize: rf(13), fontFamily: Fonts.medium, flex: 1 },
   section: { gap: 0 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  sectionTitle: { fontSize: rf(14), fontFamily: Fonts.bold },
   langRow: { flexDirection: 'row', gap: 10 },
   langChip: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, borderWidth: 1,
   },
-  langChipText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
+  langChipText: { fontSize: rf(13), fontFamily: Fonts.medium },
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
   },
   toggleRowLast: { borderBottomWidth: 0 },
   toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  toggleLabel: { fontSize: rf(14), color: '#374151', fontWeight: '500' },
+  toggleLabel: { fontSize: rf(14), fontFamily: Fonts.medium },
   offlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  offlineStatus: { fontSize: rf(14), color: '#374151', fontWeight: '600' },
+  offlineStatus: { fontSize: rf(14), fontFamily: Fonts.medium },
   pendingBadge: {
     marginLeft: 'auto',
-    fontSize: rf(12), color: '#F59E0B', fontWeight: '600',
+    fontSize: rf(12), fontFamily: Fonts.medium,
   },
   cacheButtons: { flexDirection: 'row', gap: 10 },
   cacheBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+    gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
   },
-  cacheBtnText: { fontSize: rf(13), fontWeight: '600' },
+  cacheBtnText: { fontSize: rf(13), fontFamily: Fonts.medium },
   quotaRow: { marginBottom: 12 },
   quotaInfo: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  quotaLabel: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
-  quotaCount: { fontSize: rf(13), fontWeight: '700' },
-  quotaBarBg: { height: 6, backgroundColor: '#F3F4F6', borderRadius: 3 },
+  quotaLabel: { fontSize: rf(13), fontFamily: Fonts.medium },
+  quotaCount: { fontSize: rf(13), fontFamily: Fonts.bold },
+  quotaBarBg: { height: 6, borderRadius: 3 },
   quotaBarFill: { height: 6, borderRadius: 3 },
   navRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 12,
   },
-  navRowText: { fontSize: rf(14), color: '#374151', fontWeight: '500' },
+  navRowText: { fontSize: rf(14), fontFamily: Fonts.medium },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   userAvatar: {
     width: 48, height: 48, borderRadius: 24,
     alignItems: 'center', justifyContent: 'center',
   },
-  userAvatarText: { fontSize: rf(20), fontWeight: '700' },
+  userAvatarText: { fontSize: rf(20), fontFamily: Fonts.bold },
   userInfo: { flex: 1 },
-  userName: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
-  userEmail: { fontSize: rf(13), color: '#6B7280' },
-  userRole: { fontSize: rf(12), fontWeight: '600', marginTop: 2 },
+  userName: { fontSize: rf(16), fontFamily: Fonts.bold },
+  userEmail: { fontSize: rf(13), fontFamily: Fonts.regular },
+  userRole: { fontSize: rf(12), fontFamily: Fonts.medium, marginTop: 2 },
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 12, justifyContent: 'center',
-    borderWidth: 1, borderColor: '#FEE2E2', borderRadius: 10, backgroundColor: '#FEF2F2',
+    borderWidth: 1, borderRadius: 12,
   },
-  logoutText: { fontSize: rf(14), fontWeight: '700', color: '#DC2626' },
-  version: { textAlign: 'center', fontSize: rf(12), color: '#9CA3AF', paddingTop: 8 },
+  logoutText: { fontSize: rf(14), fontFamily: Fonts.bold },
+  version: { textAlign: 'center', fontSize: rf(12), fontFamily: Fonts.regular, paddingTop: 8 },
 });

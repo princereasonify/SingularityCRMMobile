@@ -4,3 +4,5 @@
 //
 #import <React/RCTBridgeModule.h>
 #import <React/RCTViewManager.h>
+// Lets AppDelegate.swift read the current JS-controlled orientation lock.
+#import "Orientation.h"

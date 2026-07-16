@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, TouchableOpacity } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { applyLoginOrientation, applyAuthedOrientation } from '../utils/orientation';
 
 export const navigationRef = createNavigationContainerRef<any>();
 import { createDrawerNavigator } from '@react-navigation/drawer';
@@ -409,6 +410,14 @@ const notifBannerStyles = StyleSheet.create({
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export const AppNavigator = () => {
   const { user, isLoading } = useAuth();
+
+  // Apply the per-device orientation lock (tablet → landscape, phone → portrait)
+  // for whichever flow is active. This also covers the app starting already
+  // logged-in (session restored), where the login screen never mounts.
+  useEffect(() => {
+    if (user) applyAuthedOrientation();
+    else applyLoginOrientation();
+  }, [user]);
 
   if (isLoading) return <LoadingSpinner fullScreen message="Loading..." />;
 

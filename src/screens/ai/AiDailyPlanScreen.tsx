@@ -1,22 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { RefreshCw, Check, Zap } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { RefreshCw, Check, Zap, ArrowLeft } from 'lucide-react-native';
 import { aiApi } from '../../api/ai';
 import { AiDailyPlan, AiAgendaItem, AiUsageQuota } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Card, SectionLabel } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 export const AiDailyPlanScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const [plan, setPlan] = useState<AiDailyPlan | null>(null);
@@ -85,80 +90,102 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
     finally { setRegenerating(false); }
   };
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading your plan..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading your plan..." />;
+
+  const exhausted = !!quota && quota.used >= quota.limit;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
-        title="AI Daily Plan"
-        subtitle={today}
-        color={COLOR.primary}
-        onBack={() => navigation.goBack()}
-        rightAction={
-          <TouchableOpacity onPress={handleRegenerate} disabled={regenerating}>
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
+            <ArrowLeft size={20} color="#FFF" />
+          </TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>AI Daily Plan</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>{today}</Text>
+          </View>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleRegenerate} disabled={regenerating}>
             <RefreshCw size={20} color="#FFF" />
           </TouchableOpacity>
-        }
-      />
+        </View>
+      </GradientBackground>
+
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadPlan(); }} colors={[COLOR.primary]} />}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 32 },
+          wide && styles.contentWide,
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadPlan(); }} tintColor={T.accent} />}
       >
         {/* Quota Banner */}
         {quota && (
-          <View style={[styles.quotaBanner, quota.used >= quota.limit && styles.quotaBannerExhausted]}>
-            <Zap size={14} color={quota.used >= quota.limit ? '#DC2626' : COLOR.primary} />
-            {quota.used >= quota.limit ? (
-              <Text style={[styles.quotaText, { color: '#DC2626' }]}>Limit reached — resets tomorrow</Text>
+          <Card style={[styles.quotaBanner, { backgroundColor: exhausted ? T.danger + '14' : T.accentSoft }]}>
+            <Zap size={14} color={exhausted ? T.danger : T.accent} />
+            {exhausted ? (
+              <Text style={[styles.quotaText, { color: T.danger }]}>Limit reached — resets tomorrow</Text>
             ) : (
-              <Text style={[styles.quotaText, { color: COLOR.primary }]}>
+              <Text style={[styles.quotaText, { color: T.accent }]}>
                 {quota.limit - quota.used} of {quota.limit} regenerations left today
               </Text>
             )}
-          </View>
+          </Card>
         )}
 
         {!plan ? (
           <View style={styles.emptyWrap}>
             <EmptyState title="No plan available" subtitle="Your AI plan will be ready every morning" icon="🤖" />
-            <Button title={regenerating ? 'Generating...' : 'Generate Plan'} onPress={handleRegenerate} variant="primary" disabled={regenerating || (quota?.used ?? 0) >= (quota?.limit ?? 99)} />
+            <GradientButton
+              label={regenerating ? 'Generating...' : 'Generate Plan'}
+              onPress={handleRegenerate}
+              loading={regenerating}
+              disabled={regenerating || (quota?.used ?? 0) >= (quota?.limit ?? 99)}
+              style={styles.fullBtn}
+            />
           </View>
         ) : (
           <>
             {/* Tips Banner */}
             {plan.dailyTips && (
-              <View style={[styles.tipsBanner, { backgroundColor: COLOR.light }]}>
+              <Card style={[styles.tipsBanner, { backgroundColor: T.accentSoft }]}>
                 <Text style={styles.tipsIcon}>💡</Text>
-                <Text style={[styles.tipsText, { color: COLOR.primary }]}>{plan.dailyTips}</Text>
-              </View>
+                <Text style={[styles.tipsText, { color: T.accent }]}>{plan.dailyTips}</Text>
+              </Card>
             )}
 
             {/* Target Reminder */}
             {plan.targetReminder && (
-              <View style={styles.targetBanner}>
+              <Card style={[styles.targetBanner, { backgroundColor: T.warning + '14' }]}>
                 <Text style={styles.targetIcon}>🎯</Text>
-                <Text style={styles.targetText}>{plan.targetReminder}</Text>
-              </View>
+                <Text style={[styles.targetText, { color: T.warning }]}>{plan.targetReminder}</Text>
+              </Card>
             )}
 
             {/* Agenda */}
-            <Text style={styles.sectionTitle}>Suggested Agenda ({plan.suggestedAgenda?.length ?? 0} items)</Text>
+            <SectionLabel>Suggested Agenda ({plan.suggestedAgenda?.length ?? 0} items)</SectionLabel>
             {(plan.suggestedAgenda ?? []).map((item: AiAgendaItem, i: number) => {
               const selected = selectedItems.has(i);
               return (
                 <TouchableOpacity key={i} onPress={() => toggleItem(i)} activeOpacity={0.8}>
-                  <Card style={selected ? { ...styles.agendaCard, borderLeftWidth: 4, borderLeftColor: COLOR.primary } : styles.agendaCard}>
+                  <Card style={selected ? { borderLeftWidth: 4, borderLeftColor: T.accent } : undefined}>
                     <View style={styles.agendaHeader}>
                       <View style={styles.timeBox}>
-                        <Text style={[styles.agendaTime, { color: COLOR.primary }]}>{item.time}</Text>
+                        <Text style={[styles.agendaTime, { color: T.accent }]}>{item.time}</Text>
                       </View>
                       <View style={styles.agendaContent}>
-                        <Text style={styles.agendaAction}>{item.action}</Text>
-                        <Text style={styles.agendaSchool}>🏫 {item.school}</Text>
-                        <Text style={styles.agendaReason}>💬 {item.reason}</Text>
+                        <Text style={[styles.agendaAction, { color: T.text }]}>{item.action}</Text>
+                        <Text style={[styles.agendaSchool, { color: T.sub }]}>🏫 {item.school}</Text>
+                        <Text style={[styles.agendaReason, { color: T.dim }]}>💬 {item.reason}</Text>
                       </View>
-                      <View style={[styles.checkbox, selected && { backgroundColor: COLOR.primary, borderColor: COLOR.primary }]}>
+                      <View style={[
+                        styles.checkbox,
+                        { borderColor: T.line },
+                        selected && { backgroundColor: T.accent, borderColor: T.accent },
+                      ]}>
                         {selected && <Check size={14} color="#FFF" />}
                       </View>
                     </View>
@@ -168,57 +195,59 @@ export const AiDailyPlanScreen = ({ navigation }: any) => {
             })}
 
             {plan.suggestedAgenda && plan.suggestedAgenda.length > 0 && (
-              <Button
-                title={accepting ? 'Accepting...' : `Accept Plan (${selectedItems.size} items)`}
+              <GradientButton
+                label={accepting ? 'Accepting...' : `Accept Plan (${selectedItems.size} items)`}
                 onPress={handleAccept}
-                variant="primary"
+                loading={accepting}
                 disabled={accepting || selectedItems.size === 0}
-                style={{ marginTop: 8 }}
+                style={[styles.fullBtn, { marginTop: 8 }]}
               />
             )}
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerText: { flex: 1 },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
-  tipsBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    borderRadius: 12, padding: 14,
-  },
+  content: { padding: 16, gap: 12 },
+  contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
+
+  tipsBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   tipsIcon: { fontSize: rf(18) },
-  tipsText: { flex: 1, fontSize: rf(14), lineHeight: 20, fontWeight: '500' },
-  targetBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#FFF7ED', borderRadius: 12, padding: 14,
-  },
+  tipsText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(14), lineHeight: 20 },
+  targetBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   targetIcon: { fontSize: rf(18) },
-  targetText: { flex: 1, fontSize: rf(14), color: '#92400E', lineHeight: 20 },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  agendaCard: { overflow: 'hidden' },
+  targetText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 20 },
+
   agendaHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   timeBox: { minWidth: 52, alignItems: 'center', paddingTop: 2 },
-  agendaTime: { fontSize: rf(13), fontWeight: '700' },
+  agendaTime: { fontFamily: Fonts.bold, fontSize: rf(13) },
   agendaContent: { flex: 1 },
-  agendaAction: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 4 },
-  agendaSchool: { fontSize: rf(13), color: '#6B7280', marginBottom: 2 },
-  agendaReason: { fontSize: rf(12), color: '#9CA3AF' },
+  agendaAction: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 4 },
+  agendaSchool: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 2 },
+  agendaReason: { fontFamily: Fonts.regular, fontSize: rf(12) },
   emptyWrap: { alignItems: 'center', gap: 16, padding: 16 },
+  fullBtn: { alignSelf: 'stretch' },
   checkbox: {
     width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2, borderColor: '#D1D5DB',
+    borderWidth: 2,
     alignItems: 'center', justifyContent: 'center',
     marginTop: 2,
   },
-  quotaBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10,
-  },
-  quotaBannerExhausted: { backgroundColor: '#FEF2F2' },
-  quotaText: { fontSize: rf(13), fontWeight: '600' },
+  quotaBanner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  quotaText: { fontFamily: Fonts.medium, fontSize: rf(13) },
 });

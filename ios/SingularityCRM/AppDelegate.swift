@@ -34,6 +34,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     return true
   }
+
+  // react-native-orientation-locker can only REQUEST a lock; iOS still asks the
+  // AppDelegate what the app supports. Wire it back to the library, or the JS lock
+  // (per-device: iPad landscape, iPhone portrait) is ignored. `Orientation` is
+  // exposed to Swift via the bridging header (#import "Orientation.h").
+  func application(
+    _ application: UIApplication,
+    supportedInterfaceOrientationsFor window: UIWindow?
+  ) -> UIInterfaceOrientationMask {
+    return Orientation.getOrientation()
+  }
 }
 
 class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {

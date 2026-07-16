@@ -1,36 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Alert, Linking,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  Alert, Linking, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Phone, CheckCircle, Clock, History, Pencil } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Phone, CheckCircle, Clock, History, Pencil } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
 import { contactsApi } from '../../api/contacts';
 import { School, Contact, SchoolVisitLog } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
+import { Screen, AppHeader, Card, Badge } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
 import { formatDate, formatRelativeDate } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
-
-const RELATIONSHIP_COLORS: Record<string, string> = {
-  New: '#9CA3AF', Warm: '#F59E0B', Strong: '#16A34A',
-  Champion: '#7C3AED', Detractor: '#DC2626',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Active: '#16A34A', Inactive: '#9CA3AF', Blacklisted: '#DC2626',
-};
+import { rf, isTabletDevice } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 export const SchoolDetailScreen = ({ navigation, route }: any) => {
   const { schoolId } = route.params;
   const { user } = useAuth();
-  const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
+
+  const RELATIONSHIP_COLORS: Record<string, string> = {
+    New: T.dim, Warm: T.warning, Strong: T.success,
+    Champion: '#7C3AED', Detractor: T.danger,
+  };
+  const STATUS_COLORS: Record<string, string> = {
+    Active: T.success, Inactive: T.dim, Blacklisted: T.danger,
+  };
 
   const [school, setSchool] = useState<School | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -71,12 +71,12 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
     load();
   }, [schoolId]);
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading..." />;
   if (!school) return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader title="School" color={COLOR.primary} onBack={() => navigation.goBack()} />
+    <Screen>
+      <AppHeader title="School" onBack={() => navigation.goBack()} />
       <EmptyState title="School not found" icon="🏫" />
-    </SafeAreaView>
+    </Screen>
   );
 
   const infoRows = [
@@ -90,107 +90,124 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
     { label: 'Geofence Radius', value: school.geofenceRadiusMeters ? `${school.geofenceRadiusMeters}m` : undefined },
   ].filter(r => r.value);
 
+  const headerRight = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <TouchableOpacity
+        onPress={() => navigation.navigate('AddSchool', { school })}
+        style={[styles.hIcon, { backgroundColor: T.card, borderColor: T.line }]}
+      >
+        <Pencil size={18} color={T.accent} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => navigation.navigate('AuditHistory', { entityType: 'School', entityId: school.id, title: school.name })}
+        style={[styles.hIcon, { backgroundColor: T.card, borderColor: T.line }]}
+      >
+        <History size={18} color={T.accent} />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader
+    <Screen>
+      <AppHeader
         title={school.name}
         subtitle={`${school.city || ''}${school.state ? `, ${school.state}` : ''}`}
-        color={COLOR.primary}
         onBack={() => navigation.goBack()}
-        rightAction={
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <TouchableOpacity onPress={() => navigation.navigate('AddSchool', { school })}>
-              <Pencil size={20} color="#FFF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('AuditHistory', { entityType: 'School', entityId: school.id, title: school.name })}>
-              <History size={20} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-        }
+        right={headerRight}
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }, twoWide && styles.contentWide]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Stats Row */}
-        <View style={styles.statsRow}>
+        <Card style={styles.statsRow}>
           {[
             { label: 'Students', value: school.studentCount ?? '—' },
             { label: 'Contacts', value: school.contactCount ?? contacts.length },
             { label: 'Leads', value: school.leadCount ?? '—' },
-          ].map(s => (
-            <View key={s.label} style={styles.statBox}>
-              <Text style={styles.statValue}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
+          ].map((s, i) => (
+            <View
+              key={s.label}
+              style={[styles.statBox, i > 0 && { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: T.line }]}
+            >
+              <Text style={[styles.statValue, { color: T.text }]}>{s.value}</Text>
+              <Text style={[styles.statLabel, { color: T.sub }]}>{s.label}</Text>
             </View>
           ))}
-        </View>
+        </Card>
 
         {/* Status + Category */}
         <View style={styles.badgeRow}>
-          <Badge label={school.status} color={STATUS_COLORS[school.status] || '#9CA3AF'} />
+          <Badge label={school.status} color={STATUS_COLORS[school.status] || T.dim} />
           {school.isPartnerOffice && <Badge label="Partner Office" color="#7C3AED" />}
           {school.lastVisitDate && (
-            <Text style={styles.lastVisit}>Last visited {formatRelativeDate(school.lastVisitDate)}</Text>
+            <Text style={[styles.lastVisit, { color: T.sub }]}>Last visited {formatRelativeDate(school.lastVisitDate)}</Text>
           )}
         </View>
 
         {/* Info Card */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>School Information</Text>
-          {infoRows.map(row => (
-            <View key={row.label} style={styles.infoRow}>
-              <Text style={styles.infoLabel}>{row.label}</Text>
-              <Text style={styles.infoValue}>{row.value}</Text>
+        <Card>
+          <Text style={[styles.sectionTitle, { color: T.text }]}>School Information</Text>
+          {infoRows.map((row, i) => (
+            <View
+              key={row.label}
+              style={[styles.infoRow, i < infoRows.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}
+            >
+              <Text style={[styles.infoLabel, { color: T.sub }]}>{row.label}</Text>
+              <Text style={[styles.infoValue, { color: T.text }]}>{row.value}</Text>
             </View>
           ))}
         </Card>
 
         {/* Principal */}
         {(school.principalName || school.principalPhone) && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Principal</Text>
+          <Card>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Principal</Text>
             {school.principalName && (
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Name</Text>
-                <Text style={styles.infoValue}>{school.principalName}</Text>
+                <Text style={[styles.infoLabel, { color: T.sub }]}>Name</Text>
+                <Text style={[styles.infoValue, { color: T.text }]}>{school.principalName}</Text>
               </View>
             )}
             {school.principalPhone && (
               <TouchableOpacity style={styles.phoneRow} onPress={() => Linking.openURL(`tel:${school.principalPhone}`)}>
-                <Phone size={14} color={COLOR.primary} />
-                <Text style={[styles.phoneText, { color: COLOR.primary }]}>{school.principalPhone}</Text>
+                <Phone size={14} color={T.accent} />
+                <Text style={[styles.phoneText, { color: T.accent }]}>{school.principalPhone}</Text>
               </TouchableOpacity>
             )}
           </Card>
         )}
 
         {/* Contacts */}
-        <Card style={styles.section}>
+        <Card>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Contacts ({contacts.length})</Text>
+            <Text style={[styles.sectionTitle, { color: T.text, marginBottom: 0 }]}>Contacts ({contacts.length})</Text>
             <TouchableOpacity onPress={() => navigation.navigate('AddContact', { schoolId: school.id, schoolName: school.name })}>
-              <Text style={[styles.addLink, { color: COLOR.primary }]}>+ Add</Text>
+              <Text style={[styles.addLink, { color: T.accent }]}>+ Add</Text>
             </TouchableOpacity>
           </View>
           {contacts.length === 0 ? (
-            <Text style={styles.emptyText}>No contacts yet</Text>
+            <Text style={[styles.emptyText, { color: T.dim }]}>No contacts yet</Text>
           ) : (
-            contacts.map(c => (
+            contacts.map((c, i) => (
               <TouchableOpacity
                 key={c.id}
-                style={styles.contactRow}
+                style={[styles.contactRow, i < contacts.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}
                 onPress={() => navigation.navigate('ContactDetail', { contactId: c.id })}
               >
-                <View style={styles.contactAvatar}>
-                  <Text style={styles.avatarText}>{c.name.charAt(0).toUpperCase()}</Text>
+                <View style={[styles.contactAvatar, { backgroundColor: T.accentSoft }]}>
+                  <Text style={[styles.avatarText, { color: T.accent }]}>{c.name.charAt(0).toUpperCase()}</Text>
                 </View>
                 <View style={styles.contactInfo}>
-                  <Text style={styles.contactName}>{c.name}</Text>
-                  {c.designation && <Text style={styles.contactDes}>{c.designation}</Text>}
-                  {c.phone && <Text style={styles.contactPhone}>{c.phone}</Text>}
+                  <Text style={[styles.contactName, { color: T.text }]}>{c.name}</Text>
+                  {c.designation && <Text style={[styles.contactDes, { color: T.sub }]}>{c.designation}</Text>}
+                  {c.phone && <Text style={[styles.contactPhone, { color: T.dim }]}>{c.phone}</Text>}
                 </View>
                 <Badge
                   label={c.relationship}
-                  color={RELATIONSHIP_COLORS[c.relationship] || '#9CA3AF'}
+                  color={RELATIONSHIP_COLORS[c.relationship] || T.dim}
                 />
               </TouchableOpacity>
             ))
@@ -199,69 +216,69 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
 
         {/* Visit History */}
         {visits.length > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Visits</Text>
+          <Card>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Recent Visits</Text>
             {visits.slice(0, 5).map((v, i) => (
-              <View key={v.id ?? i} style={styles.visitRow}>
+              <View
+                key={v.id ?? i}
+                style={[styles.visitRow, i < Math.min(visits.length, 5) - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}
+              >
                 <View style={styles.visitIcon}>
                   {v.isVerified
-                    ? <CheckCircle size={16} color="#16A34A" />
-                    : <Clock size={16} color="#9CA3AF" />}
+                    ? <CheckCircle size={16} color={T.success} />
+                    : <Clock size={16} color={T.dim} />}
                 </View>
                 <View style={styles.visitInfo}>
-                  <Text style={styles.visitDate}>{formatDate(v.enteredAt)}</Text>
+                  <Text style={[styles.visitDate, { color: T.text }]}>{formatDate(v.enteredAt)}</Text>
                   {v.durationMinutes != null && (
-                    <Text style={styles.visitDuration}>{v.durationMinutes} min</Text>
+                    <Text style={[styles.visitDuration, { color: T.sub }]}>{v.durationMinutes} min</Text>
                   )}
                 </View>
-                {v.hasVisitReport && <Badge label="Report" color="#16A34A" />}
+                {v.hasVisitReport && <Badge label="Report" color={T.success} />}
               </View>
             ))}
           </Card>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
   content: { padding: 16, gap: 12, paddingBottom: 32 },
-  statsRow: {
-    flexDirection: 'row', backgroundColor: '#FFF',
-    borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
+  hIcon: {
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
   },
+  statsRow: { flexDirection: 'row', padding: 16 },
   statBox: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: rf(20), fontWeight: '700', color: '#111827' },
-  statLabel: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
+  statValue: { fontFamily: Fonts.bold, fontSize: rf(20), letterSpacing: -0.4 },
+  statLabel: { fontFamily: Fonts.medium, fontSize: rf(11), marginTop: 2 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  lastVisit: { fontSize: rf(12), color: '#9CA3AF' },
-  section: { gap: 0 },
+  lastVisit: { fontFamily: Fonts.regular, fontSize: rf(12) },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 12 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  infoLabel: { fontSize: rf(13), color: '#6B7280' },
-  infoValue: { fontSize: rf(13), color: '#111827', fontWeight: '500', flex: 1, textAlign: 'right' },
+  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, gap: 12 },
+  infoLabel: { fontFamily: Fonts.regular, fontSize: rf(13) },
+  infoValue: { fontFamily: Fonts.medium, fontSize: rf(13), flex: 1, textAlign: 'right' },
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 8 },
-  phoneText: { fontSize: rf(14), fontWeight: '600' },
-  addLink: { fontSize: rf(13), fontWeight: '700' },
-  emptyText: { fontSize: rf(13), color: '#9CA3AF', textAlign: 'center', paddingVertical: 8 },
-  contactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', gap: 12 },
+  phoneText: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  addLink: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  emptyText: { fontFamily: Fonts.regular, fontSize: rf(13), textAlign: 'center', paddingVertical: 8 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
   contactAvatar: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#E0E7FF', alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: rf(14), fontWeight: '700', color: '#4338CA' },
+  avatarText: { fontFamily: Fonts.bold, fontSize: rf(14) },
   contactInfo: { flex: 1 },
-  contactName: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  contactDes: { fontSize: rf(12), color: '#6B7280' },
-  contactPhone: { fontSize: rf(12), color: '#9CA3AF' },
-  visitRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  contactName: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  contactDes: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 1 },
+  contactPhone: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 1 },
+  visitRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
   visitIcon: { width: 24, alignItems: 'center' },
   visitInfo: { flex: 1 },
-  visitDate: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  visitDuration: { fontSize: rf(12), color: '#6B7280' },
+  visitDate: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  visitDuration: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 1 },
 });

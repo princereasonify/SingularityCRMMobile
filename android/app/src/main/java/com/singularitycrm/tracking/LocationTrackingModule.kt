@@ -1,5 +1,6 @@
 package com.singularitycrm.tracking
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.facebook.react.bridge.*
@@ -8,6 +9,34 @@ class LocationTrackingModule(private val reactContext: ReactApplicationContext) 
     ReactContextBaseJavaModule(reactContext) {
 
     override fun getName() = "LocationTrackingModule"
+
+    /**
+     * Overwrites the token the running service pings with.
+     *
+     * The service can outlive many access tokens (START_STICKY, stopWithTask=false).
+     * It re-reads this value from SharedPreferences on every ping, so writing here is
+     * enough to keep a long-running service authenticated — no restart required.
+     * An empty token clears the stored credentials (logout).
+     */
+    @ReactMethod
+    fun updateAuthToken(token: String, apiBaseUrl: String, promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                LocationTrackingService.PREFS_NAME, Context.MODE_PRIVATE
+            )
+            val editor = prefs.edit()
+            if (token.isEmpty()) {
+                editor.remove(LocationTrackingService.EXTRA_TOKEN)
+            } else {
+                editor.putString(LocationTrackingService.EXTRA_TOKEN, token)
+                editor.putString(LocationTrackingService.EXTRA_API_URL, apiBaseUrl)
+            }
+            editor.apply()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("UPDATE_TOKEN_ERROR", e.message, e)
+        }
+    }
 
     @ReactMethod
     fun startTracking(token: String, apiBaseUrl: String, promise: Promise) {
@@ -40,7 +69,6 @@ class LocationTrackingModule(private val reactContext: ReactApplicationContext) 
 
     @ReactMethod
     fun isTracking(promise: Promise) {
-        // Always resolve — JS side tracks state via AsyncStorage
-        promise.resolve(false)
+        promise.resolve(LocationTrackingService.isRunning)
     }
 }

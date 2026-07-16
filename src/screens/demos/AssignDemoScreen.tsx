@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, FlatList, ActivityIndicator, Alert,
+  Modal, FlatList, ActivityIndicator, Alert, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, ChevronDown, X, Clock, User, School } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Search, ChevronDown, X, Clock, User, School, ArrowLeft } from 'lucide-react-native';
 import { DateInput } from '../../components/common/DateInput';
 import { demosApi } from '../../api/demos';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { GradientButton } from '../../components/common/GradientButton';
+import { Card, Chip } from '../../components/ui';
+import { rf, isTabletDevice } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 const MODES = ['Offline', 'Online', 'Hybrid'];
 
@@ -30,6 +32,7 @@ const PickerModal = ({
   onSelect: (item: any) => void;
   onClose: () => void;
 }) => {
+  const T = useAppTheme();
   const [search, setSearch] = useState('');
 
   const safeItems = Array.isArray(items) ? items : [];
@@ -41,25 +44,25 @@ const PickerModal = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={pickerStyles.overlay}>
-        <View style={pickerStyles.sheet}>
-          <View style={pickerStyles.header}>
-            <Text style={pickerStyles.title}>{title}</Text>
+        <View style={[pickerStyles.sheet, { backgroundColor: T.card }]}>
+          <View style={[pickerStyles.header, { borderBottomColor: T.line }]}>
+            <Text style={[pickerStyles.title, { color: T.text }]}>{title}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={20} color="#6B7280" />
+              <X size={20} color={T.sub} />
             </TouchableOpacity>
           </View>
-          <View style={pickerStyles.searchBar}>
-            <Search size={16} color="#9CA3AF" />
+          <View style={[pickerStyles.searchBar, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+            <Search size={16} color={T.dim} />
             <TextInput
-              style={pickerStyles.searchInput}
+              style={[pickerStyles.searchInput, { color: T.text }]}
               placeholder={`Search ${title.toLowerCase()}...`}
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.dim}
               value={search}
               onChangeText={setSearch}
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')}>
-                <X size={14} color="#9CA3AF" />
+                <X size={14} color={T.dim} />
               </TouchableOpacity>
             )}
           </View>
@@ -69,18 +72,18 @@ const PickerModal = ({
             keyExtractor={item => String(item.id)}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={pickerStyles.item}
+                style={[pickerStyles.item, { borderBottomColor: T.line }]}
                 onPress={() => { onSelect(item); onClose(); setSearch(''); }}
               >
-                <Text style={pickerStyles.itemLabel} numberOfLines={1}>{item[labelKey]}</Text>
+                <Text style={[pickerStyles.itemLabel, { color: T.text }]} numberOfLines={1}>{item[labelKey]}</Text>
                 {sublabelKey && item[sublabelKey] ? (
-                  <Text style={pickerStyles.itemSub} numberOfLines={1}>{item[sublabelKey]}</Text>
+                  <Text style={[pickerStyles.itemSub, { color: T.sub }]} numberOfLines={1}>{item[sublabelKey]}</Text>
                 ) : null}
               </TouchableOpacity>
             )}
             ListEmptyComponent={
               <View style={pickerStyles.empty}>
-                <Text style={pickerStyles.emptyText}>No results found</Text>
+                <Text style={[pickerStyles.emptyText, { color: T.dim }]}>No results found</Text>
               </View>
             }
             keyboardShouldPersistTaps="handled"
@@ -93,34 +96,36 @@ const PickerModal = ({
 
 const pickerStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 20, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    padding: 20, borderBottomWidth: 1,
   },
-  title: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  title: { fontFamily: Fonts.bold, fontSize: rf(16) },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     margin: 12, paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: '#F9FAFB', borderRadius: 12,
-    borderWidth: 1, borderColor: '#E5E7EB',
+    borderRadius: 12, borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14) },
   item: {
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
+    borderBottomWidth: 1,
   },
-  itemLabel: { fontSize: rf(14), color: '#111827', fontWeight: '500' },
-  itemSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
+  itemLabel: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  itemSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
   empty: { padding: 32, alignItems: 'center' },
-  emptyText: { fontSize: rf(14), color: '#9CA3AF' },
+  emptyText: { fontFamily: Fonts.regular, fontSize: rf(14) },
 });
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export const AssignDemoScreen = ({ navigation, route }: any) => {
   const { leadId: routeLeadId, schoolId: routeSchoolId, schoolName: routeSchoolName } = route.params ?? {};
   const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const tabletWide = isTabletDevice && width > height;
 
   // Data
   const [schools, setSchools] = useState<any[]>([]);
@@ -198,151 +203,167 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader title="Assign Demo" subtitle="Schedule a product demo" color={COLOR.primary} onBack={() => navigation.goBack()} />
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
+            <ArrowLeft size={20} color="#FFF" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Assign Demo</Text>
+            <Text style={styles.headerSub}>Schedule a product demo</Text>
+          </View>
+        </View>
+      </GradientBackground>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }, tabletWide && styles.contentWide]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* School */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>SCHOOL</Text>
-          <Text style={styles.fieldLabel}>School *</Text>
+        <Card>
+          <Text style={[styles.cardTitle, { color: T.dim }]}>SCHOOL</Text>
+          <Text style={[styles.fieldLabel, { color: T.sub }]}>School *</Text>
           <TouchableOpacity
-            style={styles.selector}
+            style={[styles.selector, { backgroundColor: T.fieldBg, borderColor: T.line }]}
             onPress={() => setShowSchoolPicker(true)}
             disabled={loadingSchools}
           >
             {loadingSchools ? (
-              <ActivityIndicator size="small" color={COLOR.primary} />
+              <ActivityIndicator size="small" color={T.accent} />
             ) : (
-              <School size={16} color={selectedSchool ? COLOR.primary : '#9CA3AF'} />
+              <School size={16} color={selectedSchool ? T.accent : T.dim} />
             )}
-            <Text style={[styles.selectorText, !selectedSchool && styles.placeholder]} numberOfLines={1}>
+            <Text style={[styles.selectorText, { color: selectedSchool ? T.text : T.dim }]} numberOfLines={1}>
               {selectedSchool
                 ? `${selectedSchool.name}${selectedSchool.city ? ` (${selectedSchool.city})` : ''}`
                 : 'Select school…'}
             </Text>
-            <ChevronDown size={16} color="#9CA3AF" />
+            <ChevronDown size={16} color={T.dim} />
           </TouchableOpacity>
-        </View>
+        </Card>
 
         {/* Assign To */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>ASSIGNMENT</Text>
-          <Text style={styles.fieldLabel}>Assign To (Demo Person) *</Text>
+        <Card>
+          <Text style={[styles.cardTitle, { color: T.dim }]}>ASSIGNMENT</Text>
+          <Text style={[styles.fieldLabel, { color: T.sub }]}>Assign To (Demo Person) *</Text>
           <TouchableOpacity
-            style={styles.selector}
+            style={[styles.selector, { backgroundColor: T.fieldBg, borderColor: T.line }]}
             onPress={() => setShowUserPicker(true)}
             disabled={loadingUsers}
           >
             {loadingUsers ? (
-              <ActivityIndicator size="small" color={COLOR.primary} />
+              <ActivityIndicator size="small" color={T.accent} />
             ) : (
-              <User size={16} color={selectedUser ? COLOR.primary : '#9CA3AF'} />
+              <User size={16} color={selectedUser ? T.accent : T.dim} />
             )}
-            <Text style={[styles.selectorText, !selectedUser && styles.placeholder]} numberOfLines={1}>
+            <Text style={[styles.selectorText, { color: selectedUser ? T.text : T.dim }]} numberOfLines={1}>
               {selectedUser
                 ? `${selectedUser.name}${selectedUser.role ? ` (${selectedUser.role})` : ''}`
                 : 'Select person…'}
             </Text>
-            <ChevronDown size={16} color="#9CA3AF" />
+            <ChevronDown size={16} color={T.dim} />
           </TouchableOpacity>
-        </View>
+        </Card>
 
         {/* Schedule */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>SCHEDULE</Text>
+        <Card>
+          <Text style={[styles.cardTitle, { color: T.dim }]}>SCHEDULE</Text>
 
           <DateInput
             label="Date * (Today or future only)"
             value={scheduledDate}
             onChange={setScheduledDate}
             placeholder="Select date"
-            accentColor={COLOR.primary}
+            accentColor={T.accent}
           />
 
           <View style={styles.twoCol}>
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>Start Time *</Text>
-              <View style={styles.inputRow}>
-                <Clock size={16} color="#9CA3AF" style={styles.inputIcon} />
+              <Text style={[styles.fieldLabel, { color: T.sub }]}>Start Time *</Text>
+              <View style={[styles.inputRow, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+                <Clock size={16} color={T.dim} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.inputWithIcon}
+                  style={[styles.inputWithIcon, { color: T.text }]}
                   value={startTime}
                   onChangeText={setStartTime}
                   placeholder="10:00"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.dim}
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
             </View>
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>End Time *</Text>
-              <View style={styles.inputRow}>
-                <Clock size={16} color="#9CA3AF" style={styles.inputIcon} />
+              <Text style={[styles.fieldLabel, { color: T.sub }]}>End Time *</Text>
+              <View style={[styles.inputRow, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
+                <Clock size={16} color={T.dim} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.inputWithIcon}
+                  style={[styles.inputWithIcon, { color: T.text }]}
                   value={endTime}
                   onChangeText={setEndTime}
                   placeholder="11:00"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.dim}
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
             </View>
           </View>
-        </View>
+        </Card>
 
         {/* Demo Mode */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>DEMO MODE</Text>
+        <Card>
+          <Text style={[styles.cardTitle, { color: T.dim }]}>DEMO MODE</Text>
           <View style={styles.chipRow}>
             {MODES.map(m => (
-              <TouchableOpacity
+              <Chip
                 key={m}
-                style={[styles.chip, mode === m && { backgroundColor: COLOR.primary, borderColor: COLOR.primary }]}
+                label={m}
+                active={mode === m}
+                color={T.accent}
                 onPress={() => setMode(m)}
-              >
-                <Text style={[styles.chipText, mode === m && { color: '#FFF' }]}>{m}</Text>
-              </TouchableOpacity>
+              />
             ))}
           </View>
 
           {mode !== 'Offline' && (
             <>
-              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Meeting Link</Text>
+              <Text style={[styles.fieldLabel, { color: T.sub, marginTop: 12 }]}>Meeting Link</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
                 value={meetingLink}
                 onChangeText={setMeetingLink}
                 placeholder="https://meet.google.com/..."
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={T.dim}
                 keyboardType="url"
                 autoCapitalize="none"
               />
             </>
           )}
-        </View>
+        </Card>
 
         {/* Notes */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>NOTES</Text>
+        <Card>
+          <Text style={[styles.cardTitle, { color: T.dim }]}>NOTES</Text>
           <TextInput
-            style={[styles.input, styles.textarea]}
+            style={[styles.input, styles.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={notes}
             onChangeText={setNotes}
             placeholder="Any special instructions or preparation notes..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={T.dim}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
           />
-        </View>
+        </Card>
 
-        <Button
-          title={submitting ? 'Assigning...' : 'Assign Demo'}
+        <GradientButton
+          label={submitting ? 'Assigning...' : 'Assign Demo'}
           onPress={handleSubmit}
-          variant="primary"
+          loading={submitting}
           disabled={submitting}
           style={{ marginTop: 4, marginBottom: 16 }}
         />
@@ -369,51 +390,50 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
         onSelect={item => setSelectedUser(item)}
         onClose={() => setShowUserPicker(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 32 },
-  card: {
-    backgroundColor: '#FFF', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
   },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  scroll: { flex: 1 },
+  content: { padding: 16, gap: 14 },
+  contentWide: { maxWidth: 760, width: '100%', alignSelf: 'center' },
   cardTitle: {
-    fontSize: rf(11), fontWeight: '700', color: '#9CA3AF',
+    fontFamily: Fonts.bold, fontSize: rf(11),
     letterSpacing: 0.8, marginBottom: 14,
   },
-  fieldLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
   selector: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FAFAFA',
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
   },
-  selectorText: { flex: 1, fontSize: rf(14), color: '#111827', fontWeight: '500' },
-  placeholder: { color: '#9CA3AF', fontWeight: '400' },
+  selectorText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(14) },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FAFAFA',
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
     marginBottom: 12,
   },
   inputIcon: {},
-  inputWithIcon: { flex: 1, fontSize: rf(14), color: '#111827' },
+  inputWithIcon: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14) },
   input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+    borderWidth: 1, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: rf(14), color: '#111827', backgroundColor: '#FAFAFA',
+    fontFamily: Fonts.regular, fontSize: rf(14),
   },
   textarea: { height: 100, textAlignVertical: 'top' },
   twoCol: { flexDirection: 'row', gap: 12 },
   colField: { flex: 1 },
   chipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  chip: {
-    paddingHorizontal: 18, paddingVertical: 9, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  chipText: { fontSize: rf(13), color: '#374151', fontWeight: '600' },
 });

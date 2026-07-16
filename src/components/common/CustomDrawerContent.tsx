@@ -27,7 +27,10 @@ export const CustomDrawerContent = (props: DrawerContentComponentProps) => {
 
   const handleLogout = () => {
     setShowLogoutModal(false);
-    logout();
+    // Let the modal finish its dismiss animation BEFORE logout() clears the user —
+    // clearing the user unmounts this whole drawer, and tearing down a <Modal> that
+    // is still animating crashes natively on iOS. The small delay lets it close first.
+    setTimeout(() => logout(), 350);
   };
 
   return (

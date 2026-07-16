@@ -2,21 +2,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ChevronDown, ChevronUp, Users, Award, TrendingUp, Activity,
+  CheckCircle, AlertTriangle, AlertCircle,
+} from 'lucide-react-native';
 import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
+import { GradientBackground } from '../../components/common/GradientBackground';
 import { dashboardApi } from '../../api/dashboard';
 import { UserPerformanceDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge, RoleBadge } from '../../components/common/Badge';
+import { Card, StatTile, Badge, SectionLabel } from '../../components/ui';
+import { RoleBadge } from '../../components/common/Badge';
 import { Avatar } from '../../components/common/Avatar';
-import { KPICard } from '../../components/common/KPICard';
 import { ProgressBar } from '../../components/common/ProgressBar';
-import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS, getStatusColor, getProgressColor } from '../../utils/constants';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { getStatusColor } from '../../utils/constants';
 import { formatCurrency } from '../../utils/formatting';
-import { rf, getCardWidth } from '../../utils/responsive';
+import { rf, isTabletDevice, getCardWidth } from '../../utils/responsive';
+import { Fonts } from '../../theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 const LABEL_MAP: Record<string, string> = {
   FO: 'My Performance',
@@ -27,10 +32,11 @@ const LABEL_MAP: Record<string, string> = {
 
 export const PerformanceScreen = ({ navigation }: any) => {
   const { user } = useAuth();
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role];
-  const { width } = useWindowDimensions();
-  const tablet = width >= 768;
+  const { width, height } = useWindowDimensions();
+  const twoWide = isTabletDevice && width > height;
 
   const [data, setData] = useState<UserPerformanceDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,47 +60,66 @@ export const PerformanceScreen = ({ navigation }: any) => {
   const myData = role === 'FO' ? data.find((d) => d.userId === user?.id) : null;
   const teamData = role === 'FO' ? [] : data;
 
-  const cols = tablet ? 4 : 2;
-  const cardW = getCardWidth(cols, tablet ? 48 + (cols - 1) * 12 : 32 + 12);
+  const cols = twoWide ? 4 : 2;
+  const cardW = getCardWidth(cols, 32 + (cols - 1) * 12);
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading performance..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Sunstone hero header */}
+      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerLeft}>
           <DrawerMenuButton />
           <Text style={styles.headerTitle}>{LABEL_MAP[role] || 'Performance'}</Text>
         </View>
-      </View>
+      </GradientBackground>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLOR.primary]} />}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 14 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} tintColor={T.accent} />}
       >
         {/* FO Self View */}
         {role === 'FO' && myData && (
           <>
             <View style={styles.kpiGrid}>
-              <KPICard title="Total Leads" value={String(myData.totalLeads)} subtitle={`${myData.activeLeads} active`} style={{ width: cardW }} icon={<Text>📋</Text>} />
-              <KPICard title="Deals Won" value={String(myData.wonLeads)} subtitle={`${myData.winRate}% win rate`} style={{ width: cardW }} icon={<Text>🏆</Text>} />
-              <KPICard title="Revenue" value={formatCurrency(myData.revenue)} subtitle={`${myData.targetPct}% of target`} progress={myData.targetPct} progressColor={COLOR.primary} style={{ width: cardW }} icon={<Text>💰</Text>} />
-              <KPICard title="Activities" value={String(myData.totalActivities)} subtitle={`${myData.visitsThisMonth} visits`} style={{ width: cardW }} icon={<Text>📌</Text>} />
+              <StatTile
+                label="Total Leads" value={String(myData.totalLeads)}
+                sub={`${myData.activeLeads} active`}
+                icon={<Users size={15} color={T.info} />} tint={T.info} style={{ width: cardW }}
+              />
+              <StatTile
+                label="Deals Won" value={String(myData.wonLeads)}
+                sub={`${myData.winRate}% win rate`}
+                icon={<Award size={15} color={T.success} />} tint={T.success} style={{ width: cardW }}
+              />
+              <StatTile
+                label="Revenue" value={formatCurrency(myData.revenue)}
+                sub={`${myData.targetPct}% of target`}
+                icon={<TrendingUp size={15} color={T.accent} />} tint={T.accent} style={{ width: cardW }}
+              />
+              <StatTile
+                label="Activities" value={String(myData.totalActivities)}
+                sub={`${myData.visitsThisMonth} visits`}
+                icon={<Activity size={15} color={T.warning} />} tint={T.warning} style={{ width: cardW }}
+              />
             </View>
-            <Card style={styles.section}>
+
+            <Card>
               <View style={styles.performRow}>
-                <Avatar initials={user?.avatar || 'FO'} color={COLOR.primary} size={48} />
+                <Avatar initials={user?.avatar || 'FO'} color={T.accent} size={48} />
                 <View style={styles.performInfo}>
-                  <Text style={styles.performName}>{myData.name}</Text>
+                  <Text style={[styles.performName, { color: T.text }]}>{myData.name}</Text>
                   <View style={styles.roleRow}>
                     <RoleBadge role={myData.role} />
-                    {myData.zone && <Text style={styles.zoneText}>{myData.zone}</Text>}
+                    {myData.zone && <Text style={[styles.zoneText, { color: T.sub }]}>{myData.zone}</Text>}
                   </View>
                 </View>
-                <Badge label={myData.status} color={getStatusColor(myData.status)} size="md" />
+                <Badge label={myData.status} color={getStatusColor(myData.status)} />
               </View>
-              <ProgressBar value={myData.targetPct} height={8} showLabel style={{ marginTop: 12 }} />
+              <ProgressBar value={myData.targetPct} height={8} showLabel color={T.accent} trackColor={T.cardAlt} style={{ marginTop: 12 }} />
             </Card>
           </>
         )}
@@ -104,46 +129,62 @@ export const PerformanceScreen = ({ navigation }: any) => {
           <>
             {/* Summary */}
             <View style={styles.kpiGrid}>
-              <KPICard title="Team Members" value={String(teamData.length)} style={{ width: cardW }} icon={<Text>👥</Text>} />
-              <KPICard title="On Track" value={String(teamData.filter((d) => d.status === 'On Track').length)} style={{ width: cardW }} icon={<Text>✅</Text>} />
-              <KPICard title="At Risk" value={String(teamData.filter((d) => d.status === 'At Risk').length)} valueColor="#F59E0B" style={{ width: cardW }} icon={<Text>⚠️</Text>} />
-              <KPICard title="Underperforming" value={String(teamData.filter((d) => d.status === 'Underperforming').length)} valueColor="#EF4444" style={{ width: cardW }} icon={<Text>🔴</Text>} />
+              <StatTile
+                label="Team Members" value={String(teamData.length)}
+                icon={<Users size={15} color={T.accent} />} tint={T.accent} style={{ width: cardW }}
+              />
+              <StatTile
+                label="On Track" value={String(teamData.filter((d) => d.status === 'On Track').length)}
+                icon={<CheckCircle size={15} color={T.success} />} tint={T.success} style={{ width: cardW }}
+              />
+              <StatTile
+                label="At Risk" value={String(teamData.filter((d) => d.status === 'At Risk').length)}
+                icon={<AlertTriangle size={15} color={T.warning} />} tint={T.warning} style={{ width: cardW }}
+              />
+              <StatTile
+                label="Underperforming" value={String(teamData.filter((d) => d.status === 'Underperforming').length)}
+                icon={<AlertCircle size={15} color={T.danger} />} tint={T.danger} style={{ width: cardW }}
+              />
             </View>
 
             {teamData.length === 0 ? (
-              <EmptyState title="No team data" subtitle="Performance data not available" icon="📊" />
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyIcon}>📊</Text>
+                <Text style={[styles.emptyTitle, { color: T.text }]}>No team data</Text>
+                <Text style={[styles.emptySub, { color: T.sub }]}>Performance data not available</Text>
+              </View>
             ) : (
               teamData.map((member) => (
-                <Card key={member.userId} style={styles.memberCard}>
-                  <TouchableOpacity onPress={() => setExpanded(expanded === member.userId ? null : member.userId)}>
+                <Card key={member.userId}>
+                  <TouchableOpacity activeOpacity={0.8} onPress={() => setExpanded(expanded === member.userId ? null : member.userId)}>
                     <View style={styles.memberRow}>
-                      <Avatar initials={member.avatar} color={COLOR.primary} size={44} />
+                      <Avatar initials={member.avatar} color={T.accent} size={44} />
                       <View style={styles.memberInfo}>
                         <View style={styles.memberTopRow}>
-                          <Text style={styles.memberName}>{member.name}</Text>
+                          <Text style={[styles.memberName, { color: T.text }]}>{member.name}</Text>
                           <RoleBadge role={member.role} />
                         </View>
                         {(member.zone || member.region) && (
-                          <Text style={styles.memberZone}>{member.zone || member.region}</Text>
+                          <Text style={[styles.memberZone, { color: T.sub }]}>{member.zone || member.region}</Text>
                         )}
                         <View style={styles.memberStats}>
-                          <Text style={styles.statText}>{formatCurrency(member.revenue)}</Text>
-                          <Text style={styles.statDot}>•</Text>
-                          <Text style={styles.statText}>{member.totalLeads} leads</Text>
-                          <Text style={styles.statDot}>•</Text>
-                          <Text style={styles.statText}>{member.wonLeads} won</Text>
+                          <Text style={[styles.statText, { color: T.sub }]}>{formatCurrency(member.revenue)}</Text>
+                          <Text style={[styles.statDot, { color: T.dim }]}>•</Text>
+                          <Text style={[styles.statText, { color: T.sub }]}>{member.totalLeads} leads</Text>
+                          <Text style={[styles.statDot, { color: T.dim }]}>•</Text>
+                          <Text style={[styles.statText, { color: T.sub }]}>{member.wonLeads} won</Text>
                         </View>
-                        <ProgressBar value={member.targetPct} height={4} style={{ marginTop: 6, width: '90%' }} />
+                        <ProgressBar value={member.targetPct} height={4} color={T.accent} trackColor={T.cardAlt} style={{ marginTop: 6, width: '90%' }} />
                       </View>
                       <View style={styles.memberRight}>
                         <Badge label={member.status} color={getStatusColor(member.status)} />
-                        {expanded === member.userId ? <ChevronUp size={16} color="#9CA3AF" /> : <ChevronDown size={16} color="#9CA3AF" />}
+                        {expanded === member.userId ? <ChevronUp size={16} color={T.dim} /> : <ChevronDown size={16} color={T.dim} />}
                       </View>
                     </View>
                   </TouchableOpacity>
 
                   {expanded === member.userId && (
-                    <View style={styles.expandedSection}>
+                    <View style={[styles.expandedSection, { borderTopColor: T.line }]}>
                       <View style={styles.expandedGrid}>
                         {[
                           { label: 'Total Leads', val: member.totalLeads },
@@ -158,21 +199,21 @@ export const PerformanceScreen = ({ navigation }: any) => {
                           { label: 'Demos/Mo', val: member.demosThisMonth },
                         ].map(({ label, val }) => (
                           <View key={label} style={styles.expandedItem}>
-                            <Text style={styles.expandedLabel}>{label}</Text>
-                            <Text style={styles.expandedVal}>{val}</Text>
+                            <Text style={[styles.expandedLabel, { color: T.dim }]}>{label}</Text>
+                            <Text style={[styles.expandedVal, { color: T.text }]}>{val}</Text>
                           </View>
                         ))}
                       </View>
                       {member.leadsByStage && Object.keys(member.leadsByStage).length > 0 && (
                         <View style={styles.stageBreakdown}>
-                          <Text style={styles.stageBreakdownTitle}>Leads by Stage</Text>
+                          <SectionLabel>Leads by Stage</SectionLabel>
                           {Object.entries(member.leadsByStage).map(([stage, count]) => (
                             <View key={stage} style={styles.stageRow}>
-                              <Text style={styles.stageKey}>{stage}</Text>
-                              <View style={styles.stageBar}>
-                                <View style={[styles.stageFill, { width: `${Math.min((count / member.totalLeads) * 100, 100)}%`, backgroundColor: COLOR.primary }]} />
+                              <Text style={[styles.stageKey, { color: T.sub }]}>{stage}</Text>
+                              <View style={[styles.stageBar, { backgroundColor: T.cardAlt }]}>
+                                <View style={[styles.stageFill, { width: `${Math.min((count / member.totalLeads) * 100, 100)}%`, backgroundColor: T.accent }]} />
                               </View>
-                              <Text style={styles.stageCount}>{count}</Text>
+                              <Text style={[styles.stageCount, { color: T.text }]}>{count}</Text>
                             </View>
                           ))}
                         </View>
@@ -185,45 +226,46 @@ export const PerformanceScreen = ({ navigation }: any) => {
           </>
         )}
 
-        <View style={{ height: 24 }} />
+        <View style={{ height: 12 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
-  headerTitle: { fontSize: rf(22), fontWeight: '700', color: '#FFF' },
+  root: { flex: 1 },
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 14 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  section: { padding: 16 },
   performRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   performInfo: { flex: 1 },
-  performName: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  performName: { fontFamily: Fonts.bold, fontSize: rf(16) },
   roleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  zoneText: { fontSize: rf(12), color: '#6B7280' },
-  memberCard: { padding: 16 },
+  zoneText: { fontFamily: Fonts.regular, fontSize: rf(12) },
   memberRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   memberInfo: { flex: 1 },
   memberTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  memberName: { fontSize: rf(15), fontWeight: '600', color: '#111827' },
-  memberZone: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
+  memberName: { fontFamily: Fonts.medium, fontSize: rf(15) },
+  memberZone: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
   memberStats: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  statText: { fontSize: rf(12), color: '#6B7280' },
-  statDot: { color: '#D1D5DB', fontSize: rf(12) },
+  statText: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  statDot: { fontSize: rf(12) },
   memberRight: { alignItems: 'flex-end', gap: 6 },
-  expandedSection: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  expandedSection: { marginTop: 16, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth },
   expandedGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
   expandedItem: { width: '28%' },
-  expandedLabel: { fontSize: rf(10), color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase', marginBottom: 2 },
-  expandedVal: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  expandedLabel: { fontFamily: Fonts.medium, fontSize: rf(10), textTransform: 'uppercase', marginBottom: 2 },
+  expandedVal: { fontFamily: Fonts.bold, fontSize: rf(14) },
   stageBreakdown: { marginTop: 8 },
-  stageBreakdownTitle: { fontSize: rf(12), fontWeight: '700', color: '#6B7280', marginBottom: 8 },
   stageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  stageKey: { fontSize: rf(11), color: '#6B7280', width: 120 },
-  stageBar: { flex: 1, height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' },
+  stageKey: { fontFamily: Fonts.regular, fontSize: rf(11), width: 120 },
+  stageBar: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
   stageFill: { height: '100%', borderRadius: 3 },
-  stageCount: { fontSize: rf(12), fontWeight: '700', color: '#111827', width: 24, textAlign: 'right' },
+  stageCount: { fontFamily: Fonts.bold, fontSize: rf(12), width: 24, textAlign: 'right' },
+  emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 40, gap: 6 },
+  emptyIcon: { fontSize: 48, marginBottom: 6 },
+  emptyTitle: { fontFamily: Fonts.bold, fontSize: rf(16) },
+  emptySub: { fontFamily: Fonts.regular, fontSize: rf(13), textAlign: 'center' },
 });
