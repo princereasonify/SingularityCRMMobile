@@ -1,5 +1,6 @@
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 /**
  * The SingularityCRM line-icon set — paths copied VERBATIM from
@@ -53,14 +54,21 @@ interface Props {
   strokeWidth?: number;
 }
 
-export const Icon = ({ name, size = 20, color = '#8C5A2E', strokeWidth = ICON_STROKE }: Props) => (
+export const Icon = ({ name, size = 20, color, strokeWidth = ICON_STROKE }: Props) => {
+  // Resolved from the theme rather than defaulting to the light accent (#8C5A2E),
+  // which would render wrong in dark mode. Every current call site passes `color`,
+  // so this only guards future ones.
+  const T = useAppTheme();
+  const stroke = color || T.accent;
+  return (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
       d={ICON_PATHS[name]}
-      stroke={color}
+      stroke={stroke}
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
     />
   </Svg>
-);
+  );
+};

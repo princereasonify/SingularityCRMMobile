@@ -115,7 +115,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           'Notifications',
           <View>
             <Bell size={18} color={T.text} strokeWidth={1.5} />
-            {hasUnread && <View style={[styles.dot, { borderColor: T.card }]} />}
+            {hasUnread && <View style={[styles.dot, { backgroundColor: T.danger, borderColor: T.card }]} />}
           </View>,
         )}
 
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   dot: {
     position: 'absolute', top: -2, right: -2,
     width: 8, height: 8, borderRadius: 4,
-    backgroundColor: '#E9573F', borderWidth: 2,
+    borderWidth: 2, // colour supplied inline from T.danger
   },
 
   pill: {

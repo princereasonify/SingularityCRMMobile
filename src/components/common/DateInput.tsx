@@ -4,6 +4,16 @@ import {
 } from 'react-native';
 import { ChevronDown, Calendar, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { rf } from '../../utils/responsive';
+import { useAppTheme } from '../../theme/useAppTheme';
+
+/**
+ * Themed date picker. Like SelectPicker, every surface here was hardcoded light
+ * (`#F9FAFB` trigger, `#FFF` modal, `#111827` text) with a pre-Sunstone `#0d9488`
+ * teal accent. Those colours lived in this component rather than the screens, so
+ * the per-screen palette sweep never caught them — and in dark mode opening a
+ * date field produced a white card with teal chips. All colours now derive from
+ * useAppTheme(); `accentColor` still overrides, but defaults to the theme accent.
+ */
 
 interface DateInputProps {
   label?: string;
@@ -25,9 +35,11 @@ export const DateInput = ({
   value,
   onChange,
   placeholder = 'Select date',
-  accentColor = '#0d9488',
+  accentColor,
   error,
 }: DateInputProps) => {
+  const T = useAppTheme();
+  const accent = accentColor || T.accent;
   const [open, setOpen] = useState(false);
 
   const today = new Date();
@@ -82,31 +94,36 @@ export const DateInput = ({
 
   return (
     <View style={styles.container}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text style={[styles.label, { color: T.sub }]}>{label}</Text>}
       <TouchableOpacity
-        style={[styles.trigger, error && { borderColor: '#EF4444' }]}
+        style={[
+          styles.trigger,
+          { backgroundColor: T.fieldBg, borderColor: T.line },
+          !!error && { borderColor: T.danger },
+        ]}
         onPress={openPicker}
         activeOpacity={0.8}
       >
-        <Calendar size={16} color="#9CA3AF" />
-        <Text style={[styles.triggerText, !displayValue && styles.placeholder]}>
+        <Calendar size={16} color={T.dim} />
+        <Text style={[styles.triggerText, { color: displayValue ? T.text : T.dim }]}
+          numberOfLines={1}>
           {displayValue || placeholder}
         </Text>
-        <ChevronDown size={16} color="#9CA3AF" />
+        <ChevronDown size={16} color={T.dim} />
       </TouchableOpacity>
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {!!error && <Text style={[styles.errorText, { color: T.danger }]}>{error}</Text>}
 
       <Modal visible={open} transparent animationType="fade">
         <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <Pressable style={styles.modal} onPress={() => {}}>
+          <Pressable style={[styles.modal, { backgroundColor: T.card }]} onPress={() => {}}>
             {/* Month/Year Header */}
             <View style={styles.header}>
               <TouchableOpacity onPress={prevMonth} hitSlop={12}>
-                <ChevronLeft size={20} color="#374151" />
+                <ChevronLeft size={20} color={T.text} />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>{MONTHS[month]} {year}</Text>
+              <Text style={[styles.headerTitle, { color: T.text }]}>{MONTHS[month]} {year}</Text>
               <TouchableOpacity onPress={nextMonth} hitSlop={12}>
-                <ChevronRight size={20} color="#374151" />
+                <ChevronRight size={20} color={T.text} />
               </TouchableOpacity>
             </View>
 
@@ -115,10 +132,10 @@ export const DateInput = ({
               {Array.from({ length: 7 }, (_, i) => today.getFullYear() - 1 + i).map((y) => (
                 <TouchableOpacity
                   key={y}
-                  style={[styles.yearChip, year === y && { backgroundColor: accentColor }]}
+                  style={[styles.yearChip, { backgroundColor: T.cardAlt }, year === y && { backgroundColor: accent }]}
                   onPress={() => setYear(y)}
                 >
-                  <Text style={[styles.yearChipText, year === y && { color: '#FFF' }]}>{y}</Text>
+                  <Text style={[styles.yearChipText, { color: year === y ? '#FFF' : T.sub }]}>{y}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -126,7 +143,7 @@ export const DateInput = ({
             {/* Day Names */}
             <View style={styles.dayNamesRow}>
               {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
-                <Text key={d} style={styles.dayName}>{d}</Text>
+                <Text key={d} style={[styles.dayName, { color: T.dim }]}>{d}</Text>
               ))}
             </View>
 
@@ -136,11 +153,11 @@ export const DateInput = ({
                 {week.map((d, di) => (
                   <TouchableOpacity
                     key={di}
-                    style={[styles.dayCell, d === day && { backgroundColor: accentColor, borderRadius: 20 }]}
+                    style={[styles.dayCell, d === day && { backgroundColor: accent, borderRadius: 20 }]}
                     onPress={() => d && setDay(d)}
                     disabled={!d}
                   >
-                    <Text style={[styles.dayText, d === day && { color: '#FFF', fontWeight: '700' }, !d && { color: 'transparent' }]}>
+                    <Text style={[styles.dayText, { color: T.text }, d === day && { color: '#FFF', fontWeight: '700' }, !d && { color: 'transparent' }]}>
                       {d ?? ''}
                     </Text>
                   </TouchableOpacity>
@@ -150,10 +167,10 @@ export const DateInput = ({
 
             {/* Actions */}
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setOpen(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+              <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={() => setOpen(false)}>
+                <Text style={[styles.cancelText, { color: T.text }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: accentColor }]} onPress={confirm}>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: accent }]} onPress={confirm}>
                 <Text style={styles.confirmText}>Confirm</Text>
               </TouchableOpacity>
             </View>
@@ -166,21 +183,20 @@ export const DateInput = ({
 
 const styles = StyleSheet.create({
   container: { marginBottom: 12 },
-  label: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
+  label: { fontSize: rf(13), fontWeight: '600', marginBottom: 6 },
   trigger: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
+    borderWidth: 1,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12,
   },
-  triggerText: { flex: 1, fontSize: rf(14), color: '#111827' },
-  placeholder: { color: '#9CA3AF' },
-  errorText: { fontSize: rf(11), color: '#EF4444', marginTop: 4 },
+  triggerText: { flex: 1, flexShrink: 1, minWidth: 0, fontSize: rf(14) },
+  errorText: { fontSize: rf(11), marginTop: 4 },
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modal: {
-    backgroundColor: '#FFF', borderRadius: 20, padding: 20,
+    borderRadius: 20, padding: 20,
     width: '100%', maxWidth: 360,
     shadowColor: '#000', shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.15, shadowRadius: 32, elevation: 12,
@@ -189,31 +205,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 12,
   },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
+  headerTitle: { fontSize: rf(16), fontWeight: '700' },
   yearScroll: { marginBottom: 12, flexGrow: 0 },
   yearRow: { flexDirection: 'row', gap: 6 },
   yearChip: {
     paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 100, backgroundColor: '#F3F4F6',
+    borderRadius: 100,
   },
-  yearChipText: { fontSize: rf(12), fontWeight: '600', color: '#6B7280' },
+  yearChipText: { fontSize: rf(12), fontWeight: '600' },
   dayNamesRow: { flexDirection: 'row', marginBottom: 4 },
   dayName: {
     flex: 1, textAlign: 'center',
-    fontSize: rf(11), fontWeight: '700', color: '#9CA3AF',
+    fontSize: rf(11), fontWeight: '700',
   },
   weekRow: { flexDirection: 'row' },
   dayCell: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingVertical: 8,
   },
-  dayText: { fontSize: rf(14), color: '#374151' },
+  dayText: { fontSize: rf(14) },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   cancelBtn: {
     flex: 1, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: '#F3F4F6', alignItems: 'center',
+    alignItems: 'center',
   },
-  cancelText: { fontSize: rf(14), fontWeight: '600', color: '#374151' },
+  cancelText: { fontSize: rf(14), fontWeight: '600' },
   confirmBtn: {
     flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
   },

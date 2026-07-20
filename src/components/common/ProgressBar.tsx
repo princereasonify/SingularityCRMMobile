@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { getProgressColor } from '../../utils/constants';
 import { rf } from '../../utils/responsive';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 interface ProgressBarProps {
   value: number; // 0–100
@@ -18,14 +19,18 @@ export const ProgressBar = ({
   showLabel = false,
   color,
   style,
-  trackColor = '#F3F4F6',
+  trackColor,
 }: ProgressBarProps) => {
+  const T = useAppTheme();
+  // Resolved here, not as a default parameter — `T` isn't in scope in the
+  // signature. Was hardcoded '#F3F4F6', which stayed light-grey in dark mode.
+  const track = trackColor || T.cardAlt;
   const pct = Math.min(Math.max(value, 0), 100);
   const barColor = color || getProgressColor(pct);
 
   return (
     <View style={[styles.container, style]}>
-      <View style={[styles.track, { height, backgroundColor: trackColor }]}>
+      <View style={[styles.track, { height, backgroundColor: track }]}>
         <View
           style={[
             styles.fill,

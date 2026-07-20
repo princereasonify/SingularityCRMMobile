@@ -93,8 +93,12 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
       style={[
         styles.root,
         {
-          backgroundColor: T.isDark ? '#171310' : '#FCFAF6',
-          borderRightColor: T.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(33,27,18,0.09)',
+          // T.card, not the invented #171310/#FCFAF6 that used to sit here: those
+          // matched no spec and drifted from the palette. The sidebar reads as a
+          // raised surface against the content area's T.bg, which is exactly what
+          // the `card` token is for, and it now follows any palette change.
+          backgroundColor: T.card,
+          borderRightColor: T.line,
           paddingTop: Math.max(insets.top, 12), // LAYOUT_SPEC A1
           paddingBottom: Math.max(insets.bottom, 14),
           paddingHorizontal: rail ? 0 : 14,
