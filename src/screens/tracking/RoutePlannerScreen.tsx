@@ -1,419 +1,723 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  TextInput, Modal, FlatList, ActivityIndicator, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity,
+  Linking, Alert, Platform, PermissionsAndroid, useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import Geolocation from '@react-native-community/geolocation';
 import {
-  ChevronUp, ChevronDown, Trash2, Plus, Navigation, Save,
-  Search, MapPin, CheckCircle, Circle, Menu,
+  ChevronUp, ChevronDown, X, Plus, Navigation, Save, MapPin,
+  Zap, ExternalLink, LocateFixed, WifiOff, TriangleAlert,
 } from 'lucide-react-native';
+
 import { routePlanApi } from '../../api/routePlan';
 import { schoolsApi } from '../../api/schools';
-import { DailyRoutePlan, RouteStop, School } from '../../types';
-import { GradientBackground } from '../../components/common/GradientBackground';
-import { Card } from '../../components/ui';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ConfirmModal } from '../../components/common/ConfirmModal';
-import { Fonts } from '../../theme';
+import { School } from '../../types';
+import { useOffline } from '../../context/OfflineContext';
+import { ICON_STROKE } from '../../components/common/Icon';
+import { Btn, IconBtn, Field, Trigger, Dropdown, ListCard, ConfirmModal } from '../../components/crud';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+
+/**
+ * Route Planner — 1:1 with web/src/pages/common/RoutePlanner.jsx.
+ *
+ * API shapes verified against SalesCRM.API/Controllers/RoutePlanController.cs:
+ *   [HttpGet  "plan/today"] → Ok(ApiResponse<RoutePlanDto?>.Ok(plan))
+ *   [HttpPost "plan"]       → Ok(ApiResponse<RoutePlanDto>.Ok(plan))
+ *   [HttpPut  "plan/{id}"]  → Ok(ApiResponse<RoutePlanDto>.Ok(plan))
+ * RoutePlanDto.Stops is a **string** (JSON blob), NOT RouteStop[] — `types/index.ts`
+ * declares `DailyRoutePlan.stops: RouteStop[]`, which is a lie. The old screen fed that
+ * string straight into `.map()`. We parse it here and never trust the TS type.
+ *
+ * The blob's field names are set by whichever client wrote it; web writes
+ * `{order, schoolId, schoolName, lat, lon, visited}` — so we write that exact shape and
+ * read `latitude/longitude` as a fallback for rows an older mobile build wrote.
+ *
+ * Schools list: SchoolsController.GetSchools →
+ *   return Ok(ApiResponse<object>.Ok(new { schools, total, page, limit }));
+ * so the param is `limit` (not `pageSize`) and the payload key is `schools` (not `items`).
+ */
+
+/** Web parity: `schoolService.getSchools({ limit: 500 })`. */
+const SCHOOL_FETCH_LIMIT = 500;
 
 const today = () => new Date().toISOString().split('T')[0];
 
-export const RoutePlannerScreen = ({ navigation }: any) => {
-  const T = useAppTheme();
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const twoWide = isTabletDevice && width > height;
+type Stop = {
+  order: number;
+  schoolId: number;
+  schoolName: string;
+  lat: number | null;
+  lon: number | null;
+  visited: boolean;
+};
 
-  const [plan, setPlan] = useState<DailyRoutePlan | null>(null);
-  const [stops, setStops] = useState<RouteStop[]>([]);
+type Origin = { lat: number; lon: number };
+
+const num = (v: any): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : null;
+};
+
+/** Haversine — distance between two lat/lon points in kilometres. Ported from web. */
+function haversineKm(a: Origin, b: Origin) {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+/**
+ * Greedy nearest-neighbour — fast TSP approximation. Starts at origin, repeatedly picks
+ * the closest unvisited stop until all are ordered. Ported verbatim from web so both
+ * clients order an identical stop set identically.
+ */
+function nearestNeighborOrder(origin: Origin, stops: Stop[]): Stop[] {
+  const remaining = stops.slice();
+  const ordered: Stop[] = [];
+  let current = origin;
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestDist = haversineKm(current, { lat: remaining[0].lat!, lon: remaining[0].lon! });
+    for (let i = 1; i < remaining.length; i++) {
+      const d = haversineKm(current, { lat: remaining[i].lat!, lon: remaining[i].lon! });
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    const next = remaining.splice(bestIdx, 1)[0];
+    ordered.push(next);
+    current = { lat: next.lat!, lon: next.lon! };
+  }
+  return ordered;
+}
+
+/** Ported from web — same origin/waypoints/destination construction. */
+function buildGoogleMapsUrl(stops: Stop[], origin: Origin | null) {
+  if (stops.length === 0) return '';
+  const originStr = origin ? `${origin.lat},${origin.lon}` : `${stops[0].lat},${stops[0].lon}`;
+  const dest = `${stops[stops.length - 1].lat},${stops[stops.length - 1].lon}`;
+  const middle = origin
+    ? stops.slice(0, -1).map(s => `${s.lat},${s.lon}`)
+    : stops.slice(1, -1).map(s => `${s.lat},${s.lon}`);
+  const waypoints = middle.join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${dest}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${waypoints}`;
+  return url;
+}
+
+/** RoutePlanDto.Stops is a JSON string. Never assume the declared RouteStop[]. */
+function parseStops(raw: any): Stop[] {
+  let arr: any = raw;
+  if (typeof raw === 'string') {
+    try { arr = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((s: any, i: number) => ({
+    order: i + 1,
+    schoolId: Number(s?.schoolId),
+    schoolName: String(s?.schoolName ?? ''),
+    lat: num(s?.lat ?? s?.latitude),
+    lon: num(s?.lon ?? s?.longitude),
+    visited: !!s?.visited,
+  }));
+}
+
+const reorder = (list: Stop[]) => list.map((s, i) => ({ ...s, order: i + 1 }));
+
+export const RoutePlannerScreen = () => {
+  const T = useAppTheme();
+  const { isOnline } = useOffline();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+
+  const mapRef = useRef<MapView | null>(null);
+
+  const [schools, setSchools] = useState<School[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<string>('');
+  const [existingPlanId, setExistingPlanId] = useState<number | null>(null);
+  const [showMap, setShowMap] = useState(false);
+
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // School picker modal
-  const [showPicker, setShowPicker] = useState(false);
-  const [schools, setSchools] = useState<School[]>([]);
-  const [schoolSearch, setSchoolSearch] = useState('');
-  const [schoolsLoading, setSchoolsLoading] = useState(false);
+  // Current GPS — captured once the user opts in (Optimize). Cached so we don't re-prompt.
+  const [origin, setOrigin] = useState<Origin | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
+  const [permDenied, setPermDenied] = useState(false);
 
-  // Delete confirmation
-  const [confirmDelete, setConfirmDelete] = useState<{ visible: boolean; index: number }>({ visible: false, index: -1 });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<number | null>(null);
 
-  const loadPlan = useCallback(async () => {
+  /**
+   * Measured content box. The permanent iPad sidebar (240 / 76 rail) and the topbar mean
+   * `useWindowDimensions()` is NOT the content area — deriving panel heights from it is
+   * what clipped Pipeline's 5th column. Everything bounded here comes off this measure.
+   */
+  const [canvasH, setCanvasH] = useState(0);
+  const onCanvasLayout = useCallback((e: any) => {
+    const h = e.nativeEvent.layout.height;
+    setCanvasH(prev => (Math.abs(prev - h) > 1 ? h : prev));
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoadError(false);
+    try {
+      // `limit` — SchoolsController never binds `pageSize`; it is silently dropped.
+      const sres = await schoolsApi.getAll({ page: 1, limit: SCHOOL_FETCH_LIMIT });
+      setSchools(((sres.data as any)?.schools ?? []) as School[]);
+    } catch {
+      setSchools([]);
+    }
+
     try {
       const res = await routePlanApi.getToday();
-      const data = res.data as DailyRoutePlan;
-      setPlan(data);
-      setStops(data.stops || []);
+      const plan: any = res.data;
+      if (plan && plan.stops) {
+        const parsed = parseStops(plan.stops);
+        setStops(parsed);
+        if (parsed.length > 0) setShowMap(true);
+        setExistingPlanId(Number(plan.id) || null);
+      }
     } catch {
-      setPlan(null);
-      setStops([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadPlan(); }, [loadPlan]);
+  useEffect(() => { load(); }, [load]);
 
-  const loadSchools = useCallback(async (search: string) => {
-    setSchoolsLoading(true);
-    try {
-      const res = await schoolsApi.getAll({ search: search || undefined, pageSize: 30 });
-      const items: School[] = (res.data as any)?.items ?? res.data ?? [];
-      // Filter out already-added stops
-      const addedIds = new Set(stops.map(s => s.schoolId));
-      setSchools(items.filter(s => !addedIds.has(s.id)));
-    } catch {
-      setSchools([]);
-    } finally {
-      setSchoolsLoading(false);
+  const addedIds = useMemo(() => new Set(stops.map(s => s.schoolId)), [stops]);
+
+  /** Web parity: the select only lists schools not already on the route. */
+  const options = useMemo(
+    () => schools
+      .filter(s => !addedIds.has(s.id))
+      .map(s => ({ label: s.city ? `${s.name} — ${s.city}` : s.name, value: String(s.id) })),
+    [schools, addedIds],
+  );
+
+  const addStop = () => {
+    if (!selectedSchool) return;
+    const school = schools.find(s => String(s.id) === selectedSchool);
+    if (!school) return;
+    if (stops.some(s => s.schoolId === school.id)) {
+      Alert.alert('Already added', 'That school is already on the route.');
+      return;
     }
-  }, [stops]);
-
-  useEffect(() => {
-    if (showPicker) {
-      const timer = setTimeout(() => loadSchools(schoolSearch), 400);
-      return () => clearTimeout(timer);
-    }
-  }, [schoolSearch, showPicker, loadSchools]);
-
-  const openPicker = () => {
-    setSchoolSearch('');
-    setShowPicker(true);
-    loadSchools('');
-  };
-
-  const addStop = (school: School) => {
-    const newStop: RouteStop = {
-      order: stops.length + 1,
+    setStops(prev => [...prev, {
+      order: prev.length + 1,
       schoolId: school.id,
       schoolName: school.name,
-      latitude: school.latitude,
-      longitude: school.longitude,
+      lat: num(school.latitude),
+      lon: num(school.longitude),
       visited: false,
-    };
-    setStops(prev => [...prev, newStop]);
-    setShowPicker(false);
+    }]);
+    setSelectedSchool('');
   };
 
-  const removeStop = (index: number) => {
+  const removeStop = (idx: number) => {
     setStops(prev => {
-      const next = prev.filter((_, i) => i !== index);
-      return next.map((s, i) => ({ ...s, order: i + 1 }));
+      const next = reorder(prev.filter((_, i) => i !== idx));
+      if (next.length === 0) setShowMap(false);
+      return next;
     });
   };
 
-  const moveUp = (index: number) => {
-    if (index === 0) return;
+  const moveStop = (idx: number, dir: -1 | 1) => {
     setStops(prev => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next.map((s, i) => ({ ...s, order: i + 1 }));
+      const target = idx + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return reorder(arr);
     });
   };
 
-  const moveDown = (index: number) => {
-    if (index === stops.length - 1) return;
-    setStops(prev => {
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next.map((s, i) => ({ ...s, order: i + 1 }));
+  /**
+   * Preserved verbatim from the previous screen — the Android runtime prompt plus the
+   * community Geolocation call are deliberately configured against the manifest and the
+   * iOS Info.plist. Do not swap the lib or "modernise" the permission flow.
+   */
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Location Permission',
+          message: 'This app needs access to your location to optimize your route.',
+          buttonPositive: 'OK',
+        },
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    return true;
+  };
+
+  const getCurrentLocation = (): Promise<Origin> =>
+    new Promise((resolve, reject) => {
+      if (origin) { resolve(origin); return; }
+      Geolocation.getCurrentPosition(
+        pos => {
+          const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          setOrigin(loc);
+          resolve(loc);
+        },
+        err => reject(err),
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+      );
     });
+
+  const optimizeFromMyLocation = async () => {
+    if (stops.length < 2) {
+      Alert.alert('Add more stops', 'Add at least 2 schools first.');
+      return;
+    }
+    setOptimizing(true);
+    try {
+      const ok = await requestLocationPermission();
+      if (!ok) {
+        setPermDenied(true);
+        setOptimizing(false);
+        return;
+      }
+      const here = await getCurrentLocation();
+      setPermDenied(false);
+      const valid = stops.filter(s => s.lat != null && s.lon != null);
+      setStops(reorder(nearestNeighborOrder(here, valid)));
+      setShowMap(true);
+      Alert.alert('Route optimized', 'Stops reordered from your location — nearest first.');
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      if (/denied|permission/i.test(msg) || err?.code === 1) {
+        setPermDenied(true);
+      } else {
+        Alert.alert('Location unavailable', 'Could not get your current location.');
+      }
+    } finally {
+      setOptimizing(false);
+    }
   };
 
   const savePlan = async () => {
-    if (stops.length === 0) return;
+    if (stops.length === 0) {
+      Alert.alert('Nothing to save', 'Add at least one stop.');
+      return;
+    }
     setSaving(true);
     try {
-      const payload = {
-        planDate: today(),
-        stops: stops.map(s => ({ schoolId: s.schoolId, order: s.order })),
-      };
-      if (plan?.id) {
-        await routePlanApi.create(payload); // backend upserts by date
+      // CreateRoutePlanRequest.Stops / UpdateRoutePlanRequest.Stops are `string` on the
+      // controller — posting an array (what the old screen did, and what
+      // `types.CreateRoutePlanRequest` still declares) never binds.
+      const blob = JSON.stringify(stops);
+      if (existingPlanId) {
+        // RoutePlanService.CreatePlanAsync inserts unconditionally — it does NOT
+        // upsert by date, so re-saving through POST would leak a duplicate row per
+        // save. Web calls PUT here.
+        await routePlanApi.update(existingPlanId, { stops: blob });
       } else {
-        await routePlanApi.create(payload);
+        const res = await routePlanApi.create({
+          planDate: today(),
+          stops: blob,
+          optimizationMethod: origin ? 'NearestNeighbor' : 'Manual',
+        });
+        setExistingPlanId(Number(res.data?.id) || null);
       }
-      await loadPlan();
+      setShowMap(true);
+      Alert.alert('Saved', 'Route plan saved.');
     } catch {
-      // silent fail
+      Alert.alert('Error', 'Failed to save.');
     } finally {
       setSaving(false);
     }
   };
 
-  const markVisited = async (stop: RouteStop, index: number) => {
-    if (!plan?.id || stop.visited) return;
-    try {
-      await routePlanApi.markVisited(plan.id, stop.schoolId);
-      setStops(prev => prev.map((s, i) => i === index ? { ...s, visited: true } : s));
-    } catch {}
-  };
+  const validStops = useMemo(() => stops.filter(s => s.lat != null && s.lon != null), [stops]);
+  const mapsUrl = buildGoogleMapsUrl(validStops, origin);
+  const openInMaps = () => { if (mapsUrl) Linking.openURL(mapsUrl); };
 
-  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading route plan..." />;
+  /** react-native-maps' equivalent of the web renderer's `fitBounds`. */
+  useEffect(() => {
+    if (!showMap || validStops.length === 0 || !mapRef.current) return;
+    const coords = [
+      ...(origin ? [{ latitude: origin.lat, longitude: origin.lon }] : []),
+      ...validStops.map(s => ({ latitude: s.lat!, longitude: s.lon! })),
+    ];
+    const t = setTimeout(() => {
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+        animated: true,
+      });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [showMap, validStops, origin]);
 
-  const visitedCount = stops.filter(s => s.visited).length;
+  // ── Planner card ────────────────────────────────────────────────────────────
+  const renderPlanner = () => (
+    <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+      {/* Add-a-school row */}
+      <View style={s.addRow}>
+        <Field style={{ flex: 1 }}>
+          <Trigger
+            label={
+              selectedSchool
+                ? (options.find(o => o.value === selectedSchool)?.label ?? 'Select school to add…')
+                : 'Select school to add…'
+            }
+            open={pickerOpen}
+            onPress={() => setPickerOpen(v => !v)}
+          />
+          {pickerOpen && (
+            <Dropdown
+              style={{ width: '100%' }}
+              value={selectedSchool}
+              maxHeight={Math.max(180, Math.min(300, canvasH * 0.42))}
+              onSelect={v => { setSelectedSchool(v); setPickerOpen(false); }}
+              options={options.length > 0 ? options : [{ label: 'No schools available', value: '' }]}
+            />
+          )}
+        </Field>
+        <Btn
+          label="Add"
+          onPress={addStop}
+          disabled={!selectedSchool}
+          icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
+        />
+      </View>
 
-  return (
-    <View style={[styles.root, { backgroundColor: T.bg }]}>
-      {/* Sunstone hero header */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.toggleDrawer()}>
-            <Menu size={20} color="#FFF" />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>Route Planner</Text>
-            <Text style={styles.headerSub} numberOfLines={1}>Plan today's visit route</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={savePlan}
-            disabled={saving || stops.length === 0}
-          >
-            {saving
-              ? <ActivityIndicator size="small" color="#FFF" />
-              : <><Save size={14} color="#FFF" /><Text style={styles.saveBtnText}>Save</Text></>}
-          </TouchableOpacity>
+      {/* Permission-denied state — critical here; the whole Optimize path needs GPS. */}
+      {permDenied && (
+        <View style={[s.notice, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+          <TriangleAlert size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+          <Text style={[s.noticeTxt, { color: T.danger }]}>
+            Location permission denied. Enable GPS to optimize.
+          </Text>
         </View>
-      </GradientBackground>
+      )}
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 10 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={twoWide ? styles.centeredWide : undefined}>
-          {/* Summary */}
-          <Card style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: T.accent }]}>{stops.length}</Text>
-                <Text style={[styles.summaryLabel, { color: T.sub }]}>Stops</Text>
+      {/* Stops */}
+      {stops.length === 0 ? (
+        <View style={s.empty}>
+          <Navigation size={32} color={T.dim} strokeWidth={ICON_STROKE} />
+          <Text style={[s.emptyTxt, { color: T.dim }]}>No stops added yet</Text>
+        </View>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {stops.map((stop, i) => (
+            <ListCard key={`${stop.schoolId}-${i}`} style={{ backgroundColor: T.cardAlt }}>
+              <View style={[s.orderDot, { backgroundColor: T.accent }]}>
+                <Text style={s.orderTxt}>{i + 1}</Text>
               </View>
-              <View style={[styles.divider, { backgroundColor: T.line }]} />
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: T.success }]}>{visitedCount}</Text>
-                <Text style={[styles.summaryLabel, { color: T.sub }]}>Visited</Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: T.line }]} />
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: T.warning }]}>{stops.length - visitedCount}</Text>
-                <Text style={[styles.summaryLabel, { color: T.sub }]}>Pending</Text>
-              </View>
-            </View>
-          </Card>
-
-          {/* Stops List */}
-          {stops.map((stop, index) => (
-            <Card
-              key={`${stop.schoolId}-${index}`}
-              padded={false}
-              style={[
-                styles.stopCard,
-                stop.visited && { backgroundColor: T.success + '14', borderColor: T.success + '55' },
-              ]}
-            >
-              <View style={[styles.stopOrder, { backgroundColor: stop.visited ? T.success + '22' : T.accentSoft }]}>
-                <Text style={[styles.stopOrderText, { color: stop.visited ? T.success : T.accent }]}>
-                  {stop.order}
+              <View style={{ flex: 1 }}>
+                <Text style={[s.stopName, { color: T.text }]} numberOfLines={1}>{stop.schoolName}</Text>
+                <Text style={[s.stopMeta, { color: T.dim }]} numberOfLines={1}>
+                  {stop.lat != null && stop.lon != null
+                    ? `${stop.lat.toFixed(4)}, ${stop.lon.toFixed(4)}`
+                    : 'No coordinates'}
                 </Text>
               </View>
-
-              <View style={styles.stopInfo}>
-                <Text style={[styles.stopName, { color: T.text }]} numberOfLines={1}>{stop.schoolName}</Text>
-                {stop.visited && (
-                  <View style={styles.visitedTag}>
-                    <CheckCircle size={11} color={T.success} />
-                    <Text style={[styles.visitedText, { color: T.success }]}>Visited</Text>
-                  </View>
-                )}
+              <View style={s.rowActions}>
+                <IconBtn kind="view" label="Move up" onPress={() => moveStop(i, -1)}>
+                  <ChevronUp size={14} color={i === 0 ? T.dim : T.accent} strokeWidth={ICON_STROKE} />
+                </IconBtn>
+                <IconBtn kind="view" label="Move down" onPress={() => moveStop(i, 1)}>
+                  <ChevronDown size={14} color={i === stops.length - 1 ? T.dim : T.accent} strokeWidth={ICON_STROKE} />
+                </IconBtn>
+                <IconBtn kind="del" label="Remove stop" onPress={() => setRemoveTarget(i)}>
+                  <X size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+                </IconBtn>
               </View>
-
-              <View style={styles.stopActions}>
-                {!stop.visited && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.actionIcon}
-                      onPress={() => markVisited(stop, index)}
-                    >
-                      <Circle size={18} color={T.success} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionIcon} onPress={() => moveUp(index)} disabled={index === 0}>
-                      <ChevronUp size={18} color={index === 0 ? T.line : T.sub} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionIcon} onPress={() => moveDown(index)} disabled={index === stops.length - 1}>
-                      <ChevronDown size={18} color={index === stops.length - 1 ? T.line : T.sub} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionIcon}
-                      onPress={() => setConfirmDelete({ visible: true, index })}
-                    >
-                      <Trash2 size={16} color={T.danger} />
-                    </TouchableOpacity>
-                  </>
-                )}
-                {stop.visited && <CheckCircle size={20} color={T.success} />}
-              </View>
-            </Card>
+            </ListCard>
           ))}
+        </View>
+      )}
 
-          {/* Add Stop */}
-          <TouchableOpacity
-            style={[styles.addBtn, { borderColor: T.accent, backgroundColor: T.card }]}
-            onPress={openPicker}
-          >
-            <Plus size={18} color={T.accent} />
-            <Text style={[styles.addBtnText, { color: T.accent }]}>Add School Stop</Text>
+      {/* Footer — count + optimized chip + actions */}
+      {stops.length > 0 && (
+        <View style={[s.foot, { borderTopColor: T.line }]}>
+          <View style={s.footMeta}>
+            <Text style={[s.count, { color: T.sub }]}>
+              {stops.length} stop{stops.length > 1 ? 's' : ''}
+            </Text>
+            {!!origin && (
+              <View style={[s.optChip, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
+                <LocateFixed size={11} color={T.info} strokeWidth={ICON_STROKE} />
+                <Text style={[s.optChipTxt, { color: T.info }]}>Optimized from current location</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={s.footBtns}>
+            {validStops.length >= 2 && (
+              <Btn
+                label={optimizing ? 'Optimizing…' : 'Optimize from my location'}
+                variant="soft"
+                small
+                loading={optimizing}
+                onPress={optimizeFromMyLocation}
+                icon={<Zap size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+              />
+            )}
+            {validStops.length >= 1 && (
+              <Btn
+                label="Open in Google Maps"
+                variant="secondary"
+                small
+                onPress={openInMaps}
+                icon={<ExternalLink size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+              />
+            )}
+            <Btn
+              label={saving ? 'Saving…' : 'Save Plan'}
+              small
+              loading={saving}
+              onPress={savePlan}
+              icon={<Save size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  // ── Map card ────────────────────────────────────────────────────────────────
+  const renderMap = (fill: boolean) => {
+    if (!showMap || validStops.length === 0) return null;
+    return (
+      <View style={[s.mapCard, { backgroundColor: T.card, borderColor: T.line }, fill && { flex: 1 }]}>
+        <View style={[s.mapHead, { borderBottomColor: T.line }]}>
+          <MapPin size={15} color={T.accent} strokeWidth={ICON_STROKE} />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.mapTitle, { color: T.text }]}>Route Map</Text>
+            <Text style={[s.mapHint, { color: T.dim }]} numberOfLines={1}>
+              Schools are numbered in the order you'll visit them
+            </Text>
+          </View>
+          <TouchableOpacity style={s.navLink} onPress={openInMaps} activeOpacity={0.7}>
+            <ExternalLink size={13} color={T.info} strokeWidth={ICON_STROKE} />
+            <Text style={[s.navLinkTxt, { color: T.info }]}>Navigate</Text>
           </TouchableOpacity>
+        </View>
 
-          {stops.length === 0 && (
-            <View style={styles.emptyState}>
-              <Navigation size={40} color={T.dim} />
-              <Text style={[styles.emptyTitle, { color: T.text }]}>No route planned</Text>
-              <Text style={[styles.emptySub, { color: T.sub }]}>Add schools to build today's visit route</Text>
+        <View style={fill ? { flex: 1 } : { height: 320 }}>
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFillObject}
+            initialRegion={{
+              latitude: validStops[0].lat!,
+              longitude: validStops[0].lon!,
+              latitudeDelta: 0.3,
+              longitudeDelta: 0.3,
+            }}
+          >
+            {/* Driving order — the web renderer draws Google's polyline; we draw the
+                same ordered path natively (no Directions round-trip on device). */}
+            <Polyline
+              coordinates={[
+                ...(origin ? [{ latitude: origin.lat, longitude: origin.lon }] : []),
+                ...validStops.map(st => ({ latitude: st.lat!, longitude: st.lon! })),
+              ]}
+              strokeColor={T.accent}
+              strokeWidth={4}
+            />
+
+            {!!origin && (
+              <Marker coordinate={{ latitude: origin.lat, longitude: origin.lon }} title="You are here">
+                <View style={[s.meDot, { backgroundColor: T.info }]} />
+              </Marker>
+            )}
+
+            {validStops.map((st, i) => (
+              <Marker
+                key={`${st.schoolId}-${i}`}
+                coordinate={{ latitude: st.lat!, longitude: st.lon! }}
+                title={`${i + 1}. ${st.schoolName}`}
+              >
+                <View style={[s.pin, { backgroundColor: T.accent }]}>
+                  <Text style={s.pinTxt}>{i + 1}</Text>
+                </View>
+              </Marker>
+            ))}
+          </MapView>
+        </View>
+      </View>
+    );
+  };
+
+  // ── States ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+        <View style={[s.pad, wide && s.padWide]}>
+          <View style={s.titleBlock}>
+            <Text style={[s.h1, { color: T.text }]}>Route Planner</Text>
+            <Text style={[s.h2, { color: T.sub }]}>Plan your school visits for today</Text>
+          </View>
+          {/* Skeleton — same card geometry the loaded state lands in, so nothing jumps. */}
+          <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+            <View style={[s.skel, { backgroundColor: T.cardAlt, height: 46 }]} />
+            <View style={[s.skel, { backgroundColor: T.cardAlt, height: 62 }]} />
+            <View style={[s.skel, { backgroundColor: T.cardAlt, height: 62 }]} />
+            <ActivityIndicator color={T.accent} style={{ marginTop: 8 }} />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <View style={s.canvas} onLayout={onCanvasLayout}>
+        <View style={[s.head, wide && s.padWide]}>
+          <View style={s.titleBlock}>
+            <Text style={[s.h1, { color: T.text }]}>Route Planner</Text>
+            <Text style={[s.h2, { color: T.sub }]}>Plan your school visits for today</Text>
+          </View>
+
+          {!isOnline && (
+            <View style={[s.notice, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
+              <WifiOff size={14} color={T.warning} strokeWidth={ICON_STROKE} />
+              <Text style={[s.noticeTxt, { color: T.warning }]}>
+                You're offline. Changes can't be saved until you reconnect.
+              </Text>
             </View>
           )}
 
-          <View style={{ height: 24 }} />
+          {loadError && (
+            <View style={[s.notice, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+              <TriangleAlert size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+              <Text style={[s.noticeTxt, { color: T.danger }]}>
+                Couldn't load today's plan. Pull the plan again after reconnecting.
+              </Text>
+            </View>
+          )}
         </View>
-      </ScrollView>
 
-      {/* School Picker Modal */}
-      <Modal visible={showPicker} transparent animationType="slide" onRequestClose={() => setShowPicker(false)}>
-        <View style={styles.pickerOverlay}>
-          <View style={[styles.pickerSheet, { backgroundColor: T.card }]}>
-            <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: T.text }]}>Add School</Text>
-              <TouchableOpacity onPress={() => setShowPicker(false)}>
-                <Text style={[styles.pickerClose, { color: T.sub }]}>✕</Text>
-              </TouchableOpacity>
+        {wide ? (
+          /* iPad landscape: planner + map side by side. Both panes are flex children of a
+             flex:1 row, so they consume exactly the measured canvas — no window maths, no
+             dead space, and each pane scrolls inside its own bounds. */
+          <View style={s.panes}>
+            <ScrollView
+              style={s.leftPane}
+              contentContainerStyle={s.paneContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {renderPlanner()}
+            </ScrollView>
+            <View style={s.rightPane}>
+              {showMap && validStops.length > 0 ? (
+                renderMap(true)
+              ) : (
+                <View style={[s.mapCard, s.mapPlaceholder, { backgroundColor: T.card, borderColor: T.line }]}>
+                  <MapPin size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+                  <Text style={[s.emptyTxt, { color: T.dim }]}>
+                    Add a school with coordinates to see the route map
+                  </Text>
+                </View>
+              )}
             </View>
-            <View style={[styles.pickerSearch, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
-              <Search size={16} color={T.dim} />
-              <TextInput
-                style={[styles.pickerInput, { color: T.text }]}
-                placeholder="Search schools..."
-                placeholderTextColor={T.dim}
-                value={schoolSearch}
-                onChangeText={setSchoolSearch}
-                autoFocus
-              />
-            </View>
-            {schoolsLoading ? (
-              <ActivityIndicator style={{ marginTop: 20 }} color={T.accent} />
-            ) : (
-              <FlatList
-                data={schools}
-                keyExtractor={item => String(item.id)}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={[styles.pickerItem, { borderBottomColor: T.line }]} onPress={() => addStop(item)}>
-                    <MapPin size={14} color={T.accent} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pickerItemName, { color: T.text }]}>{item.name}</Text>
-                      <Text style={[styles.pickerItemSub, { color: T.sub }]}>{item.city}{item.board ? ` • ${item.board}` : ''}</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                style={{ maxHeight: 400 }}
-                ListEmptyComponent={
-                  <Text style={[styles.pickerEmpty, { color: T.sub }]}>No schools found</Text>
-                }
-              />
-            )}
           </View>
-        </View>
-      </Modal>
+        ) : (
+          <ScrollView
+            contentContainerStyle={s.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {renderPlanner()}
+            {renderMap(false)}
+          </ScrollView>
+        )}
+      </View>
 
-      {/* Confirm delete */}
       <ConfirmModal
-        visible={confirmDelete.visible}
-        title="Remove Stop"
-        message="Remove this school from the route?"
-        confirmText="Remove"
-        confirmColor={T.danger}
-        onConfirm={() => {
-          removeStop(confirmDelete.index);
-          setConfirmDelete({ visible: false, index: -1 });
-        }}
-        onCancel={() => setConfirmDelete({ visible: false, index: -1 })}
+        visible={removeTarget !== null}
+        tone="danger"
+        title="Remove Stop?"
+        message={
+          removeTarget !== null && stops[removeTarget]
+            ? `${stops[removeTarget].schoolName} will be taken off today's route.`
+            : 'This school will be taken off today’s route.'
+        }
+        icon={<X size={24} color={T.danger} strokeWidth={ICON_STROKE} />}
+        confirmLabel="Remove"
+        onConfirm={() => { if (removeTarget !== null) removeStop(removeTarget); setRemoveTarget(null); }}
+        onCancel={() => setRemoveTarget(null)}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+// ─── Styles (layout only — every colour comes from the theme, inline) ─────────
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  canvas: { flex: 1 },
+
+  pad: { padding: 14, gap: 12 },
+  padWide: { paddingHorizontal: 22 },
+  head: { paddingHorizontal: 14, paddingTop: 14, gap: 10 },
+  titleBlock: { gap: 2 },
+  h1: { fontSize: rf(19), fontWeight: '800', letterSpacing: -0.4 },
+  h2: { fontSize: rf(12.5), fontWeight: '500' },
+
+  scroll: { padding: 14, gap: 12 },
+  panes: { flex: 1, flexDirection: 'row', gap: 12, padding: 14, paddingTop: 12 },
+  leftPane: { flex: 1.05 },
+  paneContent: { gap: 12, paddingBottom: 4 },
+  rightPane: { flex: 1.25 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 12 },
+  addRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+
+  notice: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 12, paddingVertical: 9, paddingHorizontal: 11,
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: 'rgba(255,255,255,0.8)', marginTop: 1 },
-  saveBtn: {
+  noticeTxt: { flex: 1, fontSize: rf(12), fontWeight: '600' },
+
+  empty: { alignItems: 'center', paddingVertical: 44, gap: 8 },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+
+  orderDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  orderTxt: { color: '#FFF', fontSize: rf(11.5), fontWeight: '800' },
+  stopName: { fontSize: rf(13.5), fontWeight: '700' },
+  stopMeta: { fontSize: rf(11), fontWeight: '500', marginTop: 1 },
+  rowActions: { flexDirection: 'row', gap: 6 },
+
+  foot: { borderTopWidth: 1, paddingTop: 12, gap: 10 },
+  footMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  count: { fontSize: rf(12), fontWeight: '600' },
+  optChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 11, paddingHorizontal: 8, paddingVertical: 3,
   },
-  saveBtnText: { color: '#FFF', fontSize: rf(13), fontFamily: Fonts.bold },
+  optChipTxt: { fontSize: rf(10.5), fontWeight: '700' },
+  footBtns: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
 
-  scroll: { flex: 1 },
-  centeredWide: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 10 },
+  mapCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
+  mapHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1 },
+  mapTitle: { fontSize: rf(13), fontWeight: '700' },
+  mapHint: { fontSize: rf(10.5), fontWeight: '500', marginTop: 1 },
+  navLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  navLinkTxt: { fontSize: rf(11.5), fontWeight: '700' },
 
-  summaryCard: { padding: 16 },
-  summaryRow: { flexDirection: 'row', alignItems: 'center' },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryValue: { fontSize: rf(24), fontFamily: Fonts.bold },
-  summaryLabel: { fontSize: rf(12), fontFamily: Fonts.medium, marginTop: 2 },
-  divider: { width: 1, height: 32 },
-
-  stopCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14,
-  },
-  stopOrder: {
-    width: 32, height: 32, borderRadius: 16,
+  pin: {
+    minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 6,
     alignItems: 'center', justifyContent: 'center',
   },
-  stopOrderText: { fontSize: rf(14), fontFamily: Fonts.bold },
-  stopInfo: { flex: 1 },
-  stopName: { fontSize: rf(14), fontFamily: Fonts.medium },
-  visitedTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  visitedText: { fontSize: rf(11), fontFamily: Fonts.medium },
-  stopActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  actionIcon: { padding: 4 },
+  pinTxt: { color: '#FFF', fontSize: rf(11), fontWeight: '800' },
+  meDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 3, borderColor: '#FFF' },
 
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 18,
-    paddingVertical: 14,
-  },
-  addBtnText: { fontSize: rf(14), fontFamily: Fonts.bold },
-
-  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  emptyTitle: { fontSize: rf(16), fontFamily: Fonts.bold },
-  emptySub: { fontSize: rf(13), fontFamily: Fonts.regular, textAlign: 'center' },
-
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  pickerSheet: {
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 20, paddingBottom: 40, maxHeight: '80%',
-  },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  pickerTitle: { fontSize: rf(17), fontFamily: Fonts.bold },
-  pickerClose: { fontSize: rf(18), padding: 4 },
-  pickerSearch: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, marginBottom: 10,
-  },
-  pickerInput: { flex: 1, fontSize: rf(14), fontFamily: Fonts.regular },
-  pickerItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  pickerItemName: { fontSize: rf(14), fontFamily: Fonts.medium },
-  pickerItemSub: { fontSize: rf(12), fontFamily: Fonts.regular, marginTop: 2 },
-  pickerEmpty: { textAlign: 'center', fontSize: rf(14), fontFamily: Fonts.regular, paddingVertical: 20 },
+  skel: { borderRadius: 13 },
 });

@@ -1,30 +1,49 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Alert, Linking, useWindowDimensions, Modal,
+  Alert, Linking, useWindowDimensions, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Phone, Mail, User, History, X, Navigation } from 'lucide-react-native';
+import {
+  ArrowLeft, Phone, Mail, Navigation, MapPin,
+  Edit2, XCircle, UserCheck, ArrowRight, ChevronRight,
+} from 'lucide-react-native';
+
 import { leadsApi } from '../../api/leads';
-import { aiApi } from '../../api/ai';
-import { LeadDto, LeadStage, LeadScoreBreakdown, UserDto } from '../../types';
+import { LeadDto, LeadStage, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { StageBadge } from '../../components/common/Badge';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { Button } from '../../components/common/Button';
-import { GradientBackground } from '../../components/common/GradientBackground';
-import { GradientButton } from '../../components/common/GradientButton';
-import { Card, StatTile, Badge, SectionLabel } from '../../components/ui';
-import { ACTIVITY_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
+import { SelectPicker } from '../../components/common/SelectPicker';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, IconBtn, Input, StatusBadge, ListCard, Avatar, FormModal,
+} from '../../components/crud';
+import { ACTIVITY_COLORS, STAGE_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
 import { formatCurrency, formatDate, formatRelativeDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+import { withAlpha, SOFT_TINT } from '../../theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 
+/**
+ * Web parity (LeadDetail.jsx `stageOrder`): the stepper runs New Lead → Won.
+ * ImplementationStarted is set automatically when a payment link is paid, so it is
+ * only appended when the lead is actually in it — otherwise the stepper would be
+ * blank for those leads (indexOf → -1).
+ */
 const STAGE_ORDER: LeadStage[] = [
   'NewLead', 'Contacted', 'Qualified', 'DemoStage', 'DemoDone',
-  'ProposalSent', 'Negotiation', 'ContractSent', 'Won', 'ImplementationStarted',
+  'ProposalSent', 'Negotiation', 'ContractSent', 'Won',
 ];
+
+const DASH = '—';
+
+const initialsOf = (name?: string) =>
+  (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase() || '?';
 
 export const LeadDetailScreen = ({ route, navigation }: any) => {
   const { leadId } = route.params;
@@ -33,12 +52,15 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const twoWide = isTabletDevice && width > height;
+  const wide = isTabletDevice && width > height;
 
   const [lead, setLead] = useState<LeadDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [scoreBreakdown, setScoreBreakdown] = useState<LeadScoreBreakdown | null>(null);
-  const [showScoreModal, setShowScoreModal] = useState(false);
+
+  // Mark as Lost
+  const [showMarkLost, setShowMarkLost] = useState(false);
+  const [lossReason, setLossReason] = useState('');
+  const [markingLost, setMarkingLost] = useState(false);
 
   // Reassign modal (managers only)
   const isManager = role !== 'FO';
@@ -81,483 +103,409 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const handleOpenScoreBreakdown = async () => {
-    setShowScoreModal(true);
-    if (!scoreBreakdown) {
-      try {
-        const res = await aiApi.getLeadScoreBreakdown(leadId);
-        setScoreBreakdown(res.data);
-      } catch {
-        // graceful fallback: show total only
-      }
+  const handleMarkLost = async () => {
+    const reason = lossReason.trim();
+    if (!reason) return;
+    setMarkingLost(true);
+    try {
+      // POST /leads/{id}/mark-lost — sets Stage = Lost + the reason. updateLead({ lossReason })
+      // only writes the reason and leaves the lead in its old stage forever.
+      const res = await leadsApi.markLost(leadId, reason);
+      setLead(res.data);
+      setShowMarkLost(false);
+      setLossReason('');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to mark lead as lost');
+    } finally {
+      setMarkingLost(false);
     }
   };
 
-  const handleMarkLost = () => {
-    Alert.prompt?.('Mark as Lost', 'Enter loss reason:', async (reason) => {
-      if (!reason) return;
-      try {
-        await leadsApi.updateLead(leadId, { lossReason: reason } as any);
-        fetch();
-      } catch { Alert.alert('Error', 'Failed to update lead'); }
-    });
-  };
-
-  if (loading) return <LoadingSpinner fullScreen color={T.accent} />;
+  if (loading) {
+    return (
+      <View style={[s.root, s.center, { backgroundColor: T.bg }]}>
+        <ActivityIndicator color={T.accent} />
+      </View>
+    );
+  }
   if (!lead) return null;
 
-  const stageIdx = STAGE_ORDER.indexOf(lead.stage as any);
+  const stages: LeadStage[] = lead.stage === 'ImplementationStarted'
+    ? [...STAGE_ORDER, 'ImplementationStarted']
+    : STAGE_ORDER;
+  const stageIdx = stages.indexOf(lead.stage as LeadStage);
   const canCreateDeal = ['DemoDone', 'ProposalSent', 'Negotiation', 'ContractSent', 'Won'].includes(lead.stage);
+  const canMarkLost = role === 'FO' && !['Won', 'Lost'].includes(lead.stage);
 
-  const breakdownItems = scoreBreakdown ? [
-    { label: 'Engagement', value: scoreBreakdown.engagement, max: 30, color: T.info },
-    { label: 'Visit Quality', value: scoreBreakdown.visitQuality, max: 25, color: T.success },
-    { label: 'Contact Quality', value: scoreBreakdown.contactQuality, max: 15, color: '#8B5CF6' },
-    { label: 'Demo Progress', value: scoreBreakdown.demoProgress, max: 20, color: T.warning },
-    { label: 'Deal Signals', value: scoreBreakdown.dealSignals, max: 10, color: T.accent },
-  ] : [];
+  // Web parity: LeadDetail.jsx's info card, in order.
+  const info: { label: string; value: string }[] = [
+    { label: 'Board', value: lead.board || DASH },
+    { label: 'Type', value: lead.type || DASH },
+    { label: 'Students', value: lead.students?.toLocaleString('en-IN') || DASH },
+    { label: 'Est. Value', value: formatCurrency(lead.value) },
+    { label: 'Close Date', value: formatDate(lead.closeDate) || DASH },
+    { label: 'Source', value: lead.source || DASH },
+    { label: 'Lead Score', value: `${lead.score}/100` },
+    { label: 'Assigned FO', value: lead.foName || DASH },
+    { label: 'Assigned By', value: lead.assignedByName || 'Self-created' },
+  ];
+
+  const activities = lead.activities || [];
 
   return (
-    <View style={[styles.root, { backgroundColor: T.bg }]}>
-      {/* Sunstone hero header */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={20} color="#FFF" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerSchool} numberOfLines={1}>{lead.school}</Text>
-            <View style={styles.headerSubRow}>
-              <StageBadge stage={lead.stage} />
-              <TouchableOpacity
-                style={styles.historyBtn}
-                onPress={() => navigation.navigate('AuditHistory', { entityType: 'Lead', entityId: leadId, title: lead.school })}
-              >
-                <History size={14} color="rgba(255,255,255,0.85)" />
-                <Text style={styles.historyBtnText}>History</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <TouchableOpacity onPress={handleOpenScoreBreakdown}>
-            <View style={[styles.scoreCircle, { borderColor: getScoreColor(lead.score) }]}>
-              <Text style={[styles.scoreValue, { color: getScoreColor(lead.score) }]}>{lead.score}</Text>
-              <Text style={styles.scoreLabel}>score</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </GradientBackground>
-
-      {/* Score Breakdown Modal */}
-      <Modal visible={showScoreModal} transparent animationType="slide" onRequestClose={() => setShowScoreModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: T.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: T.text }]}>Score Breakdown</Text>
-              <TouchableOpacity onPress={() => setShowScoreModal(false)}>
-                <X size={20} color={T.sub} />
-              </TouchableOpacity>
-            </View>
-            {scoreBreakdown ? (
-              <>
-                {breakdownItems.map(item => (
-                  <View key={item.label} style={styles.breakdownRow}>
-                    <View style={styles.breakdownLabel}>
-                      <Text style={[styles.breakdownLabelText, { color: T.sub }]}>{item.label}</Text>
-                      <Text style={[styles.breakdownScore, { color: item.color }]}>{item.value}/{item.max}</Text>
-                    </View>
-                    <View style={[styles.breakdownBarBg, { backgroundColor: T.cardAlt }]}>
-                      <View style={[styles.breakdownBarFill, { width: `${(item.value / item.max) * 100}%`, backgroundColor: item.color }]} />
-                    </View>
-                  </View>
-                ))}
-                <View style={[styles.breakdownTotal, { borderTopColor: T.line }]}>
-                  <Text style={[styles.breakdownTotalLabel, { color: T.text }]}>Total Score</Text>
-                  <Text style={[styles.breakdownTotalValue, { color: getScoreColor(scoreBreakdown.total) }]}>
-                    {scoreBreakdown.total}/100
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <View style={styles.scoreModalLoading}>
-                <Text style={[styles.scoreModalLoadingText, { color: T.text }]}>Score: {lead.score}/100</Text>
-                <Text style={[styles.scoreModalSub, { color: T.sub }]}>Detailed breakdown not available</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, twoWide && { padding: 24, gap: 18 }]}>
-        {/* Key highlights */}
-        <View style={styles.statRow}>
-          <StatTile
-            label="Est. Value"
-            value={formatCurrency(lead.value)}
-            tint={T.accent}
-            style={styles.statTile}
-          />
-          <StatTile
-            label="Students"
-            value={lead.students?.toLocaleString('en-IN') || '—'}
-            tint={T.info}
-            style={styles.statTile}
-          />
-        </View>
-
-        {/* Stage Progression */}
-        <View>
-          <SectionLabel>Pipeline Stage</SectionLabel>
-          <Card>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stageScroll}>
-              <View style={styles.stageTrack}>
-                {STAGE_ORDER.map((stage, idx) => {
-                  const done = idx <= stageIdx;
-                  const current = idx === stageIdx;
-                  return (
-                    <React.Fragment key={stage}>
-                      <View style={styles.stageItem}>
-                        <View style={[
-                          styles.stageDot,
-                          { backgroundColor: done ? (current ? T.accent : T.success) : T.line },
-                        ]}>
-                          {done && <Text style={styles.stageDotCheck}>{current ? '●' : '✓'}</Text>}
-                        </View>
-                        <Text
-                          style={[styles.stageLabel, { color: T.dim }, current && { color: T.accent, fontFamily: Fonts.bold }]}
-                          numberOfLines={2}
-                        >
-                          {STAGE_LABELS[stage]}
-                        </Text>
-                      </View>
-                      {idx < STAGE_ORDER.length - 1 && (
-                        <View style={[styles.stageLine, { backgroundColor: idx < stageIdx ? T.success : T.line }]} />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </Card>
-        </View>
-
-        {/* Contact Card */}
-        {lead.contact && (
-          <View>
-            <SectionLabel>Contact Person</SectionLabel>
-            <Card>
-              <View style={styles.contactRow}>
-                <View style={[styles.contactAvatar, { backgroundColor: T.accentSoft }]}>
-                  <Text style={[styles.contactAvatarText, { color: T.accent }]}>
-                    {lead.contact.name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.contactInfo}>
-                  <Text style={[styles.contactName, { color: T.text }]}>{lead.contact.name}</Text>
-                  <Text style={[styles.contactDesg, { color: T.sub }]}>{lead.contact.designation}</Text>
-                </View>
-              </View>
-              <View style={styles.contactActions}>
-                {lead.contact.phone && (
-                  <TouchableOpacity
-                    style={[styles.contactBtn, { backgroundColor: T.info + '22' }]}
-                    onPress={() => Linking.openURL(`tel:${lead.contact!.phone}`)}
-                  >
-                    <Phone size={16} color={T.info} />
-                    <Text style={[styles.contactBtnText, { color: T.info }]}>{lead.contact.phone}</Text>
-                  </TouchableOpacity>
-                )}
-                {lead.contact.email && (
-                  <TouchableOpacity
-                    style={[styles.contactBtn, { backgroundColor: T.success + '22' }]}
-                    onPress={() => Linking.openURL(`mailto:${lead.contact!.email}`)}
-                  >
-                    <Mail size={16} color={T.success} />
-                    <Text style={[styles.contactBtnText, { color: T.success }]} numberOfLines={1}>{lead.contact.email}</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </Card>
-          </View>
-        )}
-
-        {/* Attributes Grid */}
-        <View>
-          <SectionLabel>Lead Info</SectionLabel>
-          <Card>
-            <View style={styles.attrGrid}>
-              {[
-                { label: 'Board', value: lead.board },
-                { label: 'Type', value: lead.type },
-                { label: 'Close Date', value: formatDate(lead.closeDate) || '—' },
-                { label: 'Source', value: lead.source },
-                { label: 'City', value: lead.city },
-                { label: 'State', value: lead.state || '—' },
-              ].map(({ label, value }) => (
-                <View key={label} style={[styles.attrItem, twoWide && { width: '30%' }]}>
-                  <Text style={[styles.attrLabel, { color: T.dim }]}>{label}</Text>
-                  <Text style={[styles.attrValue, { color: T.text }]}>{value}</Text>
-                </View>
-              ))}
-            </View>
-            {lead.notes && (
-              <View style={[styles.notes, { backgroundColor: T.cardAlt }]}>
-                <Text style={[styles.attrLabel, { color: T.dim }]}>Notes</Text>
-                <Text style={[styles.notesText, { color: T.sub }]}>{lead.notes}</Text>
-              </View>
-            )}
-            {lead.lossReason && (
-              <View style={[styles.notes, { backgroundColor: T.danger + '18' }]}>
-                <Text style={[styles.attrLabel, { color: T.danger }]}>Loss Reason</Text>
-                <Text style={[styles.notesText, { color: T.danger }]}>{lead.lossReason}</Text>
-              </View>
-            )}
-          </Card>
-        </View>
-
-        {/* Assignment */}
-        <View>
-          <SectionLabel>Assignment</SectionLabel>
-          <Card>
-            {lead.foName && (
-              <View style={styles.assignRow}>
-                <User size={16} color={T.accent} />
-                <Text style={[styles.assignLabel, { color: T.sub }]}>Assigned FO:</Text>
-                <Text style={[styles.assignValue, { color: T.text }]}>{lead.foName}</Text>
-              </View>
-            )}
-            {lead.assignedByName && (
-              <View style={styles.assignRow}>
-                <User size={16} color={T.dim} />
-                <Text style={[styles.assignLabel, { color: T.sub }]}>Assigned By:</Text>
-                <Text style={[styles.assignValue, { color: T.text }]}>{lead.assignedByName}</Text>
-              </View>
-            )}
-          </Card>
-        </View>
-
-        {/* Activity Timeline */}
-        {(lead.activities?.length || 0) > 0 && (
-          <View>
-            <SectionLabel>Activity Timeline</SectionLabel>
-            <Card>
-              {lead.activities!.map((act) => (
-                <View key={act.id} style={styles.actItem}>
-                  <View style={[styles.actIcon, { backgroundColor: (ACTIVITY_COLORS[act.type] || T.accent) + '22' }]}>
-                    <Text style={[styles.actIconText, { color: ACTIVITY_COLORS[act.type] || T.accent }]}>
-                      {act.type.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={styles.actContent}>
-                    <View style={styles.actHeader}>
-                      <Badge label={act.type} color={ACTIVITY_COLORS[act.type]} />
-                      <Badge label={act.outcome} color={OUTCOME_COLORS[act.outcome]} />
-                      {act.gpsVerified && (
-                        <View style={[styles.gpsBadge, { backgroundColor: T.success + '22' }]}>
-                          <Navigation size={10} color={T.success} />
-                          <Text style={[styles.gpsBadgeText, { color: T.success }]}>GPS Verified</Text>
-                        </View>
-                      )}
-                      <Text style={[styles.actDate, { color: T.dim }]}>{formatRelativeDate(act.date)}</Text>
-                    </View>
-                    {act.notes && <Text style={[styles.actNotes, { color: T.sub }]} numberOfLines={2}>{act.notes}</Text>}
-                    {act.personMet && (
-                      <Text style={[styles.actMeta, { color: T.dim }]}>Met: {act.personMet} ({act.personDesignation})</Text>
-                    )}
-                  </View>
-                </View>
-              ))}
-            </Card>
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actions}>
-          {isManager && (
-            <Button
-              title="Reassign Lead"
-              onPress={() => { setShowAssign(true); setSelectedFoId(''); }}
-              variant="secondary"
-              color={T.accent}
-              style={styles.actionBtn}
-            />
-          )}
-          <GradientButton
-            label="Edit Lead"
-            onPress={() => navigation.navigate('EditLead', { leadId })}
-            style={styles.actionBtn}
-          />
-          {canCreateDeal && (
-            <Button
-              title="Create Deal"
-              onPress={() => navigation.navigate('CreateDeal', { leadId })}
-              color={T.success}
-              style={styles.actionBtn}
-            />
-          )}
-          {role === 'FO' && !['Won', 'Lost'].includes(lead.stage) && (
-            <Button
-              title="Mark as Lost"
-              onPress={handleMarkLost}
-              variant="danger"
-              style={styles.actionBtn}
-            />
-          )}
-        </View>
-
-        {/* Reassign Modal */}
-        <Modal visible={showAssign} transparent animationType="slide" onRequestClose={() => setShowAssign(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalSheet, { backgroundColor: T.card }]}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: T.text }]}>Reassign Lead</Text>
-                <TouchableOpacity onPress={() => setShowAssign(false)}>
-                  <X size={20} color={T.sub} />
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.modalSub, { color: T.sub }]}>
-                Currently assigned to: <Text style={[styles.modalSubBold, { color: T.text }]}>{lead.foName || '—'}</Text>
+    <View style={[s.root, { backgroundColor: T.bg }]}>
+      {/* House pattern: plain themed title block on T.bg — no gradient hero. */}
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <View style={s.headerRow}>
+          <IconBtn kind="view" label="Back" onPress={() => navigation.goBack()}>
+            <ArrowLeft size={18} color={T.accent} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+          <View style={s.headerCenter}>
+            <Text style={[s.h1, { color: T.text }]} numberOfLines={1}>{lead.school}</Text>
+            <View style={s.headerSub}>
+              <MapPin size={11} color={T.dim} strokeWidth={ICON_STROKE} />
+              <Text style={[s.h2, { color: T.sub }]} numberOfLines={1}>
+                {[lead.city, lead.state].filter(Boolean).join(', ') || DASH}
               </Text>
-              <Text style={[styles.modalSub, { color: T.sub }]}>Select a new Field Officer:</Text>
-              <View style={styles.foList}>
-                {fos.map((fo) => (
-                  <TouchableOpacity
-                    key={fo.id}
-                    style={[
-                      styles.foItem,
-                      { backgroundColor: T.cardAlt },
-                      selectedFoId === fo.id && { backgroundColor: T.accentSoft, borderWidth: 1, borderColor: T.accent },
-                      fo.id === lead.foId && styles.foItemDisabled,
-                    ]}
-                    onPress={() => { if (fo.id !== lead.foId) setSelectedFoId(fo.id); }}
-                  >
-                    <Text style={[styles.foItemText, { color: T.text }, selectedFoId === fo.id && { color: T.accent, fontFamily: Fonts.bold }]}>
-                      {fo.name}{(fo as any).zone ? ` (${(fo as any).zone})` : ''}{fo.id === lead.foId ? ' (Current)' : ''}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalCancelBtn, { borderColor: T.line }]} onPress={() => setShowAssign(false)}>
-                  <Text style={[styles.modalCancelText, { color: T.sub }]}>Cancel</Text>
-                </TouchableOpacity>
-                <GradientButton
-                  label={assigning ? 'Reassigning...' : 'Reassign'}
-                  onPress={handleAssign}
-                  loading={assigning}
-                  disabled={!selectedFoId || assigning}
-                  style={styles.modalConfirmBtn}
-                />
-              </View>
+              {/* Change History removed: GET /audit has no controller in the backend,
+                  so this could only ever open a permanently-empty screen. Web has no
+                  audit UI either. Restore alongside a real AuditController. */}
             </View>
           </View>
-        </Modal>
+          <View style={[s.scoreCircle, { borderColor: getScoreColor(lead.score), backgroundColor: T.card }]}>
+            <Text style={[s.scoreValue, { color: getScoreColor(lead.score) }]}>{lead.score}</Text>
+            <Text style={[s.scoreLabel, { color: T.dim }]}>score</Text>
+          </View>
+        </View>
+      </View>
 
-        <View style={{ height: 32 }} />
+      <ScrollView contentContainerStyle={[s.scroll, wide && s.scrollWide]}>
+        {/* Stage stepper */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={s.stepper}>
+              {stages.map((stage, idx) => {
+                const done = idx < stageIdx;
+                const current = idx === stageIdx;
+                return (
+                  <React.Fragment key={stage}>
+                    <View
+                      style={[
+                        s.step,
+                        { backgroundColor: done ? T.success : current ? T.accent : T.cardAlt },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.stepTxt,
+                          { color: done || current ? '#FFF' : T.dim },
+                        ]}
+                      >
+                        {STAGE_LABELS[stage]}
+                      </Text>
+                    </View>
+                    {idx < stages.length - 1 && (
+                      <ChevronRight size={12} color={done ? T.success : T.line} strokeWidth={2.4} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+
+        <View style={wide ? s.cols : undefined}>
+          <View style={wide ? s.colLeft : s.stack}>
+            {/* Lead info */}
+            <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+              <View style={s.infoHead}>
+                <Avatar initials={initialsOf(lead.school)} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.infoName, { color: T.text }]} numberOfLines={2}>{lead.school}</Text>
+                  <Text style={[s.infoCity, { color: T.dim }]} numberOfLines={1}>
+                    {[lead.city, lead.state].filter(Boolean).join(', ') || DASH}
+                  </Text>
+                </View>
+                <StatusBadge label={STAGE_LABELS[lead.stage] || lead.stage} color={STAGE_COLORS[lead.stage]} />
+              </View>
+
+              <View style={[s.infoList, { borderTopColor: T.line }]}>
+                {info.map(({ label, value }) => (
+                  <View key={label} style={s.infoRow}>
+                    <Text style={[s.infoLabel, { color: T.dim }]}>{label}</Text>
+                    <Text style={[s.infoValue, { color: T.text }]} numberOfLines={1}>{value}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {!!lead.notes && (
+                <View style={[s.note, { backgroundColor: T.cardAlt }]}>
+                  <Text style={[s.noteLabel, { color: T.dim }]}>Notes</Text>
+                  <Text style={[s.noteTxt, { color: T.sub }]}>{lead.notes}</Text>
+                </View>
+              )}
+
+              {!!lead.lossReason && (
+                <View style={[s.note, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+                  <View style={s.noteHead}>
+                    <XCircle size={13} color={T.danger} strokeWidth={ICON_STROKE} />
+                    <Text style={[s.noteLabel, { color: T.danger }]}>Loss Reason</Text>
+                  </View>
+                  <Text style={[s.noteTxt, { color: T.danger }]}>{lead.lossReason}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Decision maker */}
+            {!!lead.contact?.name && (
+              <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+                <Text style={[s.cardTitle, { color: T.text }]}>Decision Maker</Text>
+                <View style={s.contactRow}>
+                  <Avatar initials={initialsOf(lead.contact.name)} color={T.info} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.infoName, { color: T.text }]} numberOfLines={1}>{lead.contact.name}</Text>
+                    <Text style={[s.infoCity, { color: T.dim }]} numberOfLines={1}>{lead.contact.designation}</Text>
+                  </View>
+                </View>
+                <View style={s.contactBtns}>
+                  {!!lead.contact.phone && (
+                    <TouchableOpacity
+                      style={[s.contactBtn, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}
+                      onPress={() => Linking.openURL(`tel:${lead.contact!.phone}`)}
+                    >
+                      <Phone size={14} color={T.info} strokeWidth={ICON_STROKE} />
+                      <Text style={[s.contactTxt, { color: T.info }]} numberOfLines={1}>{lead.contact.phone}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!lead.contact.email && (
+                    <TouchableOpacity
+                      style={[s.contactBtn, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}
+                      onPress={() => Linking.openURL(`mailto:${lead.contact!.email}`)}
+                    >
+                      <Mail size={14} color={T.success} strokeWidth={ICON_STROKE} />
+                      <Text style={[s.contactTxt, { color: T.success }]} numberOfLines={1}>{lead.contact.email}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Actions */}
+            <View style={s.actions}>
+              {isManager && (
+                <Btn
+                  label="Reassign Lead"
+                  variant="soft"
+                  onPress={() => { setShowAssign(true); setSelectedFoId(''); }}
+                  icon={<UserCheck size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+                />
+              )}
+              <Btn
+                label="Edit Lead"
+                variant="secondary"
+                onPress={() => navigation.navigate('EditLead', { leadId })}
+                icon={<Edit2 size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+              />
+              {canCreateDeal && (
+                <Btn
+                  label="Create Deal"
+                  variant="success"
+                  onPress={() => navigation.navigate('CreateDeal', { leadId })}
+                  icon={<ArrowRight size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+                />
+              )}
+              {canMarkLost && (
+                <Btn
+                  label="Mark as Lost"
+                  variant="dangerGhost"
+                  onPress={() => { setLossReason(''); setShowMarkLost(true); }}
+                  icon={<XCircle size={14} color={T.danger} strokeWidth={ICON_STROKE} />}
+                />
+              )}
+            </View>
+          </View>
+
+          {/* Activity Timeline */}
+          <View style={wide ? s.colRight : s.stack}>
+            <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+              <Text style={[s.cardTitle, { color: T.text }]}>Activity Timeline</Text>
+              {activities.length === 0 ? (
+                <Text style={[s.emptyTxt, { color: T.dim }]}>No activities recorded yet.</Text>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {activities.map(act => (
+                    <ListCard key={act.id} style={[s.actCard, { backgroundColor: T.cardAlt }]}>
+                      <Avatar initials={act.type.charAt(0)} color={ACTIVITY_COLORS[act.type] || T.accent} />
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <View style={s.actHead}>
+                          <StatusBadge label={act.type} color={ACTIVITY_COLORS[act.type]} />
+                          <StatusBadge label={act.outcome} color={OUTCOME_COLORS[act.outcome]} />
+                          {act.gpsVerified && (
+                            <View style={[s.gps, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
+                              <Navigation size={10} color={T.success} strokeWidth={ICON_STROKE} />
+                              <Text style={[s.gpsTxt, { color: T.success }]}>GPS Verified</Text>
+                            </View>
+                          )}
+                          <Text style={[s.actDate, { color: T.dim }]}>{formatRelativeDate(act.date)}</Text>
+                        </View>
+                        {!!act.notes && <Text style={[s.actNotes, { color: T.sub }]} numberOfLines={3}>{act.notes}</Text>}
+                        {!!act.personMet && (
+                          <Text style={[s.actMeta, { color: T.dim }]}>
+                            Met: {act.personMet}{act.personDesignation ? ` (${act.personDesignation})` : ''}
+                          </Text>
+                        )}
+                      </View>
+                    </ListCard>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        <View style={{ height: 24 }} />
       </ScrollView>
+
+      {/* Mark as Lost */}
+      <FormModal
+        visible={showMarkLost}
+        title="Mark Lead as Lost"
+        onClose={() => setShowMarkLost(false)}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowMarkLost(false)} style={{ flex: 1 }} />
+            <Btn
+              label={markingLost ? 'Marking...' : 'Mark as Lost'}
+              variant="danger"
+              onPress={handleMarkLost}
+              loading={markingLost}
+              disabled={!lossReason.trim() || markingLost}
+              style={{ flex: 1 }}
+            />
+          </>
+        }
+      >
+        <View style={{ gap: 12 }}>
+          <Text style={[s.mSub, { color: T.sub }]}>
+            {lead.school}{lead.city ? ` · ${lead.city}` : ''}
+          </Text>
+          <Text style={[s.mSub, { color: T.sub }]}>
+            Record why this deal was lost — this feeds the Lost Deal Analysis report.
+          </Text>
+          <Input
+            label="Loss Reason *"
+            value={lossReason}
+            onChangeText={setLossReason}
+            maxLength={500}
+            placeholder="e.g. Pricing too high, competitor selected..."
+          />
+        </View>
+      </FormModal>
+
+      {/* Reassign */}
+      <FormModal
+        visible={showAssign}
+        title="Reassign Lead"
+        onClose={() => setShowAssign(false)}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowAssign(false)} style={{ flex: 1 }} />
+            <Btn
+              label={assigning ? 'Reassigning...' : 'Reassign'}
+              onPress={handleAssign}
+              loading={assigning}
+              disabled={!selectedFoId || assigning}
+              style={{ flex: 1 }}
+            />
+          </>
+        }
+      >
+        <View style={{ gap: 14 }}>
+          <Text style={[s.mSub, { color: T.sub }]}>
+            Currently assigned to: <Text style={[s.mSubBold, { color: T.text }]}>{lead.foName || DASH}</Text>
+          </Text>
+          <SelectPicker
+            label="Select a new Field Officer"
+            options={fos
+              .filter(fo => fo.id !== lead.foId)
+              .map(fo => ({
+                label: `${fo.name}${(fo as any).zone ? ` (${(fo as any).zone})` : ''}`,
+                value: fo.id,
+              }))}
+            value={selectedFoId}
+            onChange={(v) => setSelectedFoId(v)}
+            accentColor={T.accent}
+          />
+        </View>
+      </FormModal>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  center: { alignItems: 'center', justifyContent: 'center' },
+
+  header: { paddingHorizontal: 14, paddingBottom: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
-  },
-  headerCenter: { flex: 1, gap: 4 },
-  headerSchool: { fontFamily: Fonts.bold, fontSize: rf(18), color: '#FFF', letterSpacing: -0.3 },
+  headerCenter: { flex: 1, minWidth: 0, gap: 2 },
+  h1: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4 },
+  headerSub: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  h2: { fontWeight: '500', fontSize: rf(12.5), flexShrink: 1, minWidth: 0 },
+  historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 6, flexShrink: 0 },
+  historyTxt: { fontWeight: '600', fontSize: rf(11) },
   scoreCircle: {
-    width: 52, height: 52, borderRadius: 26,
-    borderWidth: 2, backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 52, height: 52, borderRadius: 26, borderWidth: 2, flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  scoreValue: { fontFamily: Fonts.bold, fontSize: rf(18) },
-  scoreLabel: { fontFamily: Fonts.regular, fontSize: rf(9), color: 'rgba(255,255,255,0.7)' },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 14 },
-  statRow: { flexDirection: 'row', gap: 12 },
-  statTile: { flex: 1 },
-  stageScroll: { marginTop: 4 },
-  stageTrack: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, paddingHorizontal: 4 },
-  stageItem: { alignItems: 'center', width: 64 },
-  stageDot: {
-    width: 24, height: 24, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
-  },
-  stageDotCheck: { color: '#FFF', fontFamily: Fonts.bold, fontSize: rf(10) },
-  stageLabel: { fontFamily: Fonts.regular, fontSize: rf(10), textAlign: 'center' },
-  stageLine: { width: 24, height: 2, marginTop: 11 },
-  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  contactAvatar: {
-    width: 48, height: 48, borderRadius: 24,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  contactAvatarText: { fontFamily: Fonts.bold, fontSize: rf(20) },
-  contactInfo: { flex: 1 },
-  contactName: { fontFamily: Fonts.bold, fontSize: rf(16) },
-  contactDesg: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 2 },
-  contactActions: { gap: 8 },
-  contactBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 10, borderRadius: 12,
-  },
-  contactBtnText: { fontFamily: Fonts.medium, fontSize: rf(14), flex: 1 },
-  attrGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  attrItem: { width: '45%', minWidth: 120 },
-  attrLabel: { fontFamily: Fonts.medium, fontSize: rf(11), textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
-  attrValue: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  notes: { marginTop: 12, padding: 12, borderRadius: 14 },
-  notesText: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20, marginTop: 2 },
-  assignRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  assignLabel: { fontFamily: Fonts.regular, fontSize: rf(13) },
-  assignValue: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  actItem: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  actIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  actIconText: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  actContent: { flex: 1 },
-  actHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginBottom: 4 },
-  actDate: { fontFamily: Fonts.regular, fontSize: rf(11), marginLeft: 'auto' },
-  actNotes: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 19 },
-  actMeta: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  scoreValue: { fontWeight: '800', fontSize: rf(18) },
+  scoreLabel: { fontWeight: '500', fontSize: rf(9) },
+
+  scroll: { padding: 14, gap: 12 },
+  scrollWide: { paddingHorizontal: 22 },
+  stack: { gap: 12 },
+  cols: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  colLeft: { flex: 1, gap: 12 },
+  colRight: { flex: 1.4, gap: 12 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 14, gap: 12 },
+  cardTitle: { fontSize: rf(13.5), fontWeight: '700' },
+
+  // stepper — web parity: pill per stage, chevron between
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
+  step: { height: 28, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  stepTxt: { fontSize: rf(11.5), fontWeight: '700' },
+
+  infoHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  infoName: { fontSize: rf(14), fontWeight: '700' },
+  infoCity: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  infoList: { borderTopWidth: 1, paddingTop: 10, gap: 8 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  infoLabel: { fontSize: rf(12.5), fontWeight: '500' },
+  infoValue: { fontSize: rf(12.5), fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+
+  note: { borderRadius: 13, padding: 12, gap: 3 },
+  noteHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  noteLabel: { fontSize: rf(10.5), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  noteTxt: { fontSize: rf(12.5), fontWeight: '500', lineHeight: 19 },
+
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  contactBtns: { gap: 8 },
+  contactBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12 },
+  contactTxt: { fontSize: rf(13), fontWeight: '600', flex: 1 },
+
   actions: { gap: 10 },
-  actionBtn: {},
-  headerSubRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },
-  historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  historyBtnText: { fontFamily: Fonts.regular, fontSize: rf(11), color: 'rgba(255,255,255,0.85)' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: {
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 20, paddingBottom: 40,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontFamily: Fonts.bold, fontSize: rf(17) },
-  breakdownRow: { marginBottom: 14 },
-  breakdownLabel: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  breakdownLabelText: { fontFamily: Fonts.medium, fontSize: rf(13) },
-  breakdownScore: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  breakdownBarBg: { height: 8, borderRadius: 4 },
-  breakdownBarFill: { height: 8, borderRadius: 4 },
-  breakdownTotal: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 16, marginTop: 4, borderTopWidth: 1,
-  },
-  breakdownTotalLabel: { fontFamily: Fonts.bold, fontSize: rf(15) },
-  breakdownTotalValue: { fontFamily: Fonts.bold, fontSize: rf(22) },
-  scoreModalLoading: { alignItems: 'center', paddingVertical: 20 },
-  scoreModalLoadingText: { fontFamily: Fonts.bold, fontSize: rf(28) },
-  scoreModalSub: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 6 },
-  gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
-  gpsBadgeText: { fontFamily: Fonts.bold, fontSize: rf(10) },
-  modalSub: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 6 },
-  modalSubBold: { fontFamily: Fonts.bold },
-  foList: { marginVertical: 10, maxHeight: 220 },
-  foItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4 },
-  foItemDisabled: { opacity: 0.4 },
-  foItemText: { fontFamily: Fonts.medium, fontSize: rf(14) },
-  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  modalCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  modalCancelText: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  modalConfirmBtn: { flex: 1 },
+
+  actCard: { alignItems: 'flex-start', borderWidth: 0 },
+  actHead: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, alignItems: 'center' },
+  actDate: { fontSize: rf(11), fontWeight: '500', marginLeft: 'auto' },
+  actNotes: { fontSize: rf(12.5), fontWeight: '500', lineHeight: 19 },
+  actMeta: { fontSize: rf(11.5), fontWeight: '500' },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', paddingVertical: 18 },
+
+  gps: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 11, paddingHorizontal: 7, height: 22 },
+  gpsTxt: { fontSize: rf(10), fontWeight: '700' },
+
+  mSub: { fontSize: rf(13), fontWeight: '500' },
+  mSubBold: { fontWeight: '700' },
 });

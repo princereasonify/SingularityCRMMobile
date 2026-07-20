@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GradientBackground } from './GradientBackground';
 import { ShimmerWord } from './ShimmerText';
 import { SingularityLogo } from './SingularityLogo';
-import { Fonts } from '../../theme';
+import { Wordmark } from '../../theme';
 
 const SERIF = Platform.select({ ios: 'Georgia', default: 'serif' });
 
@@ -20,6 +20,12 @@ interface Props {
  */
 export const AuthHero = ({ compact }: Props) => {
   const insets = useSafeAreaInsets();
+
+  // Brand lockup: the mark leads, the wordmark reads at the mark's own height and
+  // never larger than it. No animation on the mark.
+  const logoSize = compact ? 64 : 92;
+  const wordSize = Math.round(logoSize * 0.34);
+
 
   const quoteSize = compact ? 36 : 54;
   const quoteLh = quoteSize * (compact ? 1.14 : 1.12);
@@ -45,9 +51,12 @@ export const AuthHero = ({ compact }: Props) => {
           : { paddingTop: insets.top + 48, paddingBottom: 56, paddingHorizontal: 48, flex: 1 },
       ]}
     >
+      {/* Brand lockup: the mark is 3× the old size with a sweeping shimmer, the
+          wordmark is half the mark's height, vertically centred, sitting right
+          against it (only a hair of gap). */}
       <View style={styles.brandRow}>
-        <SingularityLogo size={compact ? 54 : 74} />
-        <Text style={[styles.wordmark, { fontSize: compact ? 20 : 24 }]}>
+        <SingularityLogo size={logoSize} />
+        <Text style={[styles.wordmark, { fontSize: wordSize }]}>
           Singularity<Text style={styles.wordmarkAccent}>CRM</Text>
         </Text>
       </View>
@@ -84,11 +93,11 @@ export const AuthHero = ({ compact }: Props) => {
 
 const styles = StyleSheet.create({
   hero: { justifyContent: 'flex-start' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  wordmark: { fontFamily: Fonts.bold, color: '#FFFFFF', letterSpacing: -0.6, marginLeft: 2 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  wordmark: { fontFamily: Wordmark.bold, color: '#FFFFFF', letterSpacing: -0.6, marginLeft: -2 },
   wordmarkAccent: { color: '#0E0B08' }, // CRM — bold black
   body: {},
   bodyCompact: { marginTop: 28 },
-  quote: { fontFamily: Fonts.bold, color: '#FFFFFF' },
-  tagline: { fontFamily: Fonts.regular, color: 'rgba(255,255,255,0.78)' },
+  quote: { fontWeight: '700', color: '#FFFFFF' },
+  tagline: { fontWeight: '400', color: 'rgba(255,255,255,0.78)' },
 });

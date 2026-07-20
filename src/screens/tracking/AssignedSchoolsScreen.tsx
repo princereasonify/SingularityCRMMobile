@@ -13,7 +13,7 @@ import { rf } from '../../utils/responsive';
 import { updateGeofences } from '../../services/nativeLocationTracking';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import { GradientButton } from '../../components/common/GradientButton';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 
 // ─── Pin colors per visit index (for unvisited schools) ──────────────────────
@@ -360,7 +360,7 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontFamily: Fonts.regular, fontSize: rf(14) },
+  loadingText: { fontWeight: '400', fontSize: rf(14) },
 
   // Header
   header: {
@@ -371,13 +371,13 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(18), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(18), color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontWeight: '400', fontSize: rf(12), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   progressPill: {
     backgroundColor: 'rgba(255,255,255,0.25)',
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
   },
-  progressText: { fontFamily: Fonts.bold, fontSize: rf(13), color: '#FFF' },
+  progressText: { fontWeight: '700', fontSize: rf(13), color: '#FFF' },
 
   // Map
   mapContainer: { flex: 1 },   // takes all space above the bottom panel
@@ -387,8 +387,8 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyTitle: { fontFamily: Fonts.bold, fontSize: rf(16) },
-  emptySub: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 4, textAlign: 'center', paddingHorizontal: 32 },
+  emptyTitle: { fontWeight: '700', fontSize: rf(16) },
+  emptySub: { fontWeight: '400', fontSize: rf(13), marginTop: 4, textAlign: 'center', paddingHorizontal: 32 },
 
   // Custom map pins
   pin: {
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, elevation: 6,
   },
-  pinNumber: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
+  pinNumber: { fontWeight: '700', fontSize: rf(12), color: '#FFF' },
   pinCheck: {
     position: 'absolute', bottom: -2, right: -2,
     backgroundColor: '#FFF', borderRadius: 8, padding: 1,
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 2, borderColor: '#FFF',
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, elevation: 8,
   },
-  youText: { fontFamily: Fonts.bold, fontSize: rf(11), color: '#FFF' },
+  youText: { fontWeight: '700', fontSize: rf(11), color: '#FFF' },
 
   // Bottom panel
   bottomPanel: {
@@ -434,10 +434,10 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
   },
-  listBadgeText: { fontFamily: Fonts.bold, fontSize: rf(12), color: '#FFF' },
+  listBadgeText: { fontWeight: '700', fontSize: rf(12), color: '#FFF' },
   listInfo: { flex: 1 },
-  listName: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  listCity: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 1 },
+  listName: { fontWeight: '700', fontSize: rf(13) },
+  listCity: { fontWeight: '400', fontSize: rf(11), marginTop: 1 },
   listStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  listStatusText: { fontFamily: Fonts.bold, fontSize: rf(11) },
+  listStatusText: { fontWeight: '700', fontSize: rf(11) },
 });

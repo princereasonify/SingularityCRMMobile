@@ -902,14 +902,17 @@ export const LiveTrackingScreen = () => {
     setTrackingPerson(u);
   }, []);
 
-  // SCA: fetch team for the selected SH (passes managerId to backend for future support)
-  const fetchSHTeam = useCallback(async (shId: number) => {
+  // SCA: fetch team for the selected SH.
+  // NOTE: this used to pass `shId` to `getLiveLocations`, but the controller only
+  // binds `[FromQuery] string? role` — there is no per-manager filter server-side,
+  // so that argument was silently dropped and this always returned everyone.
+  // Dropping it changes nothing at runtime; narrowing to one SH's team needs a new
+  // backend param. The list is unfiltered either way — flagged, not silently "fixed".
+  const fetchSHTeam = useCallback(async (_shId: number) => {
     setShTeamLoading(true);
     try {
-      const res = await trackingApi.getLiveLocations(shId);
+      const res = await trackingApi.getLiveLocations();
       const data = res.data as LiveLocationDto[];
-      // Backend may not yet filter by managerId — fall back to client-side filter
-      // by removing the SH themselves and any users from other SHs (future: backend handles this)
       setShTeamUsers(Array.isArray(data) ? data : []);
     } catch {
       setShTeamUsers([]);

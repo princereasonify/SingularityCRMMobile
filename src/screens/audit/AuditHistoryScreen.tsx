@@ -7,13 +7,12 @@ import { PlusCircle, Edit3, Trash2, ArrowLeft } from 'lucide-react-native';
 import { auditApi } from '../../api/audit';
 import { AuditLog } from '../../types';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card, Badge } from '../../components/ui';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { formatDateTime } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
-import type { AppTheme } from '../../theme';
+import { withAlpha, type AppTheme } from '../../theme';
 
 const actionConfig = (T: AppTheme) => ({
   Created: { icon: PlusCircle, color: T.success },
@@ -59,7 +58,7 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
       <View style={styles.logRow}>
         {/* Timeline line */}
         <View style={styles.timelineCol}>
-          <View style={[styles.iconCircle, { backgroundColor: cfg.color + '22' }]}>
+          <View style={[styles.iconCircle, { backgroundColor: withAlpha(cfg.color, 0.13) }]}>
             <Icon size={14} color={cfg.color} />
           </View>
           {!isLast && <View style={[styles.timelineLine, { backgroundColor: T.line }]} />}
@@ -101,22 +100,24 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
 
   return (
     <View style={[styles.root, { backgroundColor: T.bg }]}>
-      {/* ── Sunstone hero header ──────────────────────────────────────── */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      {/* Plain themed header — one header treatment across every page. */}
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: T.line }]}>
         <View style={styles.headerTop}>
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[styles.backBtn, { backgroundColor: T.card, borderColor: T.line }]}
             onPress={() => navigation.goBack()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <ArrowLeft size={20} color="#FFF" />
+            <ArrowLeft size={20} color={T.text} />
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle} numberOfLines={1}>Change History</Text>
-            <Text style={styles.headerSub} numberOfLines={1}>{title ?? `${entityType} #${entityId}`}</Text>
+            <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>Change History</Text>
+            <Text style={[styles.headerSub, { color: T.sub }]} numberOfLines={1}>
+              {title ?? `${entityType} #${entityId}`}
+            </Text>
           </View>
         </View>
-      </GradientBackground>
+      </View>
 
       {loading ? (
         <LoadingSpinner fullScreen color={T.accent} message="Loading history..." />
@@ -150,16 +151,16 @@ export const AuditHistoryScreen = ({ navigation, route }: any) => {
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // Hero header
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  // Plain themed header — one header treatment across every page.
+  header: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerText: { flex: 1 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  headerText: { flex: 1, minWidth: 0 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 1 },
 
   list: { padding: 16, gap: 0 },
   listEmpty: { flex: 1 },
@@ -172,19 +173,19 @@ const styles = StyleSheet.create({
   timelineLine: { flex: 1, width: 2, marginVertical: 4 },
   logCard: { flex: 1, marginBottom: 12 },
   logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  logTime: { fontFamily: Fonts.regular, fontSize: rf(11) },
-  logBy: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 8 },
+  logTime: { fontWeight: '400', fontSize: rf(11) },
+  logBy: { fontWeight: '400', fontSize: rf(12), marginBottom: 8 },
   fieldsTable: {
     borderWidth: 1, borderRadius: 8, overflow: 'hidden',
   },
   fieldsHeader: {
     flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6,
   },
-  fieldHeaderCell: { flex: 1, fontFamily: Fonts.bold, fontSize: rf(11) },
+  fieldHeaderCell: { flex: 1, fontWeight: '700', fontSize: rf(11) },
   fieldRow: {
     flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  fieldCell: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(12) },
-  fieldName: { fontFamily: Fonts.medium },
+  fieldCell: { flex: 1, fontWeight: '400', fontSize: rf(12) },
+  fieldName: { fontWeight: '600' },
 });

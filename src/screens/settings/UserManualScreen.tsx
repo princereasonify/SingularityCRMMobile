@@ -13,7 +13,7 @@ import {
 } from 'lucide-react-native';
 import { AppHeader } from '../../components/ui';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { Fonts } from '../../theme';
+
 import { rf } from '../../utils/responsive';
 import { MANUAL_HTML } from '../../assets/manualHtml';
 
@@ -1023,8 +1023,8 @@ const styles = StyleSheet.create({
     borderRadius: 18, padding: 18, borderWidth: 1,
   },
   heroText: { flex: 1 },
-  heroTitle: { fontFamily: Fonts.bold, fontSize: rf(18) },
-  heroSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  heroTitle: { fontWeight: '700', fontSize: rf(18) },
+  heroSub: { fontWeight: '400', fontSize: rf(12), marginTop: 2 },
 
   downloadCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1032,8 +1032,8 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  downloadTitle: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  downloadSub: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
+  downloadTitle: { fontWeight: '700', fontSize: rf(14) },
+  downloadSub: { fontWeight: '400', fontSize: rf(11), marginTop: 2 },
 
   sectionCard: {
     borderRadius: 18, borderWidth: 1,
@@ -1044,23 +1044,23 @@ const styles = StyleSheet.create({
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   iconBox: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sectionMeta: { flex: 1 },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  sectionSummary: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  sectionTitle: { fontWeight: '700', fontSize: rf(14) },
+  sectionSummary: { fontWeight: '400', fontSize: rf(12), marginTop: 2 },
 
   sectionBody: { borderTopWidth: 1, padding: 14, gap: 16 },
   block: { gap: 8 },
-  blockTitle: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  blockTitle: { fontWeight: '700', fontSize: rf(13) },
 
   stepsList: { gap: 8 },
   stepItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   stepNum: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
-  stepNumText: { fontFamily: Fonts.bold, fontSize: rf(11) },
-  stepText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
+  stepNumText: { fontWeight: '700', fontSize: rf(11) },
+  stepText: { flex: 1, fontWeight: '400', fontSize: rf(13), lineHeight: 20 },
 
   bulletList: { gap: 6 },
   bulletItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7, flexShrink: 0 },
-  bulletText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
+  bulletText: { flex: 1, fontWeight: '400', fontSize: rf(13), lineHeight: 20 },
 
   table: { borderRadius: 10, borderWidth: 1, overflow: 'hidden' },
   tableHeader: {
@@ -1068,9 +1068,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 7,
     borderBottomWidth: 1,
   },
-  tableHeaderCell: { fontFamily: Fonts.medium, fontSize: rf(10), letterSpacing: 0.5 },
+  tableHeaderCell: { fontWeight: '600', fontSize: rf(10), letterSpacing: 0.5 },
   tableRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: 1 },
-  tableCell: { fontFamily: Fonts.regular, fontSize: rf(12), lineHeight: 18 },
+  tableCell: { fontWeight: '400', fontSize: rf(12), lineHeight: 18 },
 
-  footer: { fontFamily: Fonts.regular, textAlign: 'center', fontSize: rf(11), marginTop: 8 },
+  footer: { fontWeight: '400', textAlign: 'center', fontSize: rf(11), marginTop: 8 },
 });

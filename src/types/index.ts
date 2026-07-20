@@ -263,13 +263,29 @@ export interface FoDashboardDto {
   todaysTasks: TaskItemDto[];
   recentActivities: ActivityDto[];
   dealsLost?: number;
-  // New fields from backend
+
+  // Time breakdown (today's session)
+  hoursWorked?: number;
+  totalDistanceKm?: number;
+  allowanceAmount?: number;
+  inSchoolMinutes?: number;
+  travellingMinutes?: number;
+  idleMinutes?: number;
+
+  // Activity counts (this month)
+  visitsThisMonth?: number;
+  followUpsThisMonth?: number;
+
+  // Activity targets (from backend — never hardcode these)
   visitsTargetWeekly?: number;
   visitsTargetMonthly?: number;
   demosTargetMonthly?: number;
   followUpsTargetMonthly?: number;
   dealsTargetMonthly?: number;
   allowanceRatePerKm?: number;
+
+  conversionFunnel?: FunnelStage[];
+  agingDeals?: AgingDeal[];
 }
 
 export interface FoPerformanceDto {
@@ -469,6 +485,30 @@ export interface CreateLeadRequest {
   foId?: number;
 }
 
+/**
+ * Mirrors C# UpdateActivityRequest. Everything optional — only what you send is
+ * changed. `leadId` is deliberately absent: the backend won't re-point an activity
+ * at a different lead, since that would corrupt both leads' history.
+ */
+export interface UpdateActivityRequest {
+  type?: ActivityType;
+  date?: string;
+  outcome?: ActivityOutcome;
+  notes?: string;
+  timeIn?: string;
+  timeOut?: string;
+  personMet?: string;
+  personDesignation?: string;
+  personPhone?: string;
+  interestLevel?: string;
+  nextAction?: string;
+  nextFollowUpDate?: string;
+  demoMode?: string;
+  conductedBy?: string;
+  attendees?: number;
+  feedback?: string;
+}
+
 export interface CreateActivityRequest {
   type: ActivityType;
   date: string;
@@ -641,7 +681,7 @@ export interface School {
   city?: string;
   state?: string;
   pincode?: string;
-  fullAddress?: string;
+  address?: string;            // DTO key is `Address`, not fullAddress
   latitude: number;
   longitude: number;
   geofenceRadiusMeters: number;
@@ -653,8 +693,8 @@ export interface School {
   contactCount?: number;
   leadCount?: number;
   lastVisitDate?: string;
-  assignedFoId?: number;
-  assignedFoName?: string;
+  assignedToId?: number;       // SchoolListDto.AssignedToId
+  assignedToName?: string;     // SchoolListDto.AssignedToName
 }
 
 // ── Bulk school upload ──
@@ -700,10 +740,10 @@ export interface CreateSchoolRequest {
   city?: string;
   state?: string;
   pincode?: string;
-  fullAddress?: string;
+  address?: string;            // DTO key is `Address`, not fullAddress
   latitude: number;
   longitude: number;
-  geofenceRadiusMeters?: number;
+  geofenceRadiusMetres?: number;  // DTO spells it Metres
   studentCount?: number;
   principalName?: string;
   principalPhone?: string;
@@ -783,14 +823,22 @@ export interface TimeBreakdown {
 
 // ─── Demo ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Mirrors DemosController.GetDemos exactly:
+ *   GetDemos(string? status, int? assignedToId, string? from, string? to,
+ *            int page = 1, int limit = 20)
+ * It previously declared `search`, `mode` and `pageSize` — the controller binds
+ * NONE of them (GetDemosAsync has no search clause at all), so those keys were
+ * silently dropped on every request and demo search never worked. Keep this in
+ * step with the controller; an unknown key fails silently, it does not error.
+ */
 export interface DemoFilters {
-  search?: string;
   status?: string;
-  mode?: string;
+  assignedToId?: number;
   from?: string;
   to?: string;
   page?: number;
-  pageSize?: number;
+  limit?: number;
 }
 
 export interface DemoAssignment {
@@ -814,7 +862,8 @@ export interface DemoAssignment {
   feedbackVideoUrl?: string;
   feedbackAudioUrl?: string;
   screenRecordingUrl?: string;
-  hasRecording: boolean;
+  /** Not sent by DemoAssignmentDto — optional so nothing relies on it. */
+  hasRecording?: boolean;
 }
 
 export interface CreateDemoRequest {
@@ -865,18 +914,35 @@ export interface RouteStop {
   visited: boolean;
 }
 
+/**
+ * ⚠️ `stops` is a JSON **string**, not an array. `RoutePlanDto.Stops` is a C#
+ * `string` holding a JSON array of RouteStop. This used to declare `RouteStop[]`,
+ * so the screen fed the raw string straight into `.map()`/`.filter()`. Parse it
+ * (defensively — it can be malformed) before use.
+ */
 export interface DailyRoutePlan {
   id: number;
   planDate: string;
   status: 'Draft' | 'Active' | 'Completed' | 'Abandoned';
-  stops: RouteStop[];
+  stops: string;
   totalEstimatedDistanceKm?: number;
   totalEstimatedDurationMinutes?: number;
 }
 
+/** Mirrors C# CreateRoutePlanRequest — `Stops` is a JSON string, not an array. */
 export interface CreateRoutePlanRequest {
   planDate: string;
-  stops: { schoolId: number; order: number }[];
+  stops: string;
+  totalEstimatedDistanceKm?: number;
+  totalEstimatedDurationMinutes?: number;
+  optimizationMethod?: string;
+}
+
+/** Mirrors C# UpdateRoutePlanRequest. */
+export interface UpdateRoutePlanRequest {
+  stops?: string;
+  status?: string;
+  totalActualDistanceKm?: number;
 }
 
 // ─── Visit Report ─────────────────────────────────────────────────────────────
@@ -1186,4 +1252,30 @@ export interface WeeklyPlan {
   managerEdits?: DayPlan[];
   submittedAt?: string;
   reviewedAt?: string;
+}
+
+/** Mirrors backend DemoRecordingDto (SalesCRM.Core/DTOs/Demos/DemoDtos.cs). */
+export type RecordingMediaType = 'video' | 'audio' | 'screen';
+
+export interface DemoRecordingDto {
+  id: number;
+  userId: number;
+  userName: string;
+  userRole: string;
+  mediaType: RecordingMediaType;
+  title: string;
+  url: string;
+  contentType: string;
+  fileSizeBytes: number;
+  durationSec: number;
+  attachedDemoId?: number | null;
+  createdAt: string;
+}
+
+export interface RecordingFilters {
+  mediaType?: string;
+  from?: string;
+  to?: string;
+  userId?: number;
+  search?: string;
 }

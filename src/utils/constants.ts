@@ -1,9 +1,21 @@
 import { LeadStage } from '../types';
 import { Colors } from '../theme';
-import { API_BASE_URL as ENV_API_BASE_URL } from '@env';
+import { API_BASE_URL as ENV_API_BASE_URL, GOOGLE_MAPS_API_KEY as ENV_GMAPS_KEY } from '@env';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 export const API_BASE_URL = ENV_API_BASE_URL;
+
+/**
+ * Google Maps key for the Places/Geocoding REST calls (AddSchool, HomeLocation).
+ * It used to be pasted literally into both screens.
+ *
+ * NB this is NOT a secret: react-native-dotenv inlines the value at build time,
+ * so it still ships inside the bundle — as it must, since the client makes the
+ * call. Centralising it only kills the copy-paste drift and keeps it out of the
+ * source tree. The actual protection is an HTTP-referrer/app restriction plus an
+ * API allow-list on the key in the Google Cloud console.
+ */
+export const GOOGLE_MAPS_API_KEY = ENV_GMAPS_KEY;
 
 // ─── Color aliases (theme is the single source of truth) ─────────────────────
 export { Colors, getScoreColor, getProgressColor, getStatusColor, getTargetStatusColor } from '../theme';

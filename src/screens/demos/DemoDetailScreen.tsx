@@ -9,13 +9,15 @@ import { demosApi } from '../../api/demos';
 import { DemoAssignment } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card, Badge } from '../../components/ui';
-import { GradientBackground } from '../../components/common/GradientBackground';
 import { GradientButton } from '../../components/common/GradientButton';
+import { ICON_STROKE } from '../../components/common/Icon';
+import { IconBtn } from '../../components/crud';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { formatDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha } from '../../theme';
 
 const OUTCOMES = ['Successful', 'Partial', 'Unsuccessful', 'Rescheduled'];
 const SENTIMENTS = ['Positive', 'Neutral', 'Negative'] as const;
@@ -37,6 +39,9 @@ const EMPTY_FEEDBACK: FeedbackForm = {
   feedbackAudioUrl: '',
   screenRecordingUrl: '',
 };
+
+/** Same target web opens on Start/Resume (DemoManagement.jsx). */
+const DEMO_APP_URL = 'https://app.singularity-learn.com/';
 
 export const DemoDetailScreen = ({ navigation, route }: any) => {
   const { demoId } = route.params;
@@ -114,22 +119,19 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
   const setF = (key: keyof FeedbackForm) => (val: string) =>
     setFeedbackForm(p => ({ ...p, [key]: val }));
 
+  /* House pattern: plain themed title block on T.bg — no gradient hero. */
   const Hero = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-    <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <ArrowLeft size={20} color="#FFF" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-          {!!subtitle && <Text style={styles.headerSub} numberOfLines={1}>{subtitle}</Text>}
+        <IconBtn kind="view" label="Back" onPress={() => navigation.goBack()}>
+          <ArrowLeft size={18} color={T.accent} strokeWidth={ICON_STROKE} />
+        </IconBtn>
+        <View style={styles.titleBlock}>
+          <Text style={[styles.h1, { color: T.text }]} numberOfLines={1}>{title}</Text>
+          {!!subtitle && <Text style={[styles.h2, { color: T.sub }]} numberOfLines={1}>{subtitle}</Text>}
         </View>
       </View>
-    </GradientBackground>
+    </View>
   );
 
   if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading..." />;
@@ -140,7 +142,12 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
     </View>
   );
 
-  const canAct = isManager && demo.status !== 'Completed' && demo.status !== 'Cancelled';
+  // Status-only, exactly as web gates it (DemoManagement.jsx). The `isManager &&`
+  // that used to be here was invented: DemoService authorizes the assigned FO
+  // (`UserRole.FO => d.AssignedToId == userId`), so an FO opening their own demo
+  // was shown no Approve/Start/Complete/Cancel buttons at all. The server remains
+  // the authority — it 403s anyone who genuinely isn't allowed.
+  const canAct = demo.status !== 'Completed' && demo.status !== 'Cancelled';
   const outcomeColor = (o?: string) =>
     o === 'Successful' ? T.success : o === 'Unsuccessful' ? T.danger : T.warning;
 
@@ -157,7 +164,8 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
         <View style={styles.statusRow}>
           <Badge label={demo.status} color={STATUS_COLOR[demo.status] || T.dim} />
           <Badge label={demo.demoMode} color={MODE_COLOR[demo.demoMode] || T.sub} />
-          {demo.hasRecording && <Badge label="Has Recording" color={T.info} />}
+          {/* 'Has Recording' badge removed: DemoAssignmentDto has no HasRecording
+              property and ToDto never sets one, so it was always falsy. */}
         </View>
 
         {/* Info Card */}
@@ -204,7 +212,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                   const sc = demo.feedbackSentiment === 'Positive' ? T.success
                     : demo.feedbackSentiment === 'Negative' ? T.danger : T.sub;
                   return (
-                    <View style={[styles.sentimentBadge, { backgroundColor: sc + '18' }]}>
+                    <View style={[styles.sentimentBadge, { backgroundColor: withAlpha(sc, 0.09) }]}>
                       {demo.feedbackSentiment === 'Positive' && <ThumbsUp size={12} color={sc} />}
                       {demo.feedbackSentiment === 'Negative' && <ThumbsDown size={12} color={sc} />}
                       {demo.feedbackSentiment === 'Neutral' && <Minus size={12} color={sc} />}
@@ -257,7 +265,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                   color={T.accent}
                   icon={<Play size={14} color={T.accent} />}
                   disabled={updating}
-                  onPress={() => handleStatusUpdate('InProgress')}
+                  onPress={() => { handleStatusUpdate('InProgress'); Linking.openURL(DEMO_APP_URL).catch(() => {}); }}
                 />
                 <GradientButton
                   label="Mark Completed"
@@ -273,7 +281,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                   color={T.accent}
                   icon={<Play size={14} color={T.accent} />}
                   disabled={updating}
-                  onPress={() => handleStatusUpdate('InProgress')}
+                  onPress={() => Linking.openURL(DEMO_APP_URL).catch(() => {})}
                 />
                 <GradientButton
                   label="Mark Completed"
@@ -340,7 +348,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                       style={[
                         styles.sentBtn,
                         { borderColor: T.line, backgroundColor: T.cardAlt },
-                        active && { borderColor: sentColor, backgroundColor: sentColor + '15' },
+                        active && { borderColor: sentColor, backgroundColor: withAlpha(sentColor, 0.08) },
                       ]}
                       onPress={() => setF('feedbackSentiment')(s)}
                     >
@@ -366,39 +374,10 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                 textAlignVertical="top"
               />
 
-              {/* Optional URLs */}
-              <Text style={[styles.fieldLabel, { color: T.sub, marginTop: 14 }]}>Video URL (optional)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-                value={feedbackForm.feedbackVideoUrl}
-                onChangeText={setF('feedbackVideoUrl')}
-                placeholder="https://drive.google.com/..."
-                placeholderTextColor={T.dim}
-                keyboardType="url"
-                autoCapitalize="none"
-              />
-
-              <Text style={[styles.fieldLabel, { color: T.sub, marginTop: 10 }]}>Audio URL (optional)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-                value={feedbackForm.feedbackAudioUrl}
-                onChangeText={setF('feedbackAudioUrl')}
-                placeholder="https://drive.google.com/..."
-                placeholderTextColor={T.dim}
-                keyboardType="url"
-                autoCapitalize="none"
-              />
-
-              <Text style={[styles.fieldLabel, { color: T.sub, marginTop: 10 }]}>Screen Recording URL (optional)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-                value={feedbackForm.screenRecordingUrl}
-                onChangeText={setF('screenRecordingUrl')}
-                placeholder="https://drive.google.com/..."
-                placeholderTextColor={T.dim}
-                keyboardType="url"
-                autoCapitalize="none"
-              />
+              {/* Video / Audio / Screen-recording URL inputs removed for web parity:
+                  media is captured by the Record Demo flow and persisted to GCP
+                  automatically, so hand-pasted links are no longer collected here.
+                  The DTO still accepts the fields; nothing sends them now. */}
 
               <View style={styles.modalBtns}>
                 <TouchableOpacity style={[styles.cancelBtn, { borderColor: T.line }]} onPress={() => setShowCompleteModal(false)}>
@@ -440,42 +419,38 @@ const actionStyles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     height: 50, paddingHorizontal: 14, borderRadius: 14, width: '100%',
   },
-  label: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  label: { fontWeight: '700', fontSize: rf(14) },
 });
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  header: { paddingHorizontal: 14, paddingBottom: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  h1: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4 },
+  h2: { fontWeight: '500', fontSize: rf(12.5) },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 12 },
   contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
   statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  sectionTitle: { fontWeight: '700', fontSize: rf(14), marginBottom: 12 },
   infoRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  infoLabel: { fontFamily: Fonts.regular, fontSize: rf(13) },
-  infoValue: { fontFamily: Fonts.medium, fontSize: rf(13), flex: 1, textAlign: 'right' },
+  infoLabel: { fontWeight: '400', fontSize: rf(13) },
+  infoValue: { fontWeight: '600', fontSize: rf(13), flex: 1, textAlign: 'right' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10 },
-  linkText: { fontFamily: Fonts.bold, fontSize: rf(14) },
-  notesText: { fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 22 },
+  linkText: { fontWeight: '700', fontSize: rf(14) },
+  notesText: { fontWeight: '400', fontSize: rf(14), lineHeight: 22 },
   feedbackRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4, alignItems: 'center' },
   sentimentBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100,
   },
-  sentimentText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  sentimentText: { fontWeight: '700', fontSize: rf(12) },
   mediaRow: { flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' },
-  mediaLink: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  mediaLink: { fontWeight: '700', fontSize: rf(13) },
   actionsGrid: { gap: 10 },
   primaryAction: { width: '100%', height: 50 },
   // Modal
@@ -484,31 +459,31 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 40, maxHeight: '90%',
   },
-  modalTitle: { fontFamily: Fonts.bold, fontSize: rf(18), marginBottom: 4 },
-  modalSub: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 16 },
-  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
+  modalTitle: { fontWeight: '700', fontSize: rf(18), marginBottom: 4 },
+  modalSub: { fontWeight: '400', fontSize: rf(13), marginBottom: 16 },
+  fieldLabel: { fontWeight: '600', fontSize: rf(13), marginBottom: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, borderWidth: 1,
   },
-  chipText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  chipText: { fontWeight: '600', fontSize: rf(13) },
   sentimentRow: { flexDirection: 'row', gap: 8 },
   sentBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
   },
-  sentBtnText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  sentBtnText: { fontWeight: '600', fontSize: rf(13) },
   textarea: {
     borderWidth: 1, borderRadius: 14,
-    paddingHorizontal: 12, paddingVertical: 10, fontFamily: Fonts.regular, fontSize: rf(14),
+    paddingHorizontal: 12, paddingVertical: 10, fontWeight: '400', fontSize: rf(14),
     height: 90, textAlignVertical: 'top',
   },
   input: {
     borderWidth: 1, borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 10,
-    fontFamily: Fonts.regular, fontSize: rf(14),
+    fontWeight: '400', fontSize: rf(14),
   },
   modalBtns: { flexDirection: 'row', gap: 10, marginTop: 20, alignItems: 'center' },
   cancelBtn: { flex: 1, height: 54, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  cancelText: { fontFamily: Fonts.bold, fontSize: rf(15) },
+  cancelText: { fontWeight: '700', fontSize: rf(15) },
 });

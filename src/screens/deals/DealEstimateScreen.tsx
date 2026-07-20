@@ -3,13 +3,13 @@ import {
   View, Text, ScrollView, StyleSheet, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Calculator } from 'lucide-react-native';
-import { Screen, AppHeader, Card, Badge } from '../../components/ui';
-import { Input } from '../../components/common/Input';
-import { SelectPicker } from '../../components/common/SelectPicker';
-import { Fonts } from '../../theme';
+import { Calculator, Info } from 'lucide-react-native';
+import { Screen, AppHeader, Card } from '../../components/ui';
+import { Field, Input, Trigger, Dropdown, StatusBadge } from '../../components/crud';
+
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -24,13 +24,16 @@ const INSTALLMENT_MAP: Record<string, number> = {
   Annually: 1, 'Half-Yearly': 2, Quarterly: 4, Monthly: 12,
 };
 
-type ApprovalTone = 'success' | 'warning' | 'danger';
-
-const getApprovalInfo = (discount: number): { level: string; tone: ApprovalTone; desc: string } => {
-  if (discount <= 10) return { level: 'Self-Approved (FO)', tone: 'success', desc: 'Within FO authority. Deal will be auto-approved.' };
-  if (discount <= 20) return { level: 'Zonal Head Approval', tone: 'warning', desc: 'Deal will require Zonal Head approval at this discount level.' };
-  if (discount <= 30) return { level: 'Regional Head Approval', tone: 'warning', desc: 'Deal will require Regional Head approval.' };
-  return { level: 'Sales Head Approval', tone: 'danger', desc: 'Deal will require Sales Head approval at this discount level.' };
+/**
+ * Escalation ladder, coloured from the theme. Four tiers, four distinct hues —
+ * `accent` sits between warning and danger so no two adjacent tiers share a colour
+ * (the same ramp CreateDealScreen uses; the two screens must agree).
+ */
+const getApprovalInfo = (discount: number, T: AppTheme) => {
+  if (discount <= 10) return { level: 'Self-Approved (FO)', color: T.success, desc: 'Within FO authority. Deal will be auto-approved.' };
+  if (discount <= 20) return { level: 'Zonal Head Approval', color: T.warning, desc: 'Deal will require Zonal Head approval at this discount level.' };
+  if (discount <= 30) return { level: 'Regional Head Approval', color: T.accent, desc: 'Deal will require Regional Head approval.' };
+  return { level: 'Sales Head Approval', color: T.danger, desc: 'Deal will require Sales Head approval at this discount level.' };
 };
 
 const InfoRow = ({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) => {
@@ -47,12 +50,13 @@ export const DealEstimateScreen = ({ navigation }: any) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const isWide = width >= 700 || (width > height && width >= 580);
+  const wide = isTabletDevice && width > height;
 
   const [basePrice, setBasePrice] = useState('');
   const [totalLogins, setTotalLogins] = useState('');
   const [discount, setDiscount] = useState('');
   const [billingFrequency, setBillingFrequency] = useState('Annually');
+  const [billingOpen, setBillingOpen] = useState(false);
 
   const bp = parseFloat(basePrice) || 0;
   const tl = parseInt(totalLogins) || 0;
@@ -67,35 +71,67 @@ export const DealEstimateScreen = ({ navigation }: any) => {
   const perInstallment = installments > 0 ? Math.round(totalMoney / installments) : 0;
 
   const hasValues = bp > 0 && tl > 0;
-  const approval = disc > 0 && hasValues ? getApprovalInfo(disc) : null;
-  const approvalColor = approval
-    ? (approval.tone === 'success' ? T.success : approval.tone === 'warning' ? T.warning : T.danger)
-    : T.accent;
+  const approval = disc > 0 && hasValues ? getApprovalInfo(disc, T) : null;
 
   const billingPeriod = billingFrequency === 'Monthly' ? 'Month' : billingFrequency === 'Quarterly' ? 'Quarter' : billingFrequency === 'Half-Yearly' ? 'Half-Year' : 'Year';
 
-  // ── Input Card ──
+  // ── Left panel: Pricing Calculator ──
   const inputCard = (
     <Card style={s.card}>
       <View style={s.sectionHeader}>
         <View style={[s.iconWrap, { backgroundColor: T.accentSoft }]}>
-          <Calculator size={20} color={T.accent} />
+          <Calculator size={20} color={T.accent} strokeWidth={1.9} />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={s.flex}>
           <Text style={[s.sectionTitle, { color: T.text }]}>Pricing Calculator</Text>
           <Text style={[s.sectionSub, { color: T.sub }]}>Enter values to see live calculation</Text>
         </View>
       </View>
-      <Input label="Base Price (₹ per login) *" value={basePrice} onChangeText={setBasePrice} placeholder="e.g. 1000" keyboardType="numeric" accentColor={T.accent} />
-      <Input label="Total Logins (Teachers) *" value={totalLogins} onChangeText={setTotalLogins} placeholder="e.g. 50" keyboardType="numeric" accentColor={T.accent} />
-      <Input label="Discount %" value={discount} onChangeText={setDiscount} placeholder="e.g. 10" keyboardType="numeric" accentColor={T.accent} />
-      <SelectPicker label="Billing Frequency" options={BILLING_OPTIONS} value={billingFrequency} onChange={(v) => setBillingFrequency(String(v))} accentColor={T.accent} />
+
+      <View style={s.fields}>
+        <Input
+          label="Base Price (₹ per login) *"
+          value={basePrice}
+          onChangeText={setBasePrice}
+          placeholder="e.g. 1000"
+          keyboardType="numeric"
+        />
+        <Input
+          label="Total Logins (Teachers) *"
+          value={totalLogins}
+          onChangeText={setTotalLogins}
+          placeholder="e.g. 50"
+          keyboardType="numeric"
+        />
+        <Input
+          label="Discount %"
+          value={discount}
+          onChangeText={setDiscount}
+          placeholder="e.g. 10"
+          keyboardType="numeric"
+        />
+        <Field label="Billing Frequency">
+          <Trigger
+            label={billingFrequency}
+            open={billingOpen}
+            onPress={() => setBillingOpen(v => !v)}
+          />
+          {billingOpen && (
+            <Dropdown
+              style={s.ddFull}
+              value={billingFrequency}
+              options={BILLING_OPTIONS}
+              onSelect={(v) => { setBillingFrequency(v); setBillingOpen(false); }}
+            />
+          )}
+        </Field>
+      </View>
     </Card>
   );
 
-  // ── Results Cards ──
+  // ── Right panel: Calculation Breakdown (+ payment split, + approval) ──
   const resultsCards = (
-    <View style={isWide ? { flex: 1 } : undefined}>
+    <View style={wide ? s.flex : undefined}>
       {hasValues ? (
         <Card style={s.card}>
           <Text style={[s.cardTitle, { color: T.text }]}>Calculation Breakdown</Text>
@@ -105,35 +141,46 @@ export const DealEstimateScreen = ({ navigation }: any) => {
           {disc > 0 && <InfoRow label={`Discount (${disc}%)`} value={`- ${fmt(discountAmount)}`} valueColor={T.danger} />}
           <InfoRow label="Amount Without GST" value={fmt(amountWithoutGst)} />
           <InfoRow label="GST (18%)" value={`+ ${fmt(gstAmount)}`} />
-          <View style={[s.totalBanner, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
+          <View style={[s.totalBanner, { backgroundColor: T.accentSoft, borderColor: withAlpha(T.accent, SOFT_TINT) }]}>
             <Text style={[s.totalLabel, { color: T.accent }]}>Total Amount (incl. GST)</Text>
             <Text style={[s.totalValue, { color: T.accent }]}>{fmt(totalMoney)}</Text>
           </View>
         </Card>
       ) : (
         <Card style={s.emptyCard}>
-          <Text style={s.emptyIcon}>🧮</Text>
+          <View style={[s.emptyIcon, { backgroundColor: T.accentSoft }]}>
+            <Calculator size={26} color={T.accent} strokeWidth={1.7} />
+          </View>
           <Text style={[s.emptyTitle, { color: T.text }]}>Enter values to see calculation</Text>
           <Text style={[s.emptySub, { color: T.dim }]}>Fill in Base Price and Total Logins to get a live pricing breakdown with GST.</Text>
         </Card>
       )}
 
       {hasValues && (
-        <Card style={{ ...s.card, marginTop: 14 }}>
+        <Card style={[s.card, s.stack]}>
           <Text style={[s.cardTitle, { color: T.text }]}>Payment Breakdown ({billingFrequency})</Text>
           <InfoRow label="Total Amount" value={fmt(totalMoney)} />
           <InfoRow label="Installments" value={`${installments} per year`} />
-          <View style={[s.billingBanner, { backgroundColor: T.info + '22', borderColor: T.line }]}>
-            <Text style={[s.billingLabel, { color: T.info }]}>Per {billingPeriod}</Text>
-            <Text style={[s.billingValue, { color: T.info }]}>{fmt(perInstallment)}</Text>
+          <View style={[s.totalBanner, { backgroundColor: withAlpha(T.info, SOFT_TINT), borderColor: withAlpha(T.info, SOFT_TINT) }]}>
+            <Text style={[s.totalLabel, { color: T.info }]}>Per {billingPeriod}</Text>
+            <Text style={[s.totalValue, { color: T.info }]}>{fmt(perInstallment)}</Text>
           </View>
         </Card>
       )}
 
       {hasValues && disc > 0 && approval && (
-        <View style={[s.approvalCard, { backgroundColor: T.card, borderColor: T.line, borderLeftColor: approvalColor, marginTop: 14 }]}>
-          <Badge label={approval.level} color={approvalColor} />
-          <Text style={[s.approvalDesc, { color: T.sub }]}>{approval.desc}</Text>
+        <View
+          style={[
+            s.approvalCard,
+            s.stack,
+            { backgroundColor: withAlpha(approval.color, SOFT_TINT), borderColor: withAlpha(approval.color, SOFT_TINT) },
+          ]}
+        >
+          <Info size={16} color={approval.color} strokeWidth={2} />
+          <View style={s.flex}>
+            <StatusBadge label={approval.level} color={approval.color} />
+            <Text style={[s.approvalDesc, { color: T.sub }]}>{approval.desc}</Text>
+          </View>
         </View>
       )}
     </View>
@@ -141,31 +188,32 @@ export const DealEstimateScreen = ({ navigation }: any) => {
 
   return (
     <Screen>
-      <AppHeader title="Deal Estimate" onMenu={() => navigation.toggleDrawer()} />
+      <AppHeader
+        title="Deal Estimate"
+        subtitle="Calculate pricing with GST before creating a deal"
+        onMenu={() => navigation.toggleDrawer()}
+      />
 
       <ScrollView
         style={s.scroll}
-        contentContainerStyle={{
-          padding: isWide ? 24 : 16,
-          paddingBottom: insets.bottom + 40,
-          maxWidth: isWide ? 960 : undefined,
-          alignSelf: isWide ? 'center' : undefined,
-          width: isWide ? '100%' : undefined,
-        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          { padding: wide ? 24 : 16, paddingBottom: insets.bottom + 40 },
+          wide && s.contentWide,
+        ]}
       >
-        {isWide ? (
+        {wide ? (
           <View style={s.grid}>
-            <View style={{ flex: 1 }}>{inputCard}</View>
+            <View style={s.flex}>{inputCard}</View>
             {resultsCards}
           </View>
         ) : (
           <>
             {inputCard}
-            <View style={{ height: 14 }} />
-            {resultsCards}
+            <View style={s.stack}>{resultsCards}</View>
           </>
         )}
-        <View style={{ height: 32 }} />
       </ScrollView>
     </Screen>
   );
@@ -173,38 +221,42 @@ export const DealEstimateScreen = ({ navigation }: any) => {
 
 const s = StyleSheet.create({
   scroll: { flex: 1 },
+  contentWide: { maxWidth: 960, alignSelf: 'center', width: '100%' },
   grid: { flexDirection: 'row', gap: 16 },
+  flex: { flex: 1 },
+  stack: { marginTop: 14 },
   card: { padding: 16 },
+  fields: { gap: 14 },
+  ddFull: { width: '100%' },
+
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  iconWrap: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(15) },
-  sectionSub: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
-  cardTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  iconWrap: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontWeight: '700', fontSize: rf(14), letterSpacing: -0.2 },
+  sectionSub: { fontWeight: '400', fontSize: rf(11.5), marginTop: 2 },
+  cardTitle: { fontWeight: '700', fontSize: rf(14), letterSpacing: -0.2, marginBottom: 8 },
+
   infoRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 8, borderBottomWidth: 1,
+    paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  infoLabel: { fontFamily: Fonts.regular, fontSize: rf(13), flex: 1 },
-  infoValue: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  infoLabel: { fontWeight: '400', fontSize: rf(13), flex: 1 },
+  infoValue: { fontWeight: '600', fontSize: rf(13) },
+
   totalBanner: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 8,
+    borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 12,
   },
-  totalLabel: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  totalValue: { fontFamily: Fonts.bold, fontSize: rf(18) },
-  billingBanner: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 4,
-  },
-  billingLabel: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  billingValue: { fontFamily: Fonts.bold, fontSize: rf(20) },
+  totalLabel: { fontWeight: '700', fontSize: rf(13) },
+  totalValue: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4 },
+
   approvalCard: {
-    borderRadius: 18, borderWidth: 1, borderLeftWidth: 4,
-    padding: 16, gap: 8,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    borderRadius: 16, borderWidth: 1, padding: 14,
   },
-  approvalDesc: { fontFamily: Fonts.regular, fontSize: rf(12), lineHeight: 18 },
-  emptyCard: { padding: 40, alignItems: 'center' },
-  emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyTitle: { fontFamily: Fonts.bold, fontSize: rf(15), marginBottom: 6 },
-  emptySub: { fontFamily: Fonts.regular, fontSize: rf(12), textAlign: 'center', lineHeight: 18, maxWidth: 260 },
+  approvalDesc: { fontWeight: '400', fontSize: rf(12), lineHeight: 18, marginTop: 5 },
+
+  emptyCard: { padding: 32, alignItems: 'center' },
+  emptyIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyTitle: { fontWeight: '700', fontSize: rf(14.5), marginBottom: 6, textAlign: 'center' },
+  emptySub: { fontWeight: '400', fontSize: rf(12), textAlign: 'center', lineHeight: 18, maxWidth: 260 },
 });

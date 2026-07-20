@@ -1,249 +1,716 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
-  Modal, TextInput, Alert, RefreshControl,
+  View, Text, StyleSheet, ScrollView, RefreshControl, useWindowDimensions,
+  TouchableOpacity, ActivityIndicator, Alert, Linking, Clipboard, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X } from 'lucide-react-native';
-import { paymentsApi } from '../../api/payments';
-import { Payment, CreatePaymentRequest } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
-import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { formatCurrency, formatDate } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
+import {
+  Plus, RefreshCw, Copy, ExternalLink, Eye, CreditCard, Send,
+  WifiOff, AlertTriangle, CheckCircle2, XCircle, Clock,
+} from 'lucide-react-native';
 
-const FILTERS = ['All', 'Pending', 'Completed', 'Failed'];
-const METHODS = ['Cash', 'Cheque', 'Online', 'NEFT', 'UPI'];
+import { apiClient } from '../../api/client';
+import { DateInput } from '../../components/common/DateInput';
+import { SelectPicker } from '../../components/common/SelectPicker';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, IconBtn, Field, Input, Segmented, StatusBadge,
+  Pagination, ListCard, Avatar, FormModal,
+} from '../../components/crud';
 
-const STATUS_COLORS: Record<string, string> = {
-  Pending: '#F59E0B', Completed: '#16A34A', Failed: '#DC2626', Processing: '#2563EB',
-};
-const METHOD_COLORS: Record<string, string> = {
-  Cash: '#16A34A', Cheque: '#7C3AED', Online: '#2563EB', NEFT: '#0D9488', UPI: '#EA580C',
-};
+import { useAppTheme } from '../../theme/useAppTheme';
+import { AppTheme } from '../../theme/appTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
-export const PaymentsScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'FO') as keyof typeof ROLE_COLORS];
+/**
+ * Payment Integration — hosted payment links for schools whose deal is Won.
+ *
+ * Web parity source: Sales_CRM_Web/src/pages/common/PaymentIntegration.jsx.
+ *
+ * VERIFIED against PaymentsController.cs — the only payment routes that exist are
+ * eligible-schools / links / links/{id} / links (POST) / links/{id}/refresh, plus the
+ * anonymous gateway callbacks. `src/api/payments.ts` declares getAll/create/getById/
+ * getByDeal/verifyPayment/getDirectPayments/createDirectPayment against `/payments`,
+ * `/payments/direct` etc. — NONE of those routes exist, so this screen previously 404'd
+ * on every call. It now talks to the real endpoints through apiClient directly, because
+ * payments.ts is shared with ScaPaymentsScreen/SCADashboard and is outside this task's
+ * file scope. See the report: payments.ts needs the phantom endpoints removed.
+ *
+ * apiClient unwraps ApiResponse{success,data,message}, so `res.data` is the payload.
+ */
 
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState('All');
-  const [showModal, setShowModal] = useState(false);
+/** Web fetches limit:50 and renders every row; we page that same set 10 at a time. */
+const FETCH_LIMIT = 50;
+const PAGE_SIZE = 10;
+const DASH = '—';
 
-  const [dealId, setDealId] = useState('');
+type StatusFilter = '' | 'pending' | 'paid' | 'failed';
+
+const FILTERS: { label: string; value: StatusFilter }[] = [
+  { label: 'All', value: '' },
+  { label: 'Pending', value: 'pending' },
+  { label: 'Paid', value: 'paid' },
+  { label: 'Failed', value: 'failed' },
+];
+
+/** PaymentLinkDto — SalesCRM.Core/DTOs/Payments. */
+interface PaymentLink {
+  id: number;
+  schoolId: number;
+  schoolName: string;
+  orderId: string;
+  amount: number;
+  currency?: string;
+  description?: string | null;
+  dueDate: string;
+  paymentUrl?: string | null;
+  status: string;
+  createdById: number;
+  createdByName: string;
+  createdAt: string;
+}
+
+/** EligibleSchoolDto — SalesCRM.Core/DTOs/Payments. */
+interface EligibleSchool {
+  schoolId: number;
+  schoolName: string;
+  city?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  contactName?: string | null;
+}
+
+/**
+ * Status → spec token. Web: pending=blue, paid=green, failed=red. Mapped so no two
+ * states share a hue — pending→info, paid→success, failed→danger.
+ */
+const statusColor = (T: AppTheme, st: string): string =>
+  (({ pending: T.info, paid: T.success, failed: T.danger }) as Record<string, string>)[st] || T.dim;
+
+const STATUS_LABELS: Record<string, string> = { pending: 'Pending', paid: 'Paid', failed: 'Failed' };
+const statusLabel = (st: string) => STATUS_LABELS[st] || st;
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const fmtCurrency = (v: number) =>
+  `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+const fmtDate = (d?: string) =>
+  !d ? DASH : new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const fmtDateTime = (d?: string) =>
+  !d
+    ? DASH
+    : new Date(d).toLocaleString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+
+const initialsOf = (name?: string) =>
+  (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase() || '?';
+
+// ─── Create-link modal ────────────────────────────────────────────────────────
+function CreateLinkModal({ schools, onClose, onCreated }: {
+  schools: EligibleSchool[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+
+  const [schoolId, setSchoolId] = useState('');
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('Online');
-  const [transactionId, setTransactionId] = useState('');
-  const [chequeNumber, setChequeNumber] = useState('');
-  const [chequeDate, setChequeDate] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [notes, setNotes] = useState('');
+  const [dueDate, setDueDate] = useState(todayIso());
+  const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const fetchPayments = useCallback(async () => {
+  const selected = useMemo(
+    () => schools.find(s => String(s.schoolId) === String(schoolId)),
+    [schools, schoolId],
+  );
+
+  const handleCreate = async () => {
+    if (!schoolId) { Alert.alert('School Required', 'Please select a school.'); return; }
+    const amt = Number(amount);
+    if (!amt || amt <= 0) { Alert.alert('Invalid Amount', 'Amount must be greater than zero.'); return; }
+    if (!dueDate) { Alert.alert('Due Date Required', 'Please choose a due date.'); return; }
+
+    setSaving(true);
     try {
-      const params: any = {};
-      if (filter !== 'All') params.status = filter;
-      const res = await paymentsApi.getAll(params);
-      const items: Payment[] = (res.data as any)?.items ?? res.data ?? [];
-      setPayments(items);
-    } catch {
-      setPayments([]);
+      // POST /payments/links — CreatePaymentLinkRequest { SchoolId, Amount, DueDate, Description }.
+      const res = await apiClient.post<PaymentLink>('/payments/links', {
+        schoolId: Number(schoolId),
+        amount: amt,
+        dueDate: new Date(dueDate).toISOString(),
+        description: description.trim() || undefined,
+      });
+      const created: any = res.data;
+
+      // Gateway flow, mirrored from web: the hosted payment page is opened as soon as
+      // the link exists. Preserved verbatim — do not reshape.
+      if (created?.paymentUrl) {
+        onCreated();
+        const canOpen = await Linking.canOpenURL(created.paymentUrl).catch(() => false);
+        if (canOpen) {
+          await Linking.openURL(created.paymentUrl);
+          Alert.alert('Payment Page Opened', 'The hosted payment page was opened in your browser.');
+        } else {
+          Alert.alert('Link Created', 'The payment link was created but could not be opened automatically.');
+        }
+      } else {
+        onCreated();
+        Alert.alert('Link Saved', 'Link saved, but the gateway response was incomplete.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || err?.message || 'Failed to create payment link.');
+      onCreated();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <FormModal
+      visible
+      wide={wide}
+      title="New Payment Link"
+      onClose={onClose}
+      footer={
+        <>
+          <View style={{ flex: 1 }} />
+          <Btn label="Cancel" variant="secondary" onPress={onClose} small />
+          <Btn
+            label={saving ? 'Preparing…' : 'Pay Now'}
+            onPress={handleCreate}
+            loading={saving}
+            disabled={saving}
+            small
+            icon={<Send size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+          />
+        </>
+      }
+    >
+      <View style={s.mForm}>
+        <SelectPicker
+          label="School (won deals only) *"
+          placeholder="Select a school…"
+          options={schools.map(sc => ({
+            value: String(sc.schoolId),
+            label: sc.schoolName + (sc.city ? ` — ${sc.city}` : ''),
+          }))}
+          value={schoolId}
+          onChange={v => setSchoolId(String(v))}
+          accentColor={T.accent}
+        />
+        {!!selected && (
+          <Text style={[s.hint, { color: T.dim }]}>
+            Will be sent to: {selected.contactEmail || selected.contactPhone || 'school admin'}
+          </Text>
+        )}
+
+        <View style={wide ? s.row2 : s.col2}>
+          <Input
+            label="Amount (₹) *"
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+            containerStyle={wide ? { flex: 1 } : undefined}
+          />
+          <Field label="Due Date *" style={wide ? { flex: 1 } : undefined}>
+            <DateInput value={dueDate} onChange={setDueDate} accentColor={T.accent} />
+          </Field>
+        </View>
+
+        {/* Kit Input hard-codes height 46 — a multiline field needs Field + TextInput.
+            maxLength 500 mirrors web's textarea cap. */}
+        <Field label="Description (optional)">
+          <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="e.g. Monthly platform fee — May"
+              placeholderTextColor={T.dim}
+              multiline
+              maxLength={500}
+              style={[s.textareaTxt, { color: T.text }]}
+            />
+          </View>
+        </Field>
+      </View>
+    </FormModal>
+  );
+}
+
+// ─── Detail modal ─────────────────────────────────────────────────────────────
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  const T = useAppTheme();
+  return (
+    <View style={s.dRow}>
+      <Text style={[s.dLabel, { color: T.text }]}>{label}</Text>
+      <View style={s.dValWrap}>
+        {typeof value === 'string' || typeof value === 'number'
+          ? <Text style={[s.dVal, { color: T.sub }]}>{value === '' ? DASH : String(value)}</Text>
+          : (value ?? <Text style={[s.dVal, { color: T.sub }]}>{DASH}</Text>)}
+      </View>
+    </View>
+  );
+}
+
+function DetailModal({ link, refreshing, onRefresh, onClose }: {
+  link: PaymentLink; refreshing: boolean; onRefresh: () => void; onClose: () => void;
+}) {
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+
+  const c = statusColor(T, link.status);
+  const banner =
+    link.status === 'paid' ? { text: 'Payment completed successfully.', icon: <CheckCircle2 size={15} color={c} strokeWidth={ICON_STROKE} /> }
+      : link.status === 'failed' ? { text: 'Payment failed.', icon: <XCircle size={15} color={c} strokeWidth={ICON_STROKE} /> }
+        : link.status === 'pending' ? { text: 'Payment pending.', icon: <Clock size={15} color={c} strokeWidth={ICON_STROKE} /> }
+          : null;
+
+  return (
+    <FormModal
+      visible
+      wide={wide}
+      title="Payment Link Details"
+      onClose={onClose}
+      footer={
+        <>
+          <View style={{ flex: 1 }} />
+          <Btn
+            label="Refresh Status"
+            variant="secondary"
+            onPress={onRefresh}
+            loading={refreshing}
+            disabled={refreshing}
+            small
+            icon={<RefreshCw size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+          />
+          <Btn label="Back" variant="secondary" onPress={onClose} small />
+        </>
+      }
+    >
+      <View style={s.mForm}>
+        {!!banner && (
+          <View style={[s.banner, { backgroundColor: withAlpha(c, SOFT_TINT) }]}>
+            {banner.icon}
+            <Text style={[s.bannerTxt, { color: c }]}>{banner.text}</Text>
+          </View>
+        )}
+
+        <View>
+          <DetailRow label="ID" value={link.id} />
+          <DetailRow label="School" value={link.schoolName || `School #${link.schoolId}`} />
+          <DetailRow label="Order Id" value={link.orderId} />
+          <DetailRow label="Amount" value={`${Number(link.amount || 0)} ${link.currency || 'INR'}`} />
+          <DetailRow label="Due Date" value={fmtDate(link.dueDate)} />
+          <DetailRow
+            label="Status"
+            value={<StatusBadge label={statusLabel(link.status)} color={c} />}
+          />
+          <DetailRow
+            label="Payment link"
+            value={
+              link.paymentUrl ? (
+                <TouchableOpacity onPress={() => Linking.openURL(link.paymentUrl!)} hitSlop={8}>
+                  <Text style={[s.dLink, { color: T.accent }]}>Open</Text>
+                </TouchableOpacity>
+              ) : undefined
+            }
+          />
+          <DetailRow label="Created" value={fmtDateTime(link.createdAt)} />
+        </View>
+      </View>
+    </FormModal>
+  );
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+export const PaymentsScreen = (_props: any) => {
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+  /** iPad always gets the table — never a card grid. Phones get list rows. */
+  const table = isTabletDevice;
+
+  const [links, setLinks] = useState<PaymentLink[]>([]);
+  const [schools, setSchools] = useState<EligibleSchool[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<'none' | 'offline' | 'error'>('none');
+  const [filter, setFilter] = useState<StatusFilter>('');
+  const [page, setPage] = useState(1);
+
+  const [showForm, setShowForm] = useState(false);
+  const [viewing, setViewing] = useState<PaymentLink | null>(null);
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
+
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      // GET /payments/eligible-schools → ApiResponse<List<EligibleSchoolDto>> (array)
+      // GET /payments/links?status&page&limit → ApiResponse<object>.Ok(new { items, total, page, limit })
+      const [schoolsRes, linksRes] = await Promise.all([
+        apiClient.get<EligibleSchool[]>('/payments/eligible-schools'),
+        apiClient.get<any>('/payments/links', { params: { status: filter || undefined, limit: FETCH_LIMIT } }),
+      ]);
+      setSchools((schoolsRes.data as any) || []);
+      const list: PaymentLink[] = (linksRes.data as any)?.items ?? [];
+      setLinks(list);
+      setError('none');
+
+      // Auto-sync open rows from the gateway, exactly as web does, so a row that has
+      // since been paid or failed shows its real state without a manual refresh.
+      const open = list.filter(p => p.status === 'pending').slice(0, 10);
+      if (open.length > 0) {
+        await Promise.allSettled(
+          open.map(p => apiClient.post(`/payments/links/${p.id}/refresh`).catch(() => null)),
+        );
+        const updated = await apiClient.get<any>('/payments/links', {
+          params: { status: filter || undefined, limit: FETCH_LIMIT },
+        });
+        setLinks((updated.data as any)?.items ?? []);
+      }
+    } catch (err: any) {
+      setLinks([]);
+      setSchools([]);
+      setError(err?.response ? 'error' : 'offline');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [filter]);
 
+  useEffect(() => { setPage(1); fetchData(); }, [fetchData]);
+
+  // Keep the open detail modal in sync with the table underneath it.
   useEffect(() => {
-    setLoading(true);
-    fetchPayments();
-  }, [filter]);
+    setViewing(prev => (prev ? links.find(l => l.id === prev.id) || prev : prev));
+  }, [links]);
 
-  const totalAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-
-  const handleCreate = async () => {
-    if (!dealId || !amount) { Alert.alert('Validation', 'Deal ID and amount are required'); return; }
-    const amtNum = parseFloat(amount);
-    if (isNaN(amtNum) || amtNum <= 0) { Alert.alert('Validation', 'Enter a valid amount'); return; }
-    setSaving(true);
+  const handleRefreshStatus = async (id: number) => {
+    setRefreshingId(id);
     try {
-      await paymentsApi.create({
-        dealId: parseInt(dealId),
-        amount: amtNum,
-        method,
-        transactionId: transactionId || undefined,
-        chequeNumber: method === 'Cheque' ? chequeNumber || undefined : undefined,
-        chequeDate: method === 'Cheque' ? chequeDate || undefined : undefined,
-        bankName: method === 'Cheque' ? bankName || undefined : undefined,
-        notes: notes || undefined,
-      });
-      setShowModal(false);
-      setDealId(''); setAmount(''); setTransactionId(''); setChequeNumber(''); setChequeDate(''); setBankName(''); setNotes('');
-      fetchPayments();
-    } catch { Alert.alert('Error', 'Failed to record payment'); }
-    finally { setSaving(false); }
+      await apiClient.post(`/payments/links/${id}/refresh`);
+      await fetchData(true);
+      Alert.alert('Status Refreshed', 'The latest status was fetched from the gateway.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || err?.message || 'Failed to refresh status.');
+    } finally {
+      setRefreshingId(null);
+    }
   };
 
-  const renderPayment = ({ item }: { item: Payment }) => (
-    <Card>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardLeft}>
-          <Text style={styles.amount}>{formatCurrency(item.amount)}</Text>
-          {item.schoolName && <Text style={styles.school}>{item.schoolName}</Text>}
-        </View>
-        <View style={styles.cardRight}>
-          <Badge label={item.status} color={STATUS_COLORS[item.status] || '#9CA3AF'} />
-          <Badge label={item.method} color={METHOD_COLORS[item.method] || '#9CA3AF'} />
-        </View>
-      </View>
-      <View style={styles.cardMeta}>
-        {item.transactionId && <Text style={styles.txId}>Ref: {item.transactionId}</Text>}
-        <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
-      </View>
-    </Card>
+  const copyLink = (url: string) => {
+    // RN core Clipboard is deprecated but still shipped in 0.84 and needs no new dep.
+    Clipboard.setString(url);
+    Alert.alert('Link Copied', 'The payment link was copied to your clipboard.');
+  };
+
+  const totalPages = Math.max(1, Math.ceil(links.length / PAGE_SIZE));
+  const pageLinks = useMemo(
+    () => links.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [links, page],
   );
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
-        title="Payments"
-        color={COLOR.primary}
-        rightAction={
-          <TouchableOpacity onPress={() => setShowModal(true)}>
-            <Plus size={22} color="#FFF" />
-          </TouchableOpacity>
-        }
-      />
+  const goToPage = (p: number) => {
+    if (p < 1 || p > totalPages || p === page) return;
+    setPage(p);
+  };
 
-      {/* Summary */}
-      <View style={[styles.summaryBar, { backgroundColor: COLOR.primary + '18' }]}>
-        <Text style={[styles.summaryLabel, { color: COLOR.primary }]}>Total: <Text style={styles.summaryAmount}>{formatCurrency(totalAmount)}</Text></Text>
-        <View style={styles.filterRow}>
-          {FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && { backgroundColor: COLOR.primary }]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterText, filter === f && { color: '#FFF' }]}>{f}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+  // ── row actions (web: View · Copy · Open · Refresh) ──
+  const rowActions = (p: PaymentLink) => (
+    <View style={s.actions}>
+      <IconBtn kind="view" label="View details" onPress={() => setViewing(p)}>
+        <Eye size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+      </IconBtn>
+      {!!p.paymentUrl && (
+        <>
+          <IconBtn kind="edit" label="Copy link" onPress={() => copyLink(p.paymentUrl!)}>
+            <Copy size={14} color={T.sub} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+          <IconBtn kind="edit" label="Open link" onPress={() => Linking.openURL(p.paymentUrl!)}>
+            <ExternalLink size={14} color={T.sub} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+        </>
+      )}
+      <IconBtn kind="view" label="Refresh status" onPress={() => handleRefreshStatus(p.id)}>
+        {refreshingId === p.id
+          ? <ActivityIndicator size="small" color={T.accent} />
+          : <RefreshCw size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+      </IconBtn>
+    </View>
+  );
+
+  // ── table (tablet) — web columns, 1:1 ──
+  const renderTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cSchool]}>School</Text>
+        <Text style={[s.th, { color: T.dim }, s.cOrder]}>Order ID</Text>
+        <Text style={[s.th, { color: T.dim }, s.cAmt]}>Amount</Text>
+        <Text style={[s.th, { color: T.dim }, s.cDue]}>Due Date</Text>
+        <Text style={[s.th, { color: T.dim }, s.cStatus]}>Status</Text>
+        <Text style={[s.th, { color: T.dim }, s.cBy]}>Created By</Text>
+        <Text style={[s.th, { color: T.dim }, s.cMade]}>Created</Text>
+        <Text style={[s.th, { color: T.dim }, s.cActions]}>Actions</Text>
       </View>
 
-      {loading ? (
-        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading payments..." />
-      ) : (
-        <FlatList
-          data={payments}
-          keyExtractor={item => String(item.id)}
-          renderItem={renderPayment}
-          contentContainerStyle={[styles.list, payments.length === 0 && { flex: 1 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPayments(); }} colors={[COLOR.primary]} />}
-          ListEmptyComponent={<EmptyState title="No payments found" subtitle="Record a payment by tapping +" icon="💰" />}
+      {pageLinks.map(p => (
+        <TouchableOpacity
+          key={p.id}
+          activeOpacity={0.7}
+          onPress={() => setViewing(p)}
+          style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}
+        >
+          <View style={[s.cSchool, s.nameCell]}>
+            <Avatar initials={initialsOf(p.schoolName)} />
+            <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>
+              {p.schoolName || `School #${p.schoolId}`}
+            </Text>
+          </View>
+          <Text style={[s.td, { color: T.sub }, s.cOrder]} numberOfLines={1}>{p.orderId || DASH}</Text>
+          <Text style={[s.tdAmt, { color: T.text }, s.cAmt]} numberOfLines={1}>{fmtCurrency(p.amount)}</Text>
+          <Text style={[s.td, { color: T.sub }, s.cDue]} numberOfLines={1}>{fmtDate(p.dueDate)}</Text>
+          <View style={s.cStatus}>
+            <StatusBadge label={statusLabel(p.status)} color={statusColor(T, p.status)} />
+          </View>
+          <Text style={[s.td, { color: T.sub }, s.cBy]} numberOfLines={1}>{p.createdByName || DASH}</Text>
+          <Text style={[s.td, { color: T.dim }, s.cMade]} numberOfLines={1}>{fmtDate(p.createdAt)}</Text>
+          <View style={s.cActions}>{rowActions(p)}</View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  // ── list rows (phone) ──
+  const renderRows = () => (
+    <View style={{ gap: 8 }}>
+      {pageLinks.map(p => (
+        <ListCard key={p.id} onPress={() => setViewing(p)} style={s.rowCard}>
+          <Avatar initials={initialsOf(p.schoolName)} />
+          <View style={{ flex: 1 }}>
+            <View style={s.rowTop}>
+              <Text style={[s.tdName, { color: T.text, flex: 1 }]} numberOfLines={1}>
+                {p.schoolName || `School #${p.schoolId}`}
+              </Text>
+              <Text style={[s.tdAmt, { color: T.text }]}>{fmtCurrency(p.amount)}</Text>
+            </View>
+            <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>{p.orderId || DASH}</Text>
+            <View style={s.rowStats}>
+              <StatusBadge label={statusLabel(p.status)} color={statusColor(T, p.status)} />
+              <Text style={[s.statTxt, { color: T.dim }]}>Due {fmtDate(p.dueDate)}</Text>
+            </View>
+            <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+              {[p.createdByName, fmtDate(p.createdAt)].filter(Boolean).join(' • ')}
+            </Text>
+            <View style={s.rowActions}>{rowActions(p)}</View>
+          </View>
+        </ListCard>
+      ))}
+    </View>
+  );
+
+  const from = links.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, links.length);
+
+  const renderBody = () => {
+    if (loading) {
+      return <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />;
+    }
+    if (error !== 'none') {
+      return (
+        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+          {error === 'offline'
+            ? <WifiOff size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+            : <AlertTriangle size={34} color={T.danger} strokeWidth={ICON_STROKE} />}
+          <Text style={[s.emptyTitle, { color: T.text }]}>
+            {error === 'offline' ? "You're offline" : 'Could not load payment data'}
+          </Text>
+          <Text style={[s.emptyTxt, { color: T.dim }]}>
+            {error === 'offline'
+              ? 'Reconnect and pull down to try again.'
+              : 'Pull down to retry.'}
+          </Text>
+        </View>
+      );
+    }
+    // Web's two distinct empty states, kept apart.
+    if (schools.length === 0 && links.length === 0) {
+      return (
+        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+          <CreditCard size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+          <Text style={[s.emptyTitle, { color: T.text }]}>No schools with won deals yet</Text>
+          <Text style={[s.emptyTxt, { color: T.dim }]}>
+            Once a lead is moved to the Won stage, the school will appear here.
+          </Text>
+        </View>
+      );
+    }
+    if (links.length === 0) {
+      return (
+        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+          <CreditCard size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+          <Text style={[s.emptyTitle, { color: T.text }]}>No payment links yet</Text>
+          <Text style={[s.emptyTxt, { color: T.dim }]}>Tap "Create Link" to generate the first one.</Text>
+        </View>
+      );
+    }
+    return (
+      <>
+        {table ? renderTable() : renderRows()}
+        {totalPages > 1 && (
+          <View style={s.pgRow}>
+            <Text style={[s.count, { color: T.dim }]}>
+              Showing {from}{DASH}{to} of {links.length}
+            </Text>
+            <Pagination page={page} pageCount={totalPages} onChange={goToPage} />
+          </View>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={[s.scroll, wide && s.scrollWide]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchData(true); }}
+            colors={[T.accent]}
+            tintColor={T.accent}
+          />
+        }
+      >
+        {/* Plain themed title block on T.bg — house pattern, no gradient hero. */}
+        <View style={[s.header, wide && s.headerWide]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, { color: T.text }]}>Payment Integration</Text>
+            <Text style={[s.sub, { color: T.dim }]}>
+              Generate hosted payment links for schools whose deal is won.
+            </Text>
+          </View>
+          {/* Ungated, matching web: PaymentIntegration.jsx renders Create Link for every role. */}
+          <Btn
+            label="Create Link"
+            small
+            onPress={() => setShowForm(true)}
+            disabled={schools.length === 0}
+            icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
+            style={wide ? undefined : { alignSelf: 'flex-start' }}
+          />
+        </View>
+
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Segmented<StatusFilter>
+            value={filter}
+            onChange={setFilter}
+            options={FILTERS}
+            style={wide ? { width: 380 } : undefined}
+          />
+          <Text style={[s.count, { color: T.dim }]}>
+            {links.length} link{links.length === 1 ? '' : 's'}
+          </Text>
+        </View>
+
+        {renderBody()}
+      </ScrollView>
+
+      {showForm && (
+        <CreateLinkModal
+          schools={schools}
+          onClose={() => setShowForm(false)}
+          onCreated={() => { setShowForm(false); fetchData(true); }}
         />
       )}
 
-      {/* Create Payment Modal */}
-      <Modal visible={showModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record Payment</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)}>
-                <X size={22} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <Field label="Deal ID *" value={dealId} onChange={setDealId} placeholder="Deal ID" keyboardType="numeric" />
-            <Field label="Amount (₹) *" value={amount} onChange={setAmount} placeholder="0.00" keyboardType="decimal-pad" />
-            <Text style={styles.fieldLabel}>Payment Method</Text>
-            <View style={styles.chipRow}>
-              {METHODS.map(m => (
-                <TouchableOpacity
-                  key={m}
-                  style={[styles.chip, method === m && { backgroundColor: COLOR.primary }]}
-                  onPress={() => setMethod(m)}
-                >
-                  <Text style={[styles.chipText, method === m && { color: '#FFF' }]}>{m}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {method !== 'Cash' && (
-              <Field label="Transaction ID" value={transactionId} onChange={setTransactionId} placeholder="Reference number" />
-            )}
-            {method === 'Cheque' && (
-              <>
-                <Field label="Cheque Number" value={chequeNumber} onChange={setChequeNumber} placeholder="Cheque number" />
-                <Field label="Cheque Date" value={chequeDate} onChange={setChequeDate} placeholder="YYYY-MM-DD" />
-                <Field label="Bank Name" value={bankName} onChange={setBankName} placeholder="Bank name" />
-              </>
-            )}
-            <Field label="Notes" value={notes} onChange={setNotes} placeholder="Optional notes" multiline />
-            <Button title={saving ? 'Recording...' : 'Record Payment'} onPress={handleCreate} variant="primary" disabled={saving} style={{ marginTop: 12 }} />
-          </View>
-        </View>
-      </Modal>
+      {!!viewing && (
+        <DetailModal
+          link={viewing}
+          refreshing={refreshingId === viewing.id}
+          onRefresh={() => handleRefreshStatus(viewing.id)}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </SafeAreaView>
   );
 };
 
-const Field = ({ label, value, onChange, placeholder, keyboardType, multiline }: any) => (
-  <View style={styles.fieldGroup}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <TextInput
-      style={[styles.input, multiline && { height: 60, textAlignVertical: 'top' }]}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#9CA3AF"
-      keyboardType={keyboardType || 'default'}
-      multiline={multiline}
-    />
-  </View>
-);
+// ─── Styles (layout only — colour comes from the theme, inline) ───────────────
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12 },
+  scrollWide: { paddingHorizontal: 22 },
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  summaryBar: { padding: 14, gap: 10 },
-  summaryLabel: { fontSize: rf(14), fontWeight: '600' },
-  summaryAmount: { fontWeight: '700', fontSize: rf(16) },
-  filterRow: { flexDirection: 'row', gap: 6 },
-  filterChip: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100,
-    backgroundColor: '#E5E7EB',
-  },
-  filterText: { fontSize: rf(12), color: '#374151', fontWeight: '600' },
-  list: { padding: 12, gap: 10 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  cardLeft: {},
-  amount: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
-  school: { fontSize: rf(13), color: '#6B7280', marginTop: 2 },
-  cardRight: { gap: 4, alignItems: 'flex-end' },
-  cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  txId: { fontSize: rf(12), color: '#9CA3AF' },
-  date: { fontSize: rf(12), color: '#9CA3AF' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '90%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827' },
-  fieldGroup: { marginBottom: 12 },
-  fieldLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(14), color: '#111827',
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+  header: { gap: 10 },
+  headerWide: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  title: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.3 },
+  sub: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
+  count: { fontSize: rf(11.5), fontWeight: '600' },
+
+  // table — .tbl r16 · .th cardAlt 11/700/.4 upper · .tr borderTop line · pad 12/16
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdAmt: { fontSize: rf(13.5), fontWeight: '800' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cSchool: { flex: 2 },
+  cOrder: { flex: 1.6 },
+  cAmt: { flex: 1 },
+  cDue: { flex: 1.1 },
+  cStatus: { flex: 1 },
+  cBy: { flex: 1.2 },
+  cMade: { flex: 1.1 },
+  cActions: { width: 150 }, // header <Text> ignores alignItems — both stay left so the
+                            // icons line up under the ACTIONS label (web parity)
+  actions: { flexDirection: 'row', gap: 6 },
+
+  // phone rows
+  rowCard: { alignItems: 'flex-start' },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rowStats: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' },
+  rowActions: { flexDirection: 'row', gap: 6, marginTop: 9 },
+  statTxt: { fontSize: rf(11), fontWeight: '600' },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: rf(14), fontWeight: '700', textAlign: 'center' },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+
+  // modals
+  mForm: { gap: 14 },
+  row2: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  col2: { gap: 14 },
+  hint: { fontSize: rf(11.5), fontWeight: '500', marginTop: -6 },
+  textarea: { minHeight: 76, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
+  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 56 },
+
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  bannerTxt: { fontSize: rf(12.5), fontWeight: '600', flex: 1 },
+
+  dRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 6 },
+  dLabel: { width: 108, fontSize: rf(12.5), fontWeight: '700' },
+  dValWrap: { flex: 1 },
+  dVal: { fontSize: rf(12.5), fontWeight: '500' },
+  dLink: { fontSize: rf(12.5), fontWeight: '700' },
 });

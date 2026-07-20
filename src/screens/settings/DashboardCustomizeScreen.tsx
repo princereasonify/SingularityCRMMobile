@@ -10,7 +10,7 @@ import { DashboardWidget } from '../../types';
 import { AppHeader } from '../../components/ui';
 import { GradientButton } from '../../components/common/GradientButton';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   infoBox: {
     borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 4,
   },
-  infoText: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
+  infoText: { fontWeight: '400', fontSize: rf(13), lineHeight: 20 },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -232,8 +232,8 @@ const styles = StyleSheet.create({
   orderCol: { alignItems: 'center', gap: 2, width: 28 },
   arrowBtn: { padding: 2 },
   arrowDisabled: { opacity: 0.3 },
-  arrowText: { fontFamily: Fonts.bold, fontSize: rf(10) },
-  orderNum: { fontFamily: Fonts.medium, fontSize: rf(11) },
+  arrowText: { fontWeight: '700', fontSize: rf(10) },
+  orderNum: { fontWeight: '600', fontSize: rf(11) },
 
   typeTag: {
     width: 38, height: 38, borderRadius: 10,
@@ -242,8 +242,8 @@ const styles = StyleSheet.create({
   typeEmoji: { fontSize: rf(18) },
 
   widgetInfo: { flex: 1 },
-  widgetTitle: { fontFamily: Fonts.medium, fontSize: rf(14) },
-  widgetMeta: { fontFamily: Fonts.medium, fontSize: rf(11), marginTop: 2 },
+  widgetTitle: { fontWeight: '600', fontSize: rf(14) },
+  widgetMeta: { fontWeight: '600', fontSize: rf(11), marginTop: 2 },
 
   grip: { marginHorizontal: 2 },
 
@@ -252,6 +252,6 @@ const styles = StyleSheet.create({
     flex: 1, height: 54, borderRadius: 16, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  resetText: { fontFamily: Fonts.bold, fontSize: rf(15), letterSpacing: 0.2 },
+  resetText: { fontWeight: '700', fontSize: rf(15), letterSpacing: 0.2 },
   saveBtn: { flex: 1 },
 });

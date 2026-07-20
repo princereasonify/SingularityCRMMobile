@@ -1,3 +1,16 @@
+/**
+ * ⚠️ UNREACHABLE DEAD CODE — kept on disk for reference only.
+ *
+ * Web has no standalone Contacts page; contacts live as a tab inside School
+ * Detail, and mobile now mirrors that. This screen's Stack.Screen registration
+ * has been removed from AppNavigator, so nothing can navigate here.
+ *
+ * It calls contacts endpoints that never existed on the backend (there is no
+ * ContactsController — see src/api/contacts.ts). Those methods are gone from
+ * contactsApi; the `legacyContactsApi` alias below only exists so this dead file
+ * still typechecks. Do NOT re-register this route or revive the alias without
+ * first adding the corresponding backend actions.
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity,
@@ -6,15 +19,18 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertTriangle, ExternalLink, X, ArrowLeft } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
+/** Phantom endpoints this dead screen still references — see header. */
+const legacyContactsApi = contactsApi as any;
+
 import { Contact, DuplicateMatch } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { GradientBackground } from '../../components/common/GradientBackground';
 import { GradientButton } from '../../components/common/GradientButton';
 import { Button } from '../../components/common/Button';
 import { Card, Chip, SectionLabel } from '../../components/ui';
 import { ROLE_COLORS } from '../../utils/constants';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 const RELATIONSHIPS = ['New', 'Warm', 'Strong', 'Champion', 'Detractor'];
@@ -58,7 +74,7 @@ export const AddContactScreen = ({ navigation, route }: any) => {
     if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current);
     dupCheckTimer.current = setTimeout(async () => {
       try {
-        const res = await contactsApi.checkDuplicates(name.trim() || undefined, phone.trim() || undefined, schoolId);
+        const res = await legacyContactsApi.checkDuplicates(name.trim() || undefined, phone.trim() || undefined, schoolId);
         setDuplicates((res.data as any) ?? []);
       } catch { setDuplicates([]); }
     }, 600);
@@ -82,9 +98,9 @@ export const AddContactScreen = ({ navigation, route }: any) => {
         isInfluencer,
       };
       if (isEdit) {
-        await contactsApi.update(existing!.id, data);
+        await legacyContactsApi.update(existing!.id, data);
       } else {
-        await contactsApi.create(data);
+        await legacyContactsApi.create(data);
       }
       Alert.alert('Success', isEdit ? 'Contact updated' : 'Contact added');
       navigation.goBack();
@@ -108,21 +124,26 @@ export const AddContactScreen = ({ navigation, route }: any) => {
   return (
     <View style={[styles.root, { backgroundColor: T.bg }]}>
       {/* Sunstone hero header */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: T.line }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity
-            style={styles.headerBtn}
+            style={[styles.headerBtn, { backgroundColor: T.card, borderColor: T.line }]}
             onPress={() => navigation.goBack()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <ArrowLeft size={20} color="#FFF" />
+            <ArrowLeft size={20} color={T.text} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{isEdit ? 'Edit Contact' : 'Add Contact'}</Text>
-            {!!schoolName && <Text style={styles.headerSub} numberOfLines={1}>🏫 {schoolName}</Text>}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>
+              {isEdit ? 'Edit Contact' : 'Add Contact'}
+            </Text>
+            {/* Emoji dropped — the spec icon set is the house language, not emoji. */}
+            {!!schoolName && (
+              <Text style={[styles.headerSub, { color: T.sub }]} numberOfLines={1}>{schoolName}</Text>
+            )}
           </View>
         </View>
-      </GradientBackground>
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -132,7 +153,7 @@ export const AddContactScreen = ({ navigation, route }: any) => {
       >
         <View style={[styles.formWrap, twoWide && styles.formWrapWide]}>
           {!isEdit && duplicates.length > 0 && (
-            <View style={[styles.dupBanner, { backgroundColor: T.warning + '22', borderColor: T.warning + '55' }]}>
+            <View style={[styles.dupBanner, { backgroundColor: withAlpha(T.warning, 0.13), borderColor: withAlpha(T.warning, 0.33) }]}>
               <AlertTriangle size={16} color={T.warning} />
               <Text style={[styles.dupBannerText, { color: T.warning }]}>
                 {duplicates.length} possible duplicate{duplicates.length > 1 ? 's' : ''} found
@@ -216,7 +237,7 @@ export const AddContactScreen = ({ navigation, route }: any) => {
               >
                 <View style={styles.dupCardHeader}>
                   <Text style={[styles.dupName, { color: T.text }]}>{d.matchedEntityName}</Text>
-                  <View style={[styles.matchBadge, { backgroundColor: (DUP_COLORS[d.matchType] || T.dim) + '22' }]}>
+                  <View style={[styles.matchBadge, { backgroundColor: withAlpha((DUP_COLORS[d.matchType] || T.dim), 0.13) }]}>
                     <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || T.dim }]}>{d.matchType}</Text>
                   </View>
                 </View>
@@ -274,14 +295,14 @@ const SectionCard = ({ label, children }: { label: string; children: React.React
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  header: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 2 },
 
   scroll: { flex: 1 },
   content: { padding: 16 },
@@ -289,31 +310,31 @@ const styles = StyleSheet.create({
   formWrapWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
 
   fieldGroup: { marginBottom: 14 },
-  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
+  fieldLabel: { fontWeight: '600', fontSize: rf(13), marginBottom: 6 },
   input: {
     borderWidth: 1, borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 11,
-    fontFamily: Fonts.regular, fontSize: rf(14),
+    fontWeight: '400', fontSize: rf(14),
   },
   inputMulti: { height: 80, textAlignVertical: 'top' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1 },
-  toggleLabel: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  toggleLabel: { fontWeight: '600', fontSize: rf(14) },
   dupBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1, padding: 12 },
-  dupBannerText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(13) },
+  dupBannerText: { flex: 1, fontWeight: '600', fontSize: rf(13) },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 40 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  modalTitle: { fontFamily: Fonts.bold, fontSize: rf(16) },
+  modalTitle: { fontWeight: '700', fontSize: rf(16) },
   dupCard: { borderLeftWidth: 4, borderRadius: 12, padding: 12, marginBottom: 10 },
   dupCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  dupName: { fontFamily: Fonts.bold, fontSize: rf(14), flex: 1 },
+  dupName: { fontWeight: '700', fontSize: rf(14), flex: 1 },
   matchBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  matchBadgeText: { fontFamily: Fonts.bold, fontSize: rf(11) },
-  dupReason: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 8 },
+  matchBadgeText: { fontWeight: '700', fontSize: rf(11) },
+  dupReason: { fontWeight: '400', fontSize: rf(12), marginBottom: 8 },
   viewExistingBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewExistingText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  viewExistingText: { fontWeight: '600', fontSize: rf(13) },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
 });

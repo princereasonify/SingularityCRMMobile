@@ -1,26 +1,47 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
-  TextInput, FlatList, useWindowDimensions,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
+  TextInput, ActivityIndicator, RefreshControl, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Plus, Check, X, ChevronDown, ChevronUp, Send, Ban, AlertTriangle,
+  CalendarOff, Clock, Filter, Users, WifiOff,
 } from 'lucide-react-native';
+
 import { useAuth } from '../../context/AuthContext';
 import { leavesApi } from '../../api/leaves';
 import { authApi } from '../../api/auth';
 import { DateInput } from '../../components/common/DateInput';
-import { SelectPicker } from '../../components/common/SelectPicker';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { GradientBackground } from '../../components/common/GradientBackground';
-import { GradientButton } from '../../components/common/GradientButton';
-import { Fonts } from '../../theme';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, IconBtn, Field, Segmented, Trigger, Dropdown,
+  StatusBadge, FilterChip, Pagination, Avatar, FormModal, ConfirmModal,
+} from '../../components/crud';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import type { AppTheme } from '../../theme/appTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+/**
+ * Leave Management — apply, track, and (for managers) approve/reject team leave.
+ *
+ * Web parity source: Sales_CRM_Web/src/pages/common/LeaveManagement.jsx.
+ *
+ * VERIFIED against LeavesController.cs:
+ *  · POST /leaves                  → Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave applied successfully"))
+ *  · GET  /leaves/my?status&category&from&to   → Ok(ApiResponse<List<LeaveRequestDto>>.Ok(leaves))
+ *  · GET  /leaves/team?status&category&from&to&filterUserId
+ *                                  → Ok(ApiResponse<List<LeaveRequestDto>>.Ok(leaves))  [403 for FO]
+ *  · POST /leaves/{id}/approve     → Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave approved"))
+ *  · POST /leaves/{id}/reject      → Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave rejected"))
+ *  · POST /leaves/{id}/cancel      → Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave cancelled"))
+ * `category` is bound on BOTH my and team — web filters by it on both tabs, so we do too.
+ */
+
+const PAGE_SIZE = 10;
+const DASH = '—';
 
 const LEAVE_TYPES = [
   { value: 'FullDay', label: 'Full Day' },
@@ -44,424 +65,484 @@ const STATUS_OPTIONS = [
   { value: 'Cancelled', label: 'Cancelled' },
 ];
 
-// Map leave status / category to a theme token so badges flip with light/dark.
+const CATEGORY_OPTIONS = [{ value: '', label: 'All Categories' }, ...LEAVE_CATEGORIES];
+
+type Tab = 'my' | 'team';
+
+/**
+ * Status → token. Approved and AutoApproved are ADJACENT approval tiers and must never
+ * share a hue: Approved→success, AutoApproved→info (web: green vs teal).
+ */
 const statusToken = (T: AppTheme, status: string): string =>
   (({
     Pending: T.warning,
     Approved: T.success,
     AutoApproved: T.info,
     Rejected: T.danger,
-    Cancelled: T.sub,
-  } as Record<string, string>)[status]) || T.sub;
+    Cancelled: T.dim,
+  } as Record<string, string>)[status]) || T.dim;
 
+const STATUS_LABELS: Record<string, string> = {
+  Pending: 'Pending',
+  Approved: 'Approved',
+  AutoApproved: 'Auto-Approved',
+  Rejected: 'Rejected',
+  Cancelled: 'Cancelled',
+};
+const statusLabel = (st: string) => STATUS_LABELS[st] || st;
+
+/** Category → token. Web: Casual blue · Sick orange · Personal purple · Emergency red. */
 const categoryToken = (T: AppTheme, cat: string): string =>
   (({
     Casual: T.info,
     Sick: T.warning,
     Personal: T.accent,
     Emergency: T.danger,
-  } as Record<string, string>)[cat]) || T.sub;
+  } as Record<string, string>)[cat]) || T.dim;
 
-function getToday() {
-  return new Date().toISOString().split('T')[0];
-}
+const getToday = () => new Date().toISOString().split('T')[0];
 
-function formatDate(d: string) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' });
-}
+const fmtDate = (d?: string) =>
+  !d ? DASH : new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
-function initials(name: string) {
-  return (name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-}
+const fmtApplied = (d?: string) =>
+  !d
+    ? DASH
+    : new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-// ─── Apply Form Modal ────────────────────────────────────────────────────────
+const initialsOf = (name?: string) =>
+  (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase() || '?';
 
-function ApplyModal({ visible, onClose, onSubmit, submitting }: any) {
+const typeLabel = (t: string) => LEAVE_TYPES.find(x => x.value === t)?.label || t;
+
+// ─── Apply modal ──────────────────────────────────────────────────────────────
+function ApplyModal({ onClose, onSubmit, submitting }: {
+  onClose: () => void; onSubmit: (f: any) => void; submitting: boolean;
+}) {
   const T = useAppTheme();
-  const [form, setForm] = useState({
-    leaveDate: '',
-    leaveType: 'FullDay',
-    leaveCategory: 'Casual',
-    reason: '',
-    coverArrangement: '',
-  });
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
 
-  const isSameDay = form.leaveDate === getToday();
+  const [leaveDate, setLeaveDate] = useState('');
+  const [leaveType, setLeaveType] = useState('FullDay');
+  const [leaveCategory, setLeaveCategory] = useState('Casual');
+  const [reason, setReason] = useState('');
+  const [coverArrangement, setCoverArrangement] = useState('');
+  const [openDd, setOpenDd] = useState<'type' | 'cat' | null>(null);
 
-  const reset = () => setForm({ leaveDate: '', leaveType: 'FullDay', leaveCategory: 'Casual', reason: '', coverArrangement: '' });
+  const isSameDay = leaveDate === getToday();
 
   const handleSubmit = () => {
-    if (!form.leaveDate) { Alert.alert('Error', 'Please select a leave date'); return; }
-    if (!form.reason.trim()) { Alert.alert('Error', 'Please provide a reason'); return; }
-    onSubmit({ ...form, reason: form.reason.trim(), coverArrangement: form.coverArrangement.trim() || null });
+    if (!leaveDate) { Alert.alert('Date Required', 'Please select a leave date.'); return; }
+    if (!reason.trim()) { Alert.alert('Reason Required', 'Please provide a reason.'); return; }
+    onSubmit({
+      leaveDate,
+      leaveType,
+      leaveCategory,
+      reason: reason.trim(),
+      coverArrangement: coverArrangement.trim() || null,
+    });
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }} edges={['top']}>
-        <View style={[fm.header, { backgroundColor: T.card, borderBottomColor: T.line }]}>
-          <Text style={[fm.title, { color: T.text }]}>Apply for Leave</Text>
-          <TouchableOpacity onPress={() => { reset(); onClose(); }} hitSlop={8}>
-            <X size={22} color={T.sub} />
-          </TouchableOpacity>
-        </View>
-        <ScrollView contentContainerStyle={fm.content} keyboardShouldPersistTaps="handled">
-          <DateInput
-            label="Leave Date *"
-            value={form.leaveDate}
-            onChange={v => setForm(f => ({ ...f, leaveDate: v }))}
-            accentColor={T.accent}
-          />
-          {isSameDay && form.leaveDate ? (
-            <Text style={[fm.autoNote, { color: T.accent }]}>Same-day leave will be auto-approved</Text>
-          ) : null}
-
-          <SelectPicker
-            label="Leave Type *"
-            options={LEAVE_TYPES}
-            value={form.leaveType}
-            onChange={v => setForm(f => ({ ...f, leaveType: String(v) }))}
-            accentColor={T.accent}
-          />
-          <SelectPicker
-            label="Leave Category *"
-            options={LEAVE_CATEGORIES}
-            value={form.leaveCategory}
-            onChange={v => setForm(f => ({ ...f, leaveCategory: String(v) }))}
-            accentColor={T.accent}
-          />
-
-          <Text style={[fm.label, { color: T.text }]}>Reason *</Text>
-          <TextInput
-            style={[fm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-            value={form.reason}
-            onChangeText={t => setForm(f => ({ ...f, reason: t }))}
-            placeholder="Why are you taking leave?"
-            placeholderTextColor={T.dim}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-
-          <Text style={[fm.label, { color: T.text, marginTop: 12 }]}>Cover Arrangement (optional)</Text>
-          <TextInput
-            style={[fm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-            value={form.coverArrangement}
-            onChangeText={t => setForm(f => ({ ...f, coverArrangement: t }))}
-            placeholder="Who will handle your responsibilities?"
-            placeholderTextColor={T.dim}
-            multiline
-            numberOfLines={2}
-            textAlignVertical="top"
-          />
-
-          <GradientButton
-            label={submitting ? 'Submitting...' : isSameDay ? 'Submit (Auto-Approve)' : 'Submit for Approval'}
+    <FormModal
+      visible
+      wide={wide}
+      title="Apply for Leave"
+      onClose={onClose}
+      footer={
+        <>
+          <View style={{ flex: 1 }} />
+          <Btn label="Cancel" variant="secondary" onPress={onClose} small />
+          <Btn
+            label={submitting ? 'Submitting…' : isSameDay ? 'Submit (Auto-Approve)' : 'Submit for Approval'}
             onPress={handleSubmit}
             loading={submitting}
-            icon={!submitting ? <Send size={16} color="#FFF" /> : undefined}
-            style={{ marginTop: 20 }}
+            disabled={submitting}
+            small
+            icon={<Send size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
           />
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+        </>
+      }
+    >
+      <View style={s.mForm}>
+        <Field label="Leave Date *">
+          <DateInput value={leaveDate} onChange={setLeaveDate} accentColor={T.accent} />
+        </Field>
+        {isSameDay && !!leaveDate && (
+          <View style={[s.note, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
+            <Clock size={13} color={T.info} strokeWidth={ICON_STROKE} />
+            <Text style={[s.noteTxt, { color: T.info }]}>Same-day leave — will be auto-approved</Text>
+          </View>
+        )}
+
+        {/* Trigger+Dropdown inside a form modal is a field, not a modal-as-picker. */}
+        <View style={wide ? s.row2 : s.col2}>
+          <Field label="Leave Type *" style={wide ? { flex: 1, zIndex: 30 } : { zIndex: 30 }}>
+            <Trigger
+              label={typeLabel(leaveType)}
+              open={openDd === 'type'}
+              onPress={() => setOpenDd(openDd === 'type' ? null : 'type')}
+            />
+            {openDd === 'type' && (
+              <Dropdown
+                style={s.ddFull}
+                value={leaveType}
+                onSelect={v => { setLeaveType(v); setOpenDd(null); }}
+                options={LEAVE_TYPES}
+              />
+            )}
+          </Field>
+
+          <Field label="Leave Category *" style={wide ? { flex: 1, zIndex: 20 } : { zIndex: 20 }}>
+            <Trigger
+              label={LEAVE_CATEGORIES.find(c => c.value === leaveCategory)?.label || leaveCategory}
+              open={openDd === 'cat'}
+              onPress={() => setOpenDd(openDd === 'cat' ? null : 'cat')}
+            />
+            {openDd === 'cat' && (
+              <Dropdown
+                style={s.ddFull}
+                value={leaveCategory}
+                onSelect={v => { setLeaveCategory(v); setOpenDd(null); }}
+                options={LEAVE_CATEGORIES}
+              />
+            )}
+          </Field>
+        </View>
+
+        {/* Kit Input hard-codes height 46 — multiline needs Field + themed TextInput. */}
+        <Field label="Reason *">
+          <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
+            <TextInput
+              value={reason}
+              onChangeText={setReason}
+              placeholder="Why are you taking leave?"
+              placeholderTextColor={T.dim}
+              multiline
+              style={[s.textareaTxt, { color: T.text }]}
+            />
+          </View>
+        </Field>
+
+        <Field label="Cover Arrangement (optional)">
+          <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
+            <TextInput
+              value={coverArrangement}
+              onChangeText={setCoverArrangement}
+              placeholder="Who will handle your responsibilities?"
+              placeholderTextColor={T.dim}
+              multiline
+              style={[s.textareaTxt, { color: T.text }]}
+            />
+          </View>
+        </Field>
+      </View>
+    </FormModal>
   );
 }
 
-const fm = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  title: { fontSize: rf(17), fontFamily: Fonts.bold },
-  content: { padding: 16, gap: 4 },
-  label: { fontSize: rf(13), fontFamily: Fonts.medium, marginBottom: 6 },
-  autoNote: { fontSize: rf(12), fontFamily: Fonts.medium, marginBottom: 12, marginTop: -8 },
-  textarea: { borderWidth: 1, borderRadius: 14, padding: 12, fontSize: rf(14), fontFamily: Fonts.regular, minHeight: 80, marginBottom: 4 },
-});
-
-// ─── Reject Modal ────────────────────────────────────────────────────────────
-
-function RejectModal({ visible, onClose, onReject, rejecting }: any) {
+// ─── Reject modal ─────────────────────────────────────────────────────────────
+function RejectModal({ onClose, onReject, rejecting }: {
+  onClose: () => void; onReject: (reason: string) => void; rejecting: boolean;
+}) {
   const T = useAppTheme();
   const [reason, setReason] = useState('');
-  const handle = () => {
-    if (!reason.trim()) { Alert.alert('Error', 'Please provide a rejection reason'); return; }
-    onReject(reason.trim());
-  };
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={rm.overlay}>
-        <View style={[rm.box, { backgroundColor: T.card, borderColor: T.line }]}>
-          <Text style={[rm.title, { color: T.text }]}>Reject Leave Request</Text>
+    <FormModal
+      visible
+      title="Reject Leave Request"
+      onClose={onClose}
+      footer={
+        <>
+          <View style={{ flex: 1 }} />
+          <Btn label="Cancel" variant="secondary" onPress={onClose} small />
+          <Btn
+            label={rejecting ? 'Rejecting…' : 'Reject Leave'}
+            variant="danger"
+            onPress={() => {
+              if (!reason.trim()) { Alert.alert('Reason Required', 'Please provide a rejection reason.'); return; }
+              onReject(reason.trim());
+            }}
+            loading={rejecting}
+            disabled={rejecting}
+            small
+          />
+        </>
+      }
+    >
+      <Field label="Reason *">
+        <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
           <TextInput
-            style={[rm.textarea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
             value={reason}
             onChangeText={setReason}
             placeholder="Provide a reason for rejection (required)"
             placeholderTextColor={T.dim}
             multiline
-            numberOfLines={3}
-            textAlignVertical="top"
+            style={[s.textareaTxt, { color: T.text }]}
           />
-          <View style={rm.actions}>
-            <TouchableOpacity style={[rm.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={onClose}>
-              <Text style={[rm.cancelText, { color: T.sub }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[rm.rejectBtn, { backgroundColor: T.danger }, rejecting && { opacity: 0.6 }]} onPress={handle} disabled={rejecting}>
-              <Text style={rm.rejectText}>{rejecting ? 'Rejecting...' : 'Reject Leave'}</Text>
-            </TouchableOpacity>
-          </View>
         </View>
-      </View>
-    </Modal>
+      </Field>
+    </FormModal>
   );
 }
 
-const rm = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  box: { borderRadius: 18, borderWidth: 1, padding: 20, width: '100%', maxWidth: 400 },
-  title: { fontSize: rf(16), fontFamily: Fonts.bold, marginBottom: 12 },
-  textarea: { borderWidth: 1, borderRadius: 14, padding: 12, fontSize: rf(14), fontFamily: Fonts.regular, minHeight: 80, marginBottom: 16, textAlignVertical: 'top' },
-  actions: { flexDirection: 'row', gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
-  cancelText: { fontSize: rf(14), fontFamily: Fonts.medium },
-  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
-  rejectText: { fontSize: rf(14), fontFamily: Fonts.bold, color: '#FFF' },
-});
-
-// ─── Leave Card ──────────────────────────────────────────────────────────────
-
-function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: any) {
+// ─── Leave card ───────────────────────────────────────────────────────────────
+function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: {
+  leave: any; isTeam: boolean;
+  onCancel: (id: number) => void; onApprove: (l: any) => void; onReject: (id: number) => void;
+}) {
   const T = useAppTheme();
   const [expanded, setExpanded] = useState(false);
+
   const sc = statusToken(T, leave.status);
   const cc = categoryToken(T, leave.leaveCategory);
-  const leaveTypeLabel = LEAVE_TYPES.find(t => t.value === leave.leaveType)?.label || leave.leaveType;
-  const canCancel = ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
+  const canCancel =
+    ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
     new Date(leave.leaveDate) >= new Date(getToday());
 
+  const d = new Date(leave.leaveDate);
+
   return (
-    <View style={[lc.card, { backgroundColor: T.card, borderColor: T.line }]}>
-      <TouchableOpacity style={lc.row} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
+    <View
+      style={[
+        s.lcard,
+        { backgroundColor: T.card, borderColor: T.line },
+        // Web left-borders pending team rows in amber; mirrored with the warning token.
+        isTeam && leave.status === 'Pending' && { borderLeftWidth: 3, borderLeftColor: T.warning },
+      ]}
+    >
+      <TouchableOpacity style={s.lrow} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
         {isTeam ? (
-          <View style={[lc.avatar, { backgroundColor: T.accentSoft }]}>
-            <Text style={[lc.avatarText, { color: T.accent }]}>{initials(leave.userName || '')}</Text>
-          </View>
+          <Avatar initials={initialsOf(leave.userName)} />
         ) : (
-          <View style={lc.dateBox}>
-            <Text style={[lc.dateDay, { color: T.text }]}>{new Date(leave.leaveDate).getDate()}</Text>
-            <Text style={[lc.dateMon, { color: T.sub }]}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { month: 'short' })}</Text>
-            <Text style={[lc.dateWkd, { color: T.dim }]}>{new Date(leave.leaveDate).toLocaleDateString('en-IN', { weekday: 'short' })}</Text>
+          <View style={s.dateBox}>
+            <Text style={[s.dateDay, { color: T.text }]}>{d.getDate()}</Text>
+            <Text style={[s.dateMon, { color: T.sub }]}>
+              {d.toLocaleDateString('en-IN', { month: 'short' })}
+            </Text>
+            <Text style={[s.dateWkd, { color: T.dim }]}>
+              {d.toLocaleDateString('en-IN', { weekday: 'short' })}
+            </Text>
           </View>
         )}
 
         <View style={{ flex: 1 }}>
           {isTeam && (
-            <Text style={[lc.name, { color: T.text }]}>{leave.userName} <Text style={[lc.role, { color: T.sub }]}>({leave.userRole})</Text></Text>
+            <Text style={[s.lname, { color: T.text }]} numberOfLines={1}>
+              {leave.userName}
+              {!!leave.userRole && <Text style={[s.lrole, { color: T.dim }]}> ({leave.userRole})</Text>}
+            </Text>
           )}
           {isTeam && (
-            <Text style={[lc.dateStr, { color: T.sub }]}>{formatDate(leave.leaveDate)}</Text>
+            <Text style={[s.lmeta, { color: T.sub }]} numberOfLines={1}>{fmtDate(leave.leaveDate)}</Text>
           )}
-          <View style={lc.badges}>
-            <View style={[lc.badge, { backgroundColor: sc + '22' }]}>
-              <Text style={[lc.badgeText, { color: sc }]}>{leave.status === 'AutoApproved' ? 'Auto-Approved' : leave.status}</Text>
-            </View>
-            <View style={[lc.badge, { backgroundColor: cc + '22' }]}>
-              <Text style={[lc.badgeText, { color: cc }]}>{leave.leaveCategory}</Text>
-            </View>
-            <Text style={[lc.typeText, { color: T.dim }]}>{leaveTypeLabel}</Text>
+
+          <View style={s.badges}>
+            <StatusBadge label={statusLabel(leave.status)} color={sc} />
+            <StatusBadge label={leave.leaveCategory} color={cc} />
+            <Text style={[s.typeTxt, { color: T.dim }]}>{typeLabel(leave.leaveType)}</Text>
           </View>
-          <Text style={[lc.reason, { color: T.sub }]} numberOfLines={expanded ? undefined : 2}>{leave.reason}</Text>
+
+          <Text style={[s.reason, { color: T.sub }]} numberOfLines={expanded ? undefined : 2}>
+            {leave.reason}
+          </Text>
         </View>
 
-        <View style={lc.actions}>
+        <View style={s.lactions}>
           {isTeam && leave.status === 'Pending' && (
             <>
-              <TouchableOpacity style={[lc.approveBtn, { backgroundColor: T.success }]} onPress={() => onApprove(leave)}>
-                <Check size={14} color="#FFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={[lc.rejectBtn, { backgroundColor: T.danger }]} onPress={() => onReject(leave.id)}>
-                <X size={14} color="#FFF" />
-              </TouchableOpacity>
+              <IconBtn kind="view" label="Approve" onPress={() => onApprove(leave)}>
+                <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+              </IconBtn>
+              <IconBtn kind="del" label="Reject" onPress={() => onReject(leave.id)}>
+                <X size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+              </IconBtn>
             </>
           )}
           {!isTeam && canCancel && (
-            <TouchableOpacity style={[lc.cancelBtn, { backgroundColor: T.danger + '22' }]} onPress={() => onCancel(leave.id)}>
-              <Ban size={12} color={T.danger} />
-            </TouchableOpacity>
+            <IconBtn kind="del" label="Cancel leave" onPress={() => onCancel(leave.id)}>
+              <Ban size={13} color={T.danger} strokeWidth={ICON_STROKE} />
+            </IconBtn>
           )}
-          {expanded ? <ChevronUp size={16} color={T.dim} /> : <ChevronDown size={16} color={T.dim} />}
+          {expanded
+            ? <ChevronUp size={16} color={T.dim} strokeWidth={ICON_STROKE} />
+            : <ChevronDown size={16} color={T.dim} strokeWidth={ICON_STROKE} />}
         </View>
       </TouchableOpacity>
 
       {expanded && (
-        <View style={[lc.expanded, { borderTopColor: T.line }]}>
-          {leave.coverArrangement ? <Text style={[lc.expandText, { color: T.sub }]}><Text style={[lc.expandLabel, { color: T.text }]}>Cover: </Text>{leave.coverArrangement}</Text> : null}
-          {leave.actionedByName ? (
-            <Text style={[lc.expandText, { color: T.sub }]}>
-              <Text style={[lc.expandLabel, { color: T.text }]}>{leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by: </Text>
-              {leave.actionedByName}{leave.actionedAt ? ` on ${new Date(leave.actionedAt).toLocaleDateString('en-IN')}` : ''}
+        <View style={[s.expanded, { borderTopColor: T.line }]}>
+          {!!leave.coverArrangement && (
+            <Text style={[s.expTxt, { color: T.sub }]}>
+              <Text style={[s.expLabel, { color: T.text }]}>Cover: </Text>{leave.coverArrangement}
             </Text>
-          ) : null}
-          {leave.rejectionReason ? <Text style={[lc.expandText, { color: T.danger }]}><Text style={[lc.expandLabel, { color: T.danger }]}>Rejection reason: </Text>{leave.rejectionReason}</Text> : null}
-          {leave.planImpactMessage ? (
-            <View style={[lc.impactBox, { backgroundColor: T.warning + '22' }]}>
-              <AlertTriangle size={12} color={T.warning} />
-              <Text style={[lc.impactText, { color: T.warning }]}>{leave.planImpactMessage}</Text>
+          )}
+          {!!leave.actionedByName && (
+            <Text style={[s.expTxt, { color: T.sub }]}>
+              <Text style={[s.expLabel, { color: T.text }]}>
+                {leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by:{' '}
+              </Text>
+              {leave.actionedByName}
+              {leave.actionedAt ? ` on ${new Date(leave.actionedAt).toLocaleDateString('en-IN')}` : ''}
+            </Text>
+          )}
+          {!!leave.rejectionReason && (
+            <Text style={[s.expTxt, { color: T.danger }]}>
+              <Text style={[s.expLabel, { color: T.danger }]}>Rejection reason: </Text>{leave.rejectionReason}
+            </Text>
+          )}
+          {!!leave.planImpactMessage && (
+            <View style={[s.impact, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
+              <AlertTriangle size={13} color={T.warning} strokeWidth={ICON_STROKE} />
+              <Text style={[s.impactTxt, { color: T.warning }]}>{leave.planImpactMessage}</Text>
             </View>
-          ) : null}
-          <Text style={[lc.appliedAt, { color: T.dim }]}>Applied: {leave.createdAt ? new Date(leave.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</Text>
+          )}
+          <Text style={[s.applied, { color: T.dim }]}>Applied: {fmtApplied(leave.createdAt)}</Text>
         </View>
       )}
     </View>
   );
 }
 
-const lc = StyleSheet.create({
-  card: { borderRadius: 18, marginBottom: 10, overflow: 'hidden', borderWidth: 1 },
-  row: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
-  dateBox: { alignItems: 'center', minWidth: 44 },
-  dateDay: { fontSize: rf(20), fontFamily: Fonts.bold },
-  dateMon: { fontSize: rf(11), fontFamily: Fonts.regular },
-  dateWkd: { fontSize: rf(10), fontFamily: Fonts.regular },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: rf(13), fontFamily: Fonts.bold },
-  name: { fontSize: rf(14), fontFamily: Fonts.bold },
-  role: { fontSize: rf(12), fontFamily: Fonts.regular },
-  dateStr: { fontSize: rf(12), fontFamily: Fonts.regular, marginBottom: 4 },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
-  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  badgeText: { fontSize: rf(11), fontFamily: Fonts.bold },
-  typeText: { fontSize: rf(11), fontFamily: Fonts.regular, alignSelf: 'center' },
-  reason: { fontSize: rf(13), fontFamily: Fonts.regular },
-  actions: { alignItems: 'center', gap: 6 },
-  approveBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  rejectBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  cancelBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  expanded: { paddingHorizontal: 14, paddingBottom: 14, gap: 4, borderTopWidth: 1 },
-  expandLabel: { fontFamily: Fonts.medium },
-  expandText: { fontSize: rf(12), fontFamily: Fonts.regular },
-  impactBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: 8, padding: 8, marginTop: 4 },
-  impactText: { fontSize: rf(12), fontFamily: Fonts.regular, flex: 1 },
-  appliedAt: { fontSize: rf(11), fontFamily: Fonts.regular, marginTop: 4 },
-});
-
-// ─── Main Screen ─────────────────────────────────────────────────────────────
-
+// ─── Screen ───────────────────────────────────────────────────────────────────
 export const LeaveManagementScreen = () => {
   const { user } = useAuth();
   const T = useAppTheme();
-  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const twoWide = isTabletDevice && width > height;
+  const wide = isTabletDevice && width > height;
+
   const role = user?.role || 'FO';
+  /** Web: `const isManager = user?.role !== 'FO'`. Matched exactly — never narrow this. */
   const isManager = role !== 'FO';
 
-  const [tab, setTab] = useState<'my' | 'team'>('my');
+  const [tab, setTab] = useState<Tab>('my');
   const [showApply, setShowApply] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [myLeaves, setMyLeaves] = useState<any[]>([]);
   const [myLoading, setMyLoading] = useState(true);
-  const [myStatusFilter, setMyStatusFilter] = useState('');
-  const [myCatFilter, setMyCatFilter] = useState('');
+  const [myError, setMyError] = useState<'none' | 'offline' | 'error'>('none');
+  const [myStatus, setMyStatus] = useState('');
+  const [myCat, setMyCat] = useState('');
+  const [myPage, setMyPage] = useState(1);
 
   const [teamLeaves, setTeamLeaves] = useState<any[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
-  const [teamStatusFilter, setTeamStatusFilter] = useState('');
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamError, setTeamError] = useState<'none' | 'offline' | 'error'>('none');
+  const [teamStatus, setTeamStatus] = useState('');
+  const [teamCat, setTeamCat] = useState('');
   const [userFilter, setUserFilter] = useState('');
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamPage, setTeamPage] = useState(1);
 
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [openDd, setOpenDd] = useState<'status' | 'cat' | 'member' | null>(null);
+
+  const [approveTarget, setApproveTarget] = useState<any | null>(null);
+  const [cancelId, setCancelId] = useState<number | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState(false);
 
-  // Fetch team members for manager filter
   useEffect(() => {
     if (!isManager) return;
     authApi.getUsers().then(res => setTeamMembers(res.data || [])).catch(() => {});
   }, [isManager]);
 
-  const fetchMyLeaves = useCallback(async () => {
-    setMyLoading(true);
+  const fetchMyLeaves = useCallback(async (silent = false) => {
+    if (!silent) setMyLoading(true);
     try {
       const params: any = {};
-      if (myStatusFilter) params.status = myStatusFilter;
-      if (myCatFilter) params.category = myCatFilter;
+      if (myStatus) params.status = myStatus;
+      if (myCat) params.category = myCat;
       const res = await leavesApi.getMyLeaves(params);
       setMyLeaves(res.data || []);
-    } catch {
-      Alert.alert('Error', 'Failed to load leaves');
+      setMyError('none');
+    } catch (err: any) {
+      setMyLeaves([]);
+      setMyError(err?.response ? 'error' : 'offline');
     } finally {
       setMyLoading(false);
+      setRefreshing(false);
     }
-  }, [myStatusFilter, myCatFilter]);
+  }, [myStatus, myCat]);
 
-  const fetchTeamLeaves = useCallback(async () => {
-    setTeamLoading(true);
+  const fetchTeamLeaves = useCallback(async (silent = false) => {
+    if (!silent) setTeamLoading(true);
     try {
       const params: any = {};
-      if (teamStatusFilter) params.status = teamStatusFilter;
+      if (teamStatus) params.status = teamStatus;
+      if (teamCat) params.category = teamCat;
       if (userFilter) params.filterUserId = userFilter;
       const res = await leavesApi.getTeamLeaves(params);
       setTeamLeaves(res.data || []);
-    } catch {
-      Alert.alert('Error', 'Failed to load team leaves');
+      setTeamError('none');
+    } catch (err: any) {
+      setTeamLeaves([]);
+      setTeamError(err?.response ? 'error' : 'offline');
     } finally {
       setTeamLoading(false);
+      setRefreshing(false);
     }
-  }, [teamStatusFilter, userFilter]);
+  }, [teamStatus, teamCat, userFilter]);
 
   useEffect(() => { fetchMyLeaves(); }, [fetchMyLeaves]);
   useEffect(() => { if (tab === 'team' && isManager) fetchTeamLeaves(); }, [tab, fetchTeamLeaves, isManager]);
+
+  useEffect(() => { setMyPage(1); }, [myStatus, myCat]);
+  useEffect(() => { setTeamPage(1); }, [teamStatus, teamCat, userFilter]);
 
   const handleApply = async (form: any) => {
     setSubmitting(true);
     try {
       const res = await leavesApi.applyLeave(form);
       const status = (res.data as any)?.status;
-      Alert.alert('Success', status === 'AutoApproved' ? 'Same-day leave auto-approved' : 'Leave applied — pending approval');
       setShowApply(false);
-      fetchMyLeaves();
+      fetchMyLeaves(true);
+      Alert.alert(
+        'Leave Submitted',
+        status === 'AutoApproved'
+          ? 'Same-day leave auto-approved.'
+          : 'Leave applied — pending approval.',
+      );
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to apply leave');
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to apply for leave.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleCancel = async (id: number) => {
-    Alert.alert('Cancel Leave', 'Cancel this leave request?', [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Yes, Cancel', style: 'destructive', onPress: async () => {
-          try {
-            await leavesApi.cancelLeave(id);
-            fetchMyLeaves();
-          } catch (err: any) {
-            Alert.alert('Error', err?.response?.data?.message || 'Failed to cancel leave');
-          }
-        },
-      },
-    ]);
+  const handleCancel = async () => {
+    const id = cancelId;
+    setCancelId(null);
+    if (!id) return;
+    try {
+      await leavesApi.cancelLeave(id);
+      fetchMyLeaves(true);
+      Alert.alert('Leave Cancelled', 'Your leave request was cancelled.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to cancel leave.');
+    }
   };
 
-  const handleApprove = (leave: any) => {
-    Alert.alert(
-      'Approve Leave',
-      `Approve leave for ${leave.userName} on ${formatDate(leave.leaveDate)}?${leave.planImpactMessage ? '\n\n' + leave.planImpactMessage : ''}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve', onPress: async () => {
-            try {
-              await leavesApi.approveLeave(leave.id);
-              fetchTeamLeaves();
-            } catch (err: any) {
-              Alert.alert('Error', err?.response?.data?.message || 'Failed to approve');
-            }
-          },
-        },
-      ],
-    );
+  const handleApprove = async () => {
+    const leave = approveTarget;
+    setApproveTarget(null);
+    if (!leave) return;
+    try {
+      await leavesApi.approveLeave(leave.id);
+      fetchTeamLeaves(true);
+      Alert.alert('Leave Approved', `Leave approved for ${leave.userName}.`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to approve leave.');
+    }
   };
 
   const handleReject = async (reason: string) => {
@@ -470,193 +551,332 @@ export const LeaveManagementScreen = () => {
     try {
       await leavesApi.rejectLeave(rejectId, { rejectionReason: reason });
       setRejectId(null);
-      fetchTeamLeaves();
+      fetchTeamLeaves(true);
+      Alert.alert('Leave Rejected', 'The leave request was rejected.');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to reject');
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to reject leave.');
     } finally {
       setRejecting(false);
     }
   };
 
-  const teamMemberOptions = [
-    { value: '', label: 'All Team Members' },
-    ...teamMembers.map(m => ({ value: String(m.id), label: `${m.name} (${m.role})` })),
-  ];
+  const memberOptions = useMemo(() => ([
+    { label: 'All Team Members', value: '' },
+    ...teamMembers.map(m => ({ label: `${m.name} (${m.role})`, value: String(m.id) })),
+  ]), [teamMembers]);
 
-  const listContent = [s.list, { paddingBottom: insets.bottom + 32 }, twoWide && s.contentMax];
-  const filterWrap = [s.filterRow, twoWide && s.contentMax];
+  // ── current tab's data ──
+  const isTeam = tab === 'team';
+  const leaves = isTeam ? teamLeaves : myLeaves;
+  const loading = isTeam ? teamLoading : myLoading;
+  const error = isTeam ? teamError : myError;
+  const page = isTeam ? teamPage : myPage;
+  const setPage = isTeam ? setTeamPage : setMyPage;
+  const status = isTeam ? teamStatus : myStatus;
+  const setStatus = isTeam ? setTeamStatus : setMyStatus;
+  const cat = isTeam ? teamCat : myCat;
+  const setCat = isTeam ? setTeamCat : setMyCat;
+
+  const totalPages = Math.max(1, Math.ceil(leaves.length / PAGE_SIZE));
+  const rows = useMemo(
+    () => leaves.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [leaves, page],
+  );
+
+  const activeChips = [
+    status ? { label: statusLabel(status), clear: () => setStatus('') } : null,
+    cat ? { label: CATEGORY_OPTIONS.find(c => c.value === cat)?.label || cat, clear: () => setCat('') } : null,
+    isTeam && userFilter
+      ? { label: memberOptions.find(m => m.value === userFilter)?.label || 'Member', clear: () => setUserFilter('') }
+      : null,
+  ].filter(Boolean) as { label: string; clear: () => void }[];
+
+  const renderBody = () => {
+    if (loading) return <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />;
+    if (error !== 'none') {
+      return (
+        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+          {error === 'offline'
+            ? <WifiOff size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+            : <AlertTriangle size={34} color={T.danger} strokeWidth={ICON_STROKE} />}
+          <Text style={[s.emptyTitle, { color: T.text }]}>
+            {error === 'offline' ? "You're offline" : 'Could not load leaves'}
+          </Text>
+          <Text style={[s.emptyTxt, { color: T.dim }]}>
+            {error === 'offline' ? 'Reconnect and pull down to try again.' : 'Pull down to retry.'}
+          </Text>
+        </View>
+      );
+    }
+    if (leaves.length === 0) {
+      return (
+        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+          {isTeam
+            ? <Users size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+            : <CalendarOff size={34} color={T.dim} strokeWidth={ICON_STROKE} />}
+          <Text style={[s.emptyTitle, { color: T.text }]}>
+            {isTeam ? 'No team leave requests' : 'No leave records found'}
+          </Text>
+          <Text style={[s.emptyTxt, { color: T.dim }]}>
+            {isTeam
+              ? 'Requests from your team will appear here.'
+              : 'Apply for leave and it will appear here.'}
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <>
+        {/* Full-width rows on every size. The old two-up grid left a card at ~48%
+            with dead space beside it whenever the count was odd — most visibly with
+            a single leave — and the two cells never matched height. */}
+        <View style={{ gap: 10 }}>
+          {rows.map(l => (
+            <View key={l.id}>
+              <LeaveCard
+                leave={l}
+                isTeam={isTeam}
+                onCancel={id => setCancelId(id)}
+                onApprove={lv => setApproveTarget(lv)}
+                onReject={id => setRejectId(id)}
+              />
+            </View>
+          ))}
+        </View>
+        {totalPages > 1 && (
+          <View style={s.pgRow}>
+            <Text style={[s.count, { color: T.dim }]}>
+              Showing {(page - 1) * PAGE_SIZE + 1}{DASH}{Math.min(page * PAGE_SIZE, leaves.length)} of {leaves.length}
+            </Text>
+            <Pagination page={page} pageCount={totalPages} onChange={setPage} />
+          </View>
+        )}
+      </>
+    );
+  };
 
   return (
-    <View style={[s.root, { backgroundColor: T.bg }]}>
-      {/* Sunstone hero header */}
-      <GradientBackground glow style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <View style={s.headerRow}>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={[s.scroll, wide && s.scrollWide]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              isTeam ? fetchTeamLeaves(true) : fetchMyLeaves(true);
+            }}
+            colors={[T.accent]}
+            tintColor={T.accent}
+          />
+        }
+      >
+        {/* Plain themed title block on T.bg — house pattern, no gradient hero. */}
+        <View style={[s.header, wide && s.headerWide]}>
           <View style={{ flex: 1 }}>
-            <Text style={s.pageTitle}>Leave Management</Text>
-            <Text style={s.pageSub}>Apply for leaves and track your leave history</Text>
+            <Text style={[s.title, { color: T.text }]}>Leave Management</Text>
+            <Text style={[s.sub, { color: T.dim }]}>Apply for leaves and track your leave history</Text>
           </View>
-          <TouchableOpacity style={s.applyBtn} onPress={() => setShowApply(true)}>
-            <Plus size={16} color={T.accent} />
-            <Text style={[s.applyBtnText, { color: T.accent }]}>Apply</Text>
-          </TouchableOpacity>
+          {/* Ungated, matching web: Apply Leave renders for every role. */}
+          <Btn
+            label="Apply Leave"
+            small
+            onPress={() => setShowApply(true)}
+            icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
+            style={wide ? undefined : { alignSelf: 'flex-start' }}
+          />
         </View>
-      </GradientBackground>
 
-      {/* Tabs */}
-      <View style={[s.tabsWrap, twoWide && s.contentMax]}>
-        <TouchableOpacity
-          style={[s.tabBtn, { backgroundColor: tab === 'my' ? T.accent : T.cardAlt }]}
-          onPress={() => setTab('my')}
-        >
-          <Text style={[s.tabText, { color: tab === 'my' ? T.onAccent : T.sub }]}>My Leaves</Text>
-        </TouchableOpacity>
         {isManager && (
-          <TouchableOpacity
-            style={[s.tabBtn, { backgroundColor: tab === 'team' ? T.accent : T.cardAlt }]}
-            onPress={() => setTab('team')}
-          >
-            <Text style={[s.tabText, { color: tab === 'team' ? T.onAccent : T.sub }]}>Team Leaves</Text>
-          </TouchableOpacity>
+          <Segmented<Tab>
+            value={tab}
+            onChange={setTab}
+            style={wide ? { width: 280 } : undefined}
+            options={[{ label: 'My Leaves', value: 'my' }, { label: 'Team Leaves', value: 'team' }]}
+          />
         )}
-      </View>
 
-      {/* My Leaves Tab */}
-      {tab === 'my' && (
-        <View style={{ flex: 1 }}>
-          {/* Filters */}
-          <View style={filterWrap}>
-            <SelectPicker
-              placeholder="Status"
-              options={STATUS_OPTIONS}
-              value={myStatusFilter}
-              onChange={v => setMyStatusFilter(String(v))}
-              accentColor={T.accent}
-              containerStyle={{ flex: 1, marginBottom: 0 }}
-            />
-            <SelectPicker
-              placeholder="Category"
-              options={[{ value: '', label: 'All Categories' }, ...LEAVE_CATEGORIES]}
-              value={myCatFilter}
-              onChange={v => setMyCatFilter(String(v))}
-              accentColor={T.accent}
-              containerStyle={{ flex: 1, marginBottom: 0 }}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.ctrlRow}>
+            <Text style={[s.count, { color: T.dim, flex: 1 }]}>
+              {leaves.length} leave{leaves.length === 1 ? '' : 's'}
+            </Text>
+            <Trigger
+              label="Filters"
+              open={filtersOpen}
+              onPress={() => setFiltersOpen(v => !v)}
+              icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
             />
           </View>
 
-          {myLoading ? (
-            <LoadingSpinner fullScreen color={T.accent} message="Loading leaves..." />
-          ) : (
-            <FlatList
-              data={myLeaves}
-              keyExtractor={item => String(item.id)}
-              renderItem={({ item }) => (
-                <LeaveCard
-                  leave={item}
-                  isTeam={false}
-                  onCancel={handleCancel}
-                  onApprove={() => {}}
-                  onReject={() => {}}
+          {activeChips.length > 0 && (
+            <View style={s.chipWrap}>
+              {activeChips.map(c => <FilterChip key={c.label} label={c.label} onRemove={c.clear} />)}
+            </View>
+          )}
+
+          {filtersOpen && (
+            <View style={[s.filters, { borderTopColor: T.line }, wide && s.filtersWide]}>
+              <Field label="Status" style={wide ? { flex: 1, zIndex: 30 } : { zIndex: 30 }}>
+                <Trigger
+                  label={status ? statusLabel(status) : 'All'}
+                  open={openDd === 'status'}
+                  onPress={() => setOpenDd(openDd === 'status' ? null : 'status')}
                 />
+                {openDd === 'status' && (
+                  <Dropdown
+                    style={s.ddFull}
+                    value={status}
+                    onSelect={v => { setStatus(v); setOpenDd(null); }}
+                    options={STATUS_OPTIONS}
+                  />
+                )}
+              </Field>
+
+              <Field label="Category" style={wide ? { flex: 1, zIndex: 20 } : { zIndex: 20 }}>
+                <Trigger
+                  label={CATEGORY_OPTIONS.find(c => c.value === cat)?.label || 'All Categories'}
+                  open={openDd === 'cat'}
+                  onPress={() => setOpenDd(openDd === 'cat' ? null : 'cat')}
+                />
+                {openDd === 'cat' && (
+                  <Dropdown
+                    style={s.ddFull}
+                    value={cat}
+                    onSelect={v => { setCat(v); setOpenDd(null); }}
+                    options={CATEGORY_OPTIONS}
+                  />
+                )}
+              </Field>
+
+              {isTeam && memberOptions.length > 1 && (
+                <Field label="Team Member" style={wide ? { flex: 1, zIndex: 10 } : { zIndex: 10 }}>
+                  <Trigger
+                    label={memberOptions.find(m => m.value === userFilter)?.label || 'All Team Members'}
+                    open={openDd === 'member'}
+                    onPress={() => setOpenDd(openDd === 'member' ? null : 'member')}
+                  />
+                  {openDd === 'member' && (
+                    <Dropdown
+                      style={s.ddFull}
+                      maxHeight={220}
+                      value={userFilter}
+                      onSelect={v => { setUserFilter(v); setOpenDd(null); }}
+                      options={memberOptions}
+                    />
+                  )}
+                </Field>
               )}
-              contentContainerStyle={listContent}
-              ListEmptyComponent={
-                <View style={s.empty}>
-                  <Text style={s.emptyIcon}>📋</Text>
-                  <Text style={[s.emptyText, { color: T.dim }]}>No leave records found</Text>
-                </View>
-              }
-            />
+            </View>
           )}
         </View>
+
+        {renderBody()}
+      </ScrollView>
+
+      {showApply && (
+        <ApplyModal
+          onClose={() => setShowApply(false)}
+          onSubmit={handleApply}
+          submitting={submitting}
+        />
       )}
 
-      {/* Team Leaves Tab */}
-      {tab === 'team' && isManager && (
-        <View style={{ flex: 1 }}>
-          <View style={filterWrap}>
-            <SelectPicker
-              placeholder="Status"
-              options={STATUS_OPTIONS}
-              value={teamStatusFilter}
-              onChange={v => setTeamStatusFilter(String(v))}
-              accentColor={T.accent}
-              containerStyle={{ flex: 1, marginBottom: 0 }}
-            />
-            {teamMemberOptions.length > 1 && (
-              <SelectPicker
-                placeholder="All Members"
-                options={teamMemberOptions}
-                value={userFilter}
-                onChange={v => setUserFilter(String(v))}
-                accentColor={T.accent}
-                containerStyle={{ flex: 1, marginBottom: 0 }}
-              />
-            )}
-          </View>
-
-          {teamLoading ? (
-            <LoadingSpinner fullScreen color={T.accent} message="Loading team leaves..." />
-          ) : (
-            <FlatList
-              data={teamLeaves}
-              keyExtractor={item => String(item.id)}
-              renderItem={({ item }) => (
-                <LeaveCard
-                  leave={item}
-                  isTeam
-                  onCancel={() => {}}
-                  onApprove={handleApprove}
-                  onReject={(id: number) => setRejectId(id)}
-                />
-              )}
-              contentContainerStyle={listContent}
-              ListEmptyComponent={
-                <View style={s.empty}>
-                  <Text style={s.emptyIcon}>👥</Text>
-                  <Text style={[s.emptyText, { color: T.dim }]}>No team leave requests</Text>
-                </View>
-              }
-            />
-          )}
-        </View>
+      {rejectId !== null && (
+        <RejectModal
+          onClose={() => setRejectId(null)}
+          onReject={handleReject}
+          rejecting={rejecting}
+        />
       )}
 
-      {/* Apply Modal */}
-      <ApplyModal
-        visible={showApply}
-        onClose={() => setShowApply(false)}
-        onSubmit={handleApply}
-        submitting={submitting}
+      {/* Web shows a confirmation with the plan-impact warning before approving. */}
+      <ConfirmModal
+        visible={!!approveTarget}
+        tone="success"
+        title="Confirm Leave Approval"
+        message={
+          approveTarget
+            ? `Approve leave for ${approveTarget.userName} (${approveTarget.userRole}) on ${fmtDate(approveTarget.leaveDate)}.` +
+              (approveTarget.planImpactMessage ? `\n\n${approveTarget.planImpactMessage}` : '')
+            : ''
+        }
+        icon={<Check size={24} color={T.success} strokeWidth={ICON_STROKE} />}
+        confirmLabel="Approve Leave"
+        onConfirm={handleApprove}
+        onCancel={() => setApproveTarget(null)}
       />
 
-      {/* Reject Modal */}
-      <RejectModal
-        visible={rejectId !== null}
-        onClose={() => setRejectId(null)}
-        onReject={handleReject}
-        rejecting={rejecting}
+      <ConfirmModal
+        visible={cancelId !== null}
+        tone="danger"
+        title="Cancel Leave?"
+        message="This leave request will be cancelled. This cannot be undone."
+        icon={<Ban size={24} color={T.danger} strokeWidth={ICON_STROKE} />}
+        confirmLabel="Yes, Cancel"
+        onConfirm={handleCancel}
+        onCancel={() => setCancelId(null)}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
+// ─── Styles (layout only — colour comes from the theme, inline) ───────────────
 const s = StyleSheet.create({
-  root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  pageTitle: { fontSize: rf(20), fontFamily: Fonts.bold, color: '#FFF', letterSpacing: -0.3 },
-  pageSub: { fontSize: rf(12), fontFamily: Fonts.regular, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
-  applyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.92)' },
-  applyBtnText: { fontSize: rf(13), fontFamily: Fonts.bold },
-  tabsWrap: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 12 },
-  tabBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
-  tabText: { fontSize: rf(13), fontFamily: Fonts.bold },
-  filterRow: { flexDirection: 'row', gap: 8, padding: 12 },
-  contentMax: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-  list: { padding: 12, paddingBottom: 32, width: '100%', maxWidth: 720, alignSelf: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48 },
-  emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyText: { fontSize: rf(14), fontFamily: Fonts.regular, textAlign: 'center' },
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12 },
+  scrollWide: { paddingHorizontal: 22 },
+
+  header: { gap: 10 },
+  headerWide: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  title: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.3 },
+  sub: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
+  ctrlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  count: { fontSize: rf(11.5), fontWeight: '600' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  filters: { borderTopWidth: 1, paddingTop: 12, gap: 12 },
+  filtersWide: { flexDirection: 'row', alignItems: 'flex-start' },
+  ddFull: { width: '100%' },
+
+  // iPad two-up grid — uses the horizontal room without stretching a single column.
+
+  // leave card
+  lcard: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  lrow: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
+  dateBox: { alignItems: 'center', minWidth: 42 },
+  dateDay: { fontSize: rf(19), fontWeight: '800', letterSpacing: -0.4 },
+  dateMon: { fontSize: rf(11), fontWeight: '600' },
+  dateWkd: { fontSize: rf(10), fontWeight: '500' },
+  lname: { fontSize: rf(13.5), fontWeight: '700' },
+  lrole: { fontSize: rf(11.5), fontWeight: '500' },
+  lmeta: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 5 },
+  typeTxt: { fontSize: rf(11), fontWeight: '600' },
+  reason: { fontSize: rf(12.5), fontWeight: '500', marginTop: 5 },
+  lactions: { alignItems: 'center', gap: 6 },
+
+  expanded: { paddingHorizontal: 14, paddingBottom: 14, gap: 5, borderTopWidth: 1, paddingTop: 10 },
+  expLabel: { fontWeight: '700' },
+  expTxt: { fontSize: rf(12), fontWeight: '500' },
+  impact: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: 10, padding: 8, marginTop: 4 },
+  impactTxt: { fontSize: rf(11.5), fontWeight: '500', flex: 1 },
+  applied: { fontSize: rf(11), fontWeight: '500', marginTop: 4 },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: rf(14), fontWeight: '700', textAlign: 'center' },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+
+  // modals
+  mForm: { gap: 14 },
+  row2: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  col2: { gap: 14 },
+  note: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: -6 },
+  noteTxt: { fontSize: rf(12), fontWeight: '600', flex: 1 },
+  textarea: { minHeight: 76, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
+  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 56 },
 });

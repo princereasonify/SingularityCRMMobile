@@ -1,13 +1,16 @@
 import { apiClient } from './client';
 import { CreateVisitReportRequest, VisitField, CreateVisitFieldRequest } from '../types';
 
+/**
+ * `getByActivity` / `getBySchoolVisit` removed — VisitReportsController exposes
+ * only `[HttpGet] GetVisitReports([FromQuery] int? userId, [FromQuery] string? date)`;
+ * neither `visit-reports/activity/{id}` nor `visit-reports/visit/{id}` exists.
+ */
 export const visitReportApi = {
+  getAll: (params?: { userId?: number; date?: string }) =>
+    apiClient.get<any[]>('/visit-reports', { params }),
   create: (data: CreateVisitReportRequest) =>
     apiClient.post('/visit-reports', data),
-  getByActivity: (activityId: number) =>
-    apiClient.get(`/visit-reports/activity/${activityId}`),
-  getBySchoolVisit: (visitLogId: number) =>
-    apiClient.get(`/visit-reports/visit/${visitLogId}`),
 
   // Visit field configuration (SH admin)
   getFields: () => apiClient.get<VisitField[]>('/visit-reports/fields'),

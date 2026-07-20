@@ -10,12 +10,15 @@ import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { SelectPicker } from '../../components/common/SelectPicker';
-import { GradientBackground } from '../../components/common/GradientBackground';
+// Free text 400s the create: CreateLeadRequest.CloseDate is a C# DateTime?.
+import { DateInput } from '../../components/common/DateInput';
 import { GradientButton } from '../../components/common/GradientButton';
+import { ICON_STROKE } from '../../components/common/Icon';
+import { IconBtn } from '../../components/crud';
 import { Card } from '../../components/ui';
 import { BOARDS, SCHOOL_TYPES, LEAD_SOURCES } from '../../utils/constants';
 import { rf, isTabletDevice } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 
 interface Section {
@@ -30,7 +33,15 @@ const SECTIONS: Section[] = [
   { title: '📝 Additional', key: 'extra' },
 ];
 
-export const AddLeadScreen = ({ navigation }: any) => {
+/**
+ * Doubles as Add and Edit. The navigator registers this component under BOTH
+ * `AddLead` and `EditLead`; before this, the edit route ignored `route.params`
+ * entirely and submitted `createLead`, so tapping "Edit Lead" silently created a
+ * SECOND lead instead of updating the first.
+ */
+export const AddLeadScreen = ({ navigation, route }: any) => {
+  const editLeadId: number | undefined = route?.params?.leadId;
+  const isEdit = !!editLeadId;
   const { user } = useAuth();
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -52,9 +63,35 @@ export const AddLeadScreen = ({ navigation }: any) => {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Edit mode: pull the authoritative record and prefill. The list row is not
+  // enough — LeadListDto omits state/students/closeDate/notes/contact.
+  useEffect(() => {
+    if (!editLeadId) return;
+    leadsApi.getLead(editLeadId)
+      .then(r => {
+        const l: any = r.data;
+        if (!l) return;
+        setForm({
+          school: l.school ?? '', board: l.board ?? 'CBSE', type: l.type ?? 'Private',
+          students: l.students != null ? String(l.students) : '',
+          city: l.city ?? '', state: l.state ?? '',
+          contactName: l.contact?.name ?? l.contactName ?? '',
+          contactDesignation: l.contact?.designation ?? '',
+          contactPhone: l.contact?.phone ?? '',
+          contactEmail: l.contact?.email ?? '',
+          source: l.source ?? 'Field Visit',
+          value: l.value != null ? String(l.value) : '',
+          closeDate: (l.closeDate ?? '').toString().split('T')[0],
+          notes: l.notes ?? '',
+          foId: l.foId ?? '',
+        });
+      })
+      .catch(() => Alert.alert('Error', 'Could not load this lead.'));
+  }, [editLeadId]);
+
   useEffect(() => {
     if (role !== 'FO') {
-      leadsApi.getAssignableFOs().then((r) => setFoList(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => {});
+      leadsApi.getAssignableFOs().then((r) => setFoList(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => Alert.alert('Error', 'Failed to load Field Officers.'));
     }
   }, [role]);
 
@@ -133,7 +170,7 @@ export const AddLeadScreen = ({ navigation }: any) => {
       // - numbers: 0 when empty (not undefined)
       // - text: empty string when empty (not undefined)
       // - dates/ids: null when empty (not undefined)
-      await leadsApi.createLead({
+      const payload = {
         school: form.school.trim(),
         board: form.board,
         type: form.type,
@@ -149,12 +186,14 @@ export const AddLeadScreen = ({ navigation }: any) => {
         closeDate: (form.closeDate || null) as any,
         notes: form.notes.trim(),
         foId: (role !== 'FO' && form.foId ? Number(form.foId) : null) as any,
-      });
-      Alert.alert('Success', 'Lead created successfully!', [
+      };
+      if (isEdit) await leadsApi.updateLead(editLeadId!, payload as any);
+      else await leadsApi.createLead(payload as any);
+      Alert.alert('Success', isEdit ? 'Lead updated successfully!' : 'Lead created successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to create lead');
+      Alert.alert('Error', err?.response?.data?.message || (isEdit ? 'Failed to update lead' : 'Failed to create lead'));
     } finally {
       setLoading(false);
     }
@@ -164,12 +203,16 @@ export const AddLeadScreen = ({ navigation }: any) => {
 
   return (
     <View style={[styles.safe, { backgroundColor: T.bg }]}>
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={22} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add New Lead</Text>
-      </GradientBackground>
+      {/* House pattern: plain themed title block on T.bg — no gradient hero. */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <IconBtn kind="view" label="Back" onPress={() => navigation.goBack()}>
+          <ArrowLeft size={18} color={T.accent} strokeWidth={ICON_STROKE} />
+        </IconBtn>
+        <View style={styles.titleBlock}>
+          <Text style={[styles.h1, { color: T.text }]} numberOfLines={1}>{isEdit ? 'Edit Lead' : 'Add New Lead'}</Text>
+          <Text style={[styles.h2, { color: T.sub }]} numberOfLines={1}>{isEdit ? 'Update this lead' : 'Create a new school lead'}</Text>
+        </View>
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -178,7 +221,9 @@ export const AddLeadScreen = ({ navigation }: any) => {
         showsVerticalScrollIndicator={false}
       >
         {/* FO Assignment (managers) */}
-        {role !== 'FO' && foList.length > 0 && (
+        {/* Render for every manager, even if the FO list failed to load — validate()
+            hard-requires foId for non-FO, so hiding it made the form unsubmittable. */}
+          {role !== 'FO' && (
           <Card style={styles.sectionCard}>
             <Text style={[styles.sectionTitle, { color: T.text }]}>👤 Assign to FO</Text>
             <SelectPicker
@@ -232,7 +277,7 @@ export const AddLeadScreen = ({ navigation }: any) => {
                 {sec.key === 'deal' && (
                   <>
                     <Input label="Estimated Value (₹)" value={form.value} onChangeText={(v) => set('value', v)} keyboardType="numeric" placeholder="e.g. 500000" accentColor={T.accent} />
-                    <Input label="Expected Close Date" value={form.closeDate} onChangeText={(v) => set('closeDate', v)} placeholder="YYYY-MM-DD" accentColor={T.accent} />
+                    <DateInput label="Expected Close Date" value={form.closeDate} onChange={(v) => set('closeDate', v)} accentColor={T.accent} />
                     <SelectPicker label="Lead Source" options={LEAD_SOURCES.map((s) => ({ label: s, value: s }))} value={form.source} onChange={(v) => set('source', v)} accentColor={T.accent} />
                   </>
                 )}
@@ -256,15 +301,16 @@ export const AddLeadScreen = ({ navigation }: any) => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 16, gap: 10 },
-  backBtn: { padding: 4 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 12, gap: 10 },
+  titleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  h1: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4 },
+  h2: { fontWeight: '500', fontSize: rf(12.5) },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 12 },
   contentTablet: { padding: 24, maxWidth: 720, alignSelf: 'center', width: '100%' },
   sectionCard: { padding: 16 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(15) },
+  sectionTitle: { fontWeight: '700', fontSize: rf(15) },
   row: { flexDirection: 'row', gap: 10 },
   rowTablet: { gap: 16 },
   half: { flex: 1 },
@@ -272,5 +318,5 @@ const styles = StyleSheet.create({
   footerActionsTablet: { justifyContent: 'flex-end' },
   cancelBtn: { flex: 1 },
   submitBtn: { flex: 2 },
-  fieldError: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 4 },
+  fieldError: { fontWeight: '400', fontSize: rf(12), marginTop: 4 },
 });

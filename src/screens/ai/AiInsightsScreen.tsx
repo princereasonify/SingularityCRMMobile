@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card, Badge, SectionLabel } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import type { AppTheme } from '../../theme';
@@ -140,8 +140,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
   section: { gap: 10 },
   insightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 },
-  insightTitle: { fontFamily: Fonts.bold, fontSize: rf(14), flex: 1 },
-  insightCategory: { fontFamily: Fonts.regular, fontSize: rf(12), marginBottom: 6 },
-  insightDesc: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 20 },
+  insightTitle: { fontWeight: '700', fontSize: rf(14), flex: 1 },
+  insightCategory: { fontWeight: '400', fontSize: rf(12), marginBottom: 6 },
+  insightDesc: { fontWeight: '400', fontSize: rf(13), lineHeight: 20 },
 });

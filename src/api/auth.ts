@@ -60,6 +60,24 @@ export const authApi = {
 
   // Home location
   getHomeLocation: () => apiClient.get('/auth/home-location'),
-  setHomeLocation: (latitude: number, longitude: number) =>
-    apiClient.post('/auth/home-location', { latitude, longitude }),
+  // AuthController.SetHomeLocation binds SetHomeLocationRequest { Latitude,
+  // Longitude, Address } and web sends all three. `address` used to be missing
+  // here, so the saved home location had no address text.
+  setHomeLocation: (latitude: number, longitude: number, address?: string) =>
+    apiClient.post('/auth/home-location', { latitude, longitude, address }),
+
+  /**
+   * Profile picture. `User.Avatar` was always a column but nothing wrote to it, so
+   * the profile screen had a picture slot with nowhere to upload to. Same multipart
+   * shape as activitiesApi.uploadPhoto; server stores it and returns the public URL.
+   */
+  uploadAvatar: (imageUri: string) => {
+    const formData = new FormData();
+    const filename = imageUri.split('/').pop() || 'avatar.jpg';
+    const type = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    formData.append('file', { uri: imageUri, name: filename, type } as any);
+    return apiClient.post<{ avatar: string }>('/auth/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };

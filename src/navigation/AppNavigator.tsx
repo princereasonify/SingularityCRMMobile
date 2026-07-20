@@ -22,7 +22,7 @@ import { requestFCMPermission } from '../services/pushNotificationService';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ROLE_COLORS } from '../utils/constants';
-import { rf } from '../utils/responsive';
+import { rf, isTabletDevice } from '../utils/responsive';
 
 // Auth
 import { LoginScreen } from '../screens/auth/LoginScreen';
@@ -59,15 +59,14 @@ import { SchoolsListScreen } from '../screens/schools/SchoolsListScreen';
 import { SchoolDetailScreen } from '../screens/schools/SchoolDetailScreen';
 import { AddSchoolScreen } from '../screens/schools/AddSchoolScreen';
 
-// Contacts
-import { ContactsListScreen } from '../screens/contacts/ContactsListScreen';
-import { ContactDetailScreen } from '../screens/contacts/ContactDetailScreen';
-import { AddContactScreen } from '../screens/contacts/AddContactScreen';
+// Contacts: no standalone screens — contacts are managed inside SchoolDetail,
+// mirroring web. The files under screens/contacts/ are unreachable dead code.
 
 // Demos
 import { DemoListScreen } from '../screens/demos/DemoListScreen';
 import { DemoDetailScreen } from '../screens/demos/DemoDetailScreen';
 import { AssignDemoScreen } from '../screens/demos/AssignDemoScreen';
+import { RecordDemoScreen } from '../screens/demos/RecordDemoScreen';
 
 // Onboarding
 import { OnboardListScreen } from '../screens/onboarding/OnboardListScreen';
@@ -86,10 +85,16 @@ import { AiInsightsScreen } from '../screens/ai/AiInsightsScreen';
 
 // Payments
 import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
+import { AppSidebar, SIDEBAR_W, SIDEBAR_RAIL_W, SIDEBAR_PHONE_W } from '../components/layout/AppSidebar';
+import { AppTopbar } from '../components/layout/AppTopbar';
+import { GradientBackground } from '../components/common/GradientBackground';
+import { Sunstone } from '../theme';
+import { useAppTheme } from '../theme/useAppTheme';
 import { ScaPaymentsScreen } from '../screens/payments/ScaPaymentsScreen';
 
 // Settings
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
+import { ProfileScreen } from '../screens/settings/ProfileScreen';
 import { DashboardCustomizeScreen } from '../screens/settings/DashboardCustomizeScreen';
 import { UserManualScreen } from '../screens/settings/UserManualScreen';
 import { AllowanceConfigScreen } from '../screens/settings/AllowanceConfigScreen';
@@ -171,33 +176,69 @@ const navStyles = StyleSheet.create({
 });
 
 // ─── FO Drawer Navigator ──────────────────────────────────────────────────────
+/**
+ * FO shell — the new sidebar + topbar (SingularityCRM-Components.html).
+ *   iPad : sidebar is PERMANENT, 240 expanded / 76 rail via the collapse chip.
+ *   Phone: sidebar is a 280 slide-over behind a scrim, opened by the topbar hamburger.
+ * Screen order/grouping lives in navConfig.ts (mirrors the web sidebar).
+ */
 function FODrawer() {
-  const C = ROLE_COLORS.FO;
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+
   return (
     <Drawer.Navigator
-      screenOptions={withDrawerHeader(C.primary)}
-      drawerContent={CustomDrawerContent}
       initialRouteName="Dashboard"
+      drawerContent={(p) => (
+        <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />
+      )}
+      screenOptions={({ navigation, route }) => ({
+        headerShown: true,
+        header: () => (
+          <AppTopbar
+            title={route.name}
+            onMenu={() => navigation.openDrawer()}
+            onNotifications={() => navigation.navigate('Notifications' as never)}
+            onProfile={() => navigation.navigate('Profile' as never)}
+            onSettings={() => navigation.navigate('Settings' as never)}
+          />
+        ),
+        drawerType: permanent ? 'permanent' : 'front',
+        drawerStyle: {
+          width: permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : SIDEBAR_PHONE_W,
+          borderRightWidth: 0,
+        },
+        overlayColor: 'rgba(0,0,0,0.4)',
+        sceneContainerStyle: { backgroundColor: T.bg },
+        swipeEnabled: !permanent,
+      })}
     >
-      <Drawer.Screen name="Dashboard" component={FODashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
-      <Drawer.Screen name="Activity Log" component={ActivityLogScreen} options={{ drawerIcon: DrawerIcon(Activity) }} />
-      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Demos" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
-      <Drawer.Screen name="Route Planner" component={RoutePlannerScreen} options={{ drawerIcon: DrawerIcon(Navigation) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="My Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="My Performance" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="My Tracking" component={MyDayTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
-      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
+      <Drawer.Screen name="Dashboard" component={FODashboard} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} />
+      <Drawer.Screen name="Leads" component={LeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Activity Log" component={ActivityLogScreen} />
+      <Drawer.Screen name="Demos" component={DemoListScreen} />
+      <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
+      <Drawer.Screen name="Route Planner" component={RoutePlannerScreen} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} />
+      <Drawer.Screen name="My Tracking" component={MyDayTrackingScreen} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} />
+      <Drawer.Screen name="Payment Integration" component={PaymentsScreen} />
+      <Drawer.Screen name="My Targets" component={TargetsScreen} />
+      <Drawer.Screen name="My Performance" component={PerformanceScreen} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} />
+      {/* Both reachable from the topbar profile dropdown, not the sidebar (per spec).
+          "My profile" = identity/org; "Settings" = preferences. They used to point
+          at the same screen, which made the two menu entries indistinguishable. */}
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
   );
 }
@@ -211,7 +252,7 @@ function ZHDrawer() {
       <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
@@ -238,7 +279,7 @@ function RHDrawer() {
       <Drawer.Screen name="Dashboard" component={RHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
@@ -267,7 +308,7 @@ function SHDrawer() {
       <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
@@ -300,7 +341,7 @@ function SCADrawer() {
       <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
       <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
       <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ drawerIcon: DrawerIcon(GitBranch) }} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
@@ -347,7 +388,7 @@ function OfflineBanner() {
 }
 const bannerStyles = StyleSheet.create({
   bar: {
-    backgroundColor: '#DC2626', paddingVertical: 6, paddingHorizontal: 16,
+    backgroundColor: '#C2492D', paddingVertical: 6, paddingHorizontal: 16, // spec error
     alignItems: 'center',
   },
   text: { color: '#FFF', fontSize: 12, fontWeight: '600' },
@@ -377,6 +418,7 @@ function NotifPermBanner() {
 
   return (
     <View style={notifBannerStyles.bar}>
+      <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
       <Text style={notifBannerStyles.text} numberOfLines={2}>
         Enable push notifications to stay updated on leads, deals, and approvals
       </Text>
@@ -392,8 +434,9 @@ function NotifPermBanner() {
   );
 }
 const notifBannerStyles = StyleSheet.create({
+  // Sunstone gradient — the app's brand surface, identical in light and dark.
   bar: {
-    backgroundColor: '#0D9488',
+    overflow: 'hidden',
     paddingHorizontal: 16, paddingVertical: 10,
     flexDirection: 'row', alignItems: 'center', gap: 10,
   },
@@ -403,7 +446,7 @@ const notifBannerStyles = StyleSheet.create({
     backgroundColor: '#FFF', borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 5,
   },
-  enableText: { color: '#0D9488', fontSize: rf(12), fontWeight: '700' },
+  enableText: { color: Sunstone.from, fontSize: rf(12), fontWeight: '700' },
   dismissText: { color: '#FFF', fontSize: rf(14), fontWeight: '600' },
 });
 
@@ -448,10 +491,6 @@ export const AppNavigator = () => {
             <Stack.Screen name="SchoolDetail" component={SchoolDetailScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="AddSchool" component={AddSchoolScreen} options={{ animation: 'slide_from_bottom' }} />
 
-            {/* Contacts */}
-            <Stack.Screen name="ContactDetail" component={ContactDetailScreen} options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="AddContact" component={AddContactScreen} options={{ animation: 'slide_from_bottom' }} />
-
             {/* Demos */}
             <Stack.Screen name="DemoList" component={DemoListScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="DemoDetail" component={DemoDetailScreen} options={{ animation: 'slide_from_right' }} />
@@ -460,9 +499,6 @@ export const AppNavigator = () => {
             {/* Onboarding */}
             <Stack.Screen name="OnboardList" component={OnboardListScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="OnboardDetail" component={OnboardDetailScreen} options={{ animation: 'slide_from_right' }} />
-
-            {/* Contacts List (standalone navigation) */}
-            <Stack.Screen name="ContactsList" component={ContactsListScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Tracking & Route */}
             <Stack.Screen name="AssignedSchools" component={AssignedSchoolsScreen} options={{ animation: 'slide_from_right' }} />

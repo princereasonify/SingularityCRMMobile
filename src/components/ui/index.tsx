@@ -12,7 +12,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Menu } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { Fonts } from '../../theme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+
 import { rf } from '../../utils/responsive';
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
@@ -171,8 +172,10 @@ export const Chip = ({
 export const Badge = ({ label, color }: { label: string; color?: string }) => {
   const T = useAppTheme();
   const c = color || T.accent;
+  // spec: colour @ 15% background, solid colour text. withAlpha handles rgba
+  // tokens too — `c + '26'` silently breaks on rgba() colours like T.sub.
   return (
-    <View style={[styles.badge, { backgroundColor: c + '22' }]}>
+    <View style={[styles.badge, { backgroundColor: withAlpha(c, SOFT_TINT) }]}>
       <Text style={[styles.badgeTxt, { color: c }]}>{label}</Text>
     </View>
   );
@@ -191,11 +194,12 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 12, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), letterSpacing: -0.4 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), marginTop: 1 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.4 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 1 },
 
   card: {
-    borderRadius: 18,
+    // spec: card radius 16–22; KPI card is 16
+    borderRadius: 16,
     borderWidth: 1,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
@@ -203,18 +207,27 @@ const styles = StyleSheet.create({
     }),
   },
   sectionLabel: {
-    fontFamily: Fonts.bold, fontSize: rf(12), letterSpacing: 1, textTransform: 'uppercase',
+    fontWeight: '700', fontSize: rf(12), letterSpacing: 1, textTransform: 'uppercase',
     marginBottom: 10, marginTop: 4,
   },
   statTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statLabel: { fontFamily: Fonts.medium, fontSize: rf(12), flex: 1 },
-  statIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  statValue: { fontFamily: Fonts.bold, fontSize: rf(24), letterSpacing: -0.6, marginTop: 8 },
-  statSub: { fontFamily: Fonts.regular, fontSize: rf(11.5), marginTop: 3 },
+  // KPI card spec: icon chip 32 (soft tint) · value 21/800/-0.6 · label 12/600 · sub 10.5
+  statLabel: { fontWeight: '600', fontSize: rf(12), flex: 1 },
+  statIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  statValue: { fontWeight: '800', fontSize: rf(21), letterSpacing: -0.6, marginTop: 8 },
+  statSub: { fontWeight: '400', fontSize: rf(10.5), marginTop: 3 },
 
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
-  chipTxt: { fontFamily: Fonts.medium, fontSize: rf(12.5) },
+  chipTxt: { fontWeight: '600', fontSize: rf(12.5) },
 
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
-  badgeTxt: { fontFamily: Fonts.bold, fontSize: rf(11), letterSpacing: 0.2 },
+  // Badge spec: color @15% background · solid colour text · 20px tall · radius 10 · 10.5/700
+  badge: {
+    height: 20,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeTxt: { fontWeight: '700', fontSize: rf(10.5), letterSpacing: 0.2 },
 });

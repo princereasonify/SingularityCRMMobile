@@ -11,11 +11,10 @@ import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
-import { GradientBackground } from '../../components/common/GradientBackground';
 import { GradientButton } from '../../components/common/GradientButton';
 import { Card, Chip } from '../../components/ui';
 import { rf, isTabletDevice } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 
 const MODES = ['Offline', 'Online', 'Hybrid'];
@@ -101,21 +100,21 @@ const pickerStyles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 20, borderBottomWidth: 1,
   },
-  title: { fontFamily: Fonts.bold, fontSize: rf(16) },
+  title: { fontWeight: '700', fontSize: rf(16) },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     margin: 12, paddingHorizontal: 12, paddingVertical: 10,
     borderRadius: 12, borderWidth: 1,
   },
-  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14) },
+  searchInput: { flex: 1, fontWeight: '400', fontSize: rf(14) },
   item: {
     paddingHorizontal: 20, paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  itemLabel: { fontFamily: Fonts.medium, fontSize: rf(14) },
-  itemSub: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
+  itemLabel: { fontWeight: '600', fontSize: rf(14) },
+  itemSub: { fontWeight: '400', fontSize: rf(12), marginTop: 2 },
   empty: { padding: 32, alignItems: 'center' },
-  emptyText: { fontFamily: Fonts.regular, fontSize: rf(14) },
+  emptyText: { fontWeight: '400', fontSize: rf(14) },
 });
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
@@ -152,10 +151,26 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
 
   useEffect(() => {
     setLoadingSchools(true);
-    schoolsApi.getAll({ limit: 500 } as any)
-      .then(res => {
-        const data: any = res.data;
-        setSchools(data?.items ?? data?.schools ?? data ?? []);
+    // Web parity (AssignDemo.jsx): a school that is already Won / in implementation
+    // must not be offered for a new demo. Web cross-references the pipeline and
+    // strips those names; mobile offered every school.
+    // NOTE: GET /schools returns `{ schools, total, page, limit }` — there is no
+    // `items` key, so read `.schools` first.
+    Promise.all([
+      schoolsApi.getAll({ page: 1, limit: 500 }),
+      leadsApi.getPipeline().catch(() => ({ data: [] as any })),
+    ])
+      .then(([schoolRes, pipeRes]) => {
+        const d: any = schoolRes.data;
+        const all: any[] = d?.schools ?? (Array.isArray(d) ? d : []);
+        const pipe: any[] = Array.isArray(pipeRes.data) ? pipeRes.data : [];
+        const wonNames = new Set(
+          pipe
+            .filter(l => l.stage === 'Won' || l.stage === 'ImplementationStarted')
+            .map(l => (l.school || '').toLowerCase())
+            .filter(Boolean),
+        );
+        setSchools(all.filter(sc => !wonNames.has((sc.name || '').toLowerCase())));
       })
       .catch(() => {})
       .finally(() => setLoadingSchools(false));
@@ -205,17 +220,21 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
   return (
     <View style={[styles.root, { backgroundColor: T.bg }]}>
       {/* Sunstone hero header */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: T.line }]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={20} color="#FFF" />
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: T.card, borderColor: T.line }]}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={20} color={T.text} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Assign Demo</Text>
-            <Text style={styles.headerSub}>Schedule a product demo</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>Assign Demo</Text>
+            <Text style={[styles.headerSub, { color: T.sub }]} numberOfLines={1}>Schedule a product demo</Text>
           </View>
         </View>
-      </GradientBackground>
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -396,29 +415,28 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  header: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 1 },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14 },
   contentWide: { maxWidth: 760, width: '100%', alignSelf: 'center' },
   cardTitle: {
-    fontFamily: Fonts.bold, fontSize: rf(11),
+    fontWeight: '700', fontSize: rf(11),
     letterSpacing: 0.8, marginBottom: 14,
   },
-  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
+  fieldLabel: { fontWeight: '600', fontSize: rf(13), marginBottom: 6 },
   selector: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderWidth: 1, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
   },
-  selectorText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(14) },
+  selectorText: { flex: 1, fontWeight: '600', fontSize: rf(14) },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderWidth: 1, borderRadius: 12,
@@ -426,11 +444,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputIcon: {},
-  inputWithIcon: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14) },
+  inputWithIcon: { flex: 1, fontWeight: '400', fontSize: rf(14) },
   input: {
     borderWidth: 1, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontFamily: Fonts.regular, fontSize: rf(14),
+    fontWeight: '400', fontSize: rf(14),
   },
   textarea: { height: 100, textAlignVertical: 'top' },
   twoCol: { flexDirection: 'row', gap: 12 },

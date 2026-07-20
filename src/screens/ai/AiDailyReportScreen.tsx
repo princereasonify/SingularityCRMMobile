@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card, SectionLabel } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import type { AppTheme } from '../../theme';
@@ -144,8 +144,8 @@ const MetricBox = ({ label, value, color, T }: { label: string; value: string; c
 );
 const metricStyles = StyleSheet.create({
   box: { flex: 1, alignItems: 'center', borderTopWidth: 3, paddingTop: 8 },
-  value: { fontFamily: Fonts.bold, fontSize: rf(16) },
-  label: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
+  value: { fontWeight: '700', fontSize: rf(16) },
+  label: { fontWeight: '400', fontSize: rf(11), marginTop: 2 },
 });
 
 const styles = StyleSheet.create({
@@ -153,8 +153,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
@@ -164,20 +164,20 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 12 },
   contentWide: { maxWidth: 720, width: '100%', alignSelf: 'center' },
 
-  summaryTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 8 },
-  summaryText: { fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 22 },
+  summaryTitle: { fontWeight: '700', fontSize: rf(14), marginBottom: 8 },
+  summaryText: { fontWeight: '400', fontSize: rf(14), lineHeight: 22 },
   metricsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1 },
-  scoreLabel: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  scoreLabel: { fontWeight: '600', fontSize: rf(14) },
   scoreCircle: {
     width: 56, height: 56, borderRadius: 28, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',
   },
-  scoreValue: { fontFamily: Fonts.bold, fontSize: rf(16) },
-  scoreSub: { fontFamily: Fonts.regular, fontSize: rf(10) },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  scoreValue: { fontWeight: '700', fontSize: rf(16) },
+  scoreSub: { fontWeight: '400', fontSize: rf(10) },
+  sectionTitle: { fontWeight: '700', fontSize: rf(14), marginBottom: 12 },
   listItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 6, borderBottomWidth: 1 },
-  listText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 20 },
-  tomorrowTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 8 },
-  tomorrowText: { fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 22 },
+  listText: { flex: 1, fontWeight: '400', fontSize: rf(14), lineHeight: 20 },
+  tomorrowTitle: { fontWeight: '700', fontSize: rf(14), marginBottom: 8 },
+  tomorrowText: { fontWeight: '400', fontSize: rf(14), lineHeight: 22 },
 });

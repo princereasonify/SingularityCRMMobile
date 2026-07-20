@@ -9,10 +9,20 @@ const log = (label: string, payload?: any, response?: any) => {
   }
 };
 
+/** VehicleType enum values the backend parses (SalesCRM.Core/Enums/VehicleType.cs). */
+export type VehicleType = 'TwoWheeler' | 'FourWheeler' | 'PublicTransport' | 'Other';
+
 export const trackingApi = {
-  startDay: async () => {
-    log('startDay');
-    const res = await apiClient.post('/tracking/start-day');
+  /**
+   * The FO's allowance rate is derived from the vehicle, so this MUST send one:
+   * TrackingController.StartDay binds `StartDayRequest { string? VehicleType }`
+   * and web posts `{ vehicleType }`. This used to post no body at all, so mobile
+   * FOs started their day with no vehicle set — a real money bug.
+   */
+  startDay: async (vehicleType?: VehicleType) => {
+    const payload = { vehicleType: vehicleType ?? null };
+    log('startDay', payload);
+    const res = await apiClient.post('/tracking/start-day', payload);
     log('startDay', undefined, res.data);
     return res;
   },
@@ -66,9 +76,15 @@ export const trackingApi = {
     return res;
   },
 
-  getLiveLocations: async (managerId?: number) => {
+  /**
+   * TrackingController.GetLiveLocations binds `[FromQuery] string? role` — a ROLE,
+   * not a user id. This used to take `managerId` and send `params.managerId`, which
+   * the controller never bound, so the filter silently did nothing. Web sends
+   * `{ role: filterRole }`; there is no per-manager filter server-side.
+   */
+  getLiveLocations: async (filterRole?: string) => {
     const params: any = {};
-    if (managerId != null) params.managerId = managerId;
+    if (filterRole) params.role = filterRole;
     log('getLiveLocations', Object.keys(params).length ? params : undefined);
     const res = await apiClient.get('/tracking/live-locations', { params });
     log('getLiveLocations', undefined, res.data);
@@ -83,9 +99,11 @@ export const trackingApi = {
     return res;
   },
 
-  getAllowances: async (from: string, to: string, userId?: string) => {
+  // Controller binds `[FromQuery] int? filterUserId` (web sends the same). This
+  // used to send `userId`, which never bound — the member filter did nothing.
+  getAllowances: async (from: string, to: string, filterUserId?: number | string) => {
     const params: any = { from, to };
-    if (userId) params.userId = userId;
+    if (filterUserId) params.filterUserId = filterUserId;
     log('getAllowances', params);
     const res = await apiClient.get('/tracking/allowances', { params });
     log('getAllowances', undefined, res.data);

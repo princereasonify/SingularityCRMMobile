@@ -35,8 +35,10 @@
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>SingularityCRM uses Face ID to let you sign in quickly and securely.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SingularityCRM needs microphone access to record demo audio and video.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>SingularityCRM needs camera access to capture bill photos for expense claims.</string>
+	<string>SingularityCRM needs camera access to capture bill photos for expense claims and to record demos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SingularityCRM needs access to your photo library to attach bill images for expense claims.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

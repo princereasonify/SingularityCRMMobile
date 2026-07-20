@@ -20,7 +20,7 @@ export const aiReportsApi = {
     apiClient.post<any>('/ai-reports/generate', undefined, { params }),
   // Legacy endpoints kept for backward compatibility
   generateMyDaily: (date?: string) =>
-    apiClient.post<any>('/ai-reports/generate-my-daily', { date }),
+    apiClient.post<any>('/ai-reports/generate-my-daily', null, { params: { date } }),
   generateManagement: (dateFrom?: string, dateTo?: string) =>
-    apiClient.post<any>('/ai-reports/generate-management', { dateFrom, dateTo }),
+    apiClient.post<any>('/ai-reports/generate-management', null, { params: { dateFrom, dateTo } }),
 };

@@ -19,8 +19,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
 import { GradientButton } from '../../components/common/GradientButton';
 import { ThemeToggle } from '../../components/common/ThemeToggle';
-import { CustomKeyboard } from '../../components/common/CustomKeyboard';
-import { Fonts, getAuthTheme } from '../../theme';
+import { CustomKeyboard, KEYBOARD_PANEL_H } from '../../components/common/CustomKeyboard';
+import { Wordmark, getAuthTheme } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { applyLoginOrientation, applyAuthedOrientation } from '../../utils/orientation';
 import { BiometricButton } from '../../components/common/BiometricButton';
@@ -203,7 +203,7 @@ export const LoginScreen = ({ navigation }: any) => {
           style={[
             styles.inputWrap,
             { backgroundColor: T.fieldBg, borderColor: T.line },
-            activeField === 'email' && styles.inputWrapFocus,
+            activeField === 'email' && { borderColor: T.accentText },
             errors.email && { borderColor: T.danger },
           ]}
         >
@@ -214,7 +214,7 @@ export const LoginScreen = ({ navigation }: any) => {
             onFocus={() => setActiveField('email')}
             showSoftInputOnFocus={false}
             caretHidden={false}
-            placeholder="you@singularity.in"
+            placeholder="Enter your email"
             placeholderTextColor={T.dim}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -232,7 +232,7 @@ export const LoginScreen = ({ navigation }: any) => {
           style={[
             styles.inputWrap,
             { backgroundColor: T.fieldBg, borderColor: T.line },
-            activeField === 'password' && styles.inputWrapFocus,
+            activeField === 'password' && { borderColor: T.accentText },
             errors.password && { borderColor: T.danger },
           ]}
         >
@@ -294,7 +294,7 @@ export const LoginScreen = ({ navigation }: any) => {
       <View style={styles.deleteRow}>
         <Text style={[styles.deleteText, { color: T.dim }]}>Want to delete your account? </Text>
         <TouchableOpacity onPress={() => navigation.navigate('DeleteAccount')}>
-          <Text style={styles.deleteLink}>Delete Account</Text>
+          <Text style={[styles.deleteLink, { color: T.danger }]}>Delete Account</Text>
         </TouchableOpacity>
       </View>
 
@@ -304,8 +304,10 @@ export const LoginScreen = ({ navigation }: any) => {
     </View>
   );
 
-  // Extra scroll space so the lifted form clears the in-app keyboard panel.
-  const kbPad = activeField ? 360 : 0;
+  // Scroll space so the lifted form clears the in-app keyboard — EXACTLY the panel's
+  // height plus a small breathing gap. A larger guess both over-scrolls the form (the
+  // title ends up clipped under the status bar) and leaves dead space above the keys.
+  const kbPad = activeField ? KEYBOARD_PANEL_H + insets.bottom + 12 : 0;
 
   const keyboard = (
     <CustomKeyboard
@@ -372,12 +374,12 @@ const styles = StyleSheet.create({
   // Hero
   hero: { justifyContent: 'flex-start' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  wordmark: { fontFamily: Fonts.bold, color: '#FFFFFF', letterSpacing: -0.6, marginLeft: 2 },
+  wordmark: { fontFamily: Wordmark.bold, color: '#FFFFFF', letterSpacing: -0.6, marginLeft: 2 },
   wordmarkAccent: { color: '#0E0B08' }, // CRM — bold black
   heroBody: {},
   heroBodyCompact: { marginTop: 28 },
-  quote: { fontFamily: Fonts.bold, color: '#FFFFFF' },
-  tagline: { fontFamily: Fonts.regular, color: 'rgba(255,255,255,0.78)' },
+  quote: { fontWeight: '700', color: '#FFFFFF' },
+  tagline: { fontWeight: '400', color: 'rgba(255,255,255,0.78)' },
 
   // Split layout
   splitRow: { flex: 1, flexDirection: 'row' },
@@ -388,41 +390,41 @@ const styles = StyleSheet.create({
   // Stacked layout
   stackScroll: { flexGrow: 1 },
   stackForm: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    // spec radii: card 16–22
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     marginTop: -24,
     paddingHorizontal: 24,
     paddingTop: 30,
   },
 
-  // Form
+  // Form — type scale per SingularityCRM-Components.html → "Typography"
   formInner: { width: '100%', maxWidth: 400, alignSelf: 'center' },
-  welcome: { fontFamily: Fonts.bold, fontSize: rf(27), letterSpacing: -0.5 },
-  welcomeSub: { fontFamily: Fonts.regular, fontSize: rf(15), marginTop: 6, marginBottom: 22 },
+  welcome: { fontWeight: '800', fontSize: rf(24), letterSpacing: -0.5 }, // screen title 24/800/-0.5
+  welcomeSub: { fontWeight: '400', fontSize: rf(13), marginTop: 6, marginBottom: 22 }, // sub-text
 
   field: { marginBottom: 18 },
-  label: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 8 },
+  label: { fontWeight: '600', fontSize: rf(13), marginBottom: 8 }, // row label 13–14/600
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    height: 52,
+    borderRadius: 13, // spec control radius (btn 12–14 · dd-trigger 13)
+    paddingHorizontal: 16,
+    height: 48, // >= 44 min tap target
   },
-  inputWrapFocus: { borderColor: '#C99A3E' },
-  input: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(16), padding: 0 },
-  errText: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 6 },
+  input: { flex: 1, fontWeight: '500', fontSize: rf(15), padding: 0 },
+  errText: { fontWeight: '400', fontSize: rf(12), marginTop: 6 }, // caption 11–12
 
   signIn: { marginTop: 6 },
 
   signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },
-  signupText: { fontFamily: Fonts.regular, fontSize: rf(14) },
-  signupLink: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  signupText: { fontWeight: '400', fontSize: rf(14) },
+  signupLink: { fontWeight: '700', fontSize: rf(14) },
 
   deleteRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },
-  deleteText: { fontFamily: Fonts.regular, fontSize: rf(12) },
-  deleteLink: { fontFamily: Fonts.medium, fontSize: rf(12), color: '#C24E3A' },
+  deleteText: { fontWeight: '400', fontSize: rf(12) },
+  deleteLink: { fontWeight: '600', fontSize: rf(12) }, // colour comes from T.danger
 
-  footer: { fontFamily: Fonts.regular, fontSize: rf(11), textAlign: 'center', marginTop: 18, lineHeight: 17 },
+  footer: { fontWeight: '400', fontSize: rf(11), textAlign: 'center', marginTop: 18, lineHeight: 17 },
 });

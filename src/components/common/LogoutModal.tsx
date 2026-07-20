@@ -10,7 +10,7 @@ import {
 import { LogOut } from 'lucide-react-native';
 import { rf } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { Fonts } from '../../theme';
+
 import { GradientBackground } from './GradientBackground';
 
 interface Props {
@@ -84,12 +84,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontFamily: Fonts.bold,
+    fontWeight: '700',
     fontSize: rf(20),
     marginBottom: 8,
   },
   message: {
-    fontFamily: Fonts.regular,
+    fontWeight: '400',
     fontSize: rf(13),
     textAlign: 'center',
     lineHeight: 20,
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelText: {
-    fontFamily: Fonts.medium,
+    fontWeight: '600',
     fontSize: rf(14),
   },
   confirmBtn: {
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmText: {
-    fontFamily: Fonts.bold,
+    fontWeight: '700',
     fontSize: rf(14),
     color: '#FFF',
   },

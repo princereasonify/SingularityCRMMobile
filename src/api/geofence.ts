@@ -1,13 +1,19 @@
 import { apiClient } from './client';
-import { GeofenceEventRequest, SchoolVisitLog, TimeBreakdown } from '../types';
 
+/**
+ * GeofenceController is [Route("api/[controller]")] → /geofence/*. This module
+ * used to call /tracking/* , which TrackingController does not serve, so every
+ * call 404'd. `sendEvent` and `getTodayVisits` are gone entirely — there is no
+ * POST anywhere in GeofenceController and no "visits/today" route.
+ * Mirrors web's geofenceService.
+ */
 export const geofenceApi = {
-  sendEvent: (data: GeofenceEventRequest) =>
-    apiClient.post('/tracking/geofence-event', data),
-  getSchoolVisits: (sessionId: number) =>
-    apiClient.get<SchoolVisitLog[]>(`/tracking/school-visits/${sessionId}`),
+  getVisitLogs: (userId: number, date: string) =>
+    apiClient.get<any[]>('/geofence/visits', { params: { userId, date } }),
+  getVisitLogsBySession: (sessionId: number) =>
+    apiClient.get<any[]>(`/geofence/visits/session/${sessionId}`),
+  getGeofenceEvents: (sessionId: number) =>
+    apiClient.get<any[]>(`/geofence/events/${sessionId}`),
   getTimeBreakdown: (sessionId: number) =>
-    apiClient.get<TimeBreakdown>(`/tracking/time-breakdown/${sessionId}`),
-  getTodayVisits: () =>
-    apiClient.get<SchoolVisitLog[]>('/tracking/school-visits/today'),
+    apiClient.get<any>(`/geofence/time-breakdown/${sessionId}`),
 };

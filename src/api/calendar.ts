@@ -9,6 +9,8 @@ export const calendarApi = {
   update: (id: number, data: Partial<CreateCalendarEventRequest>) =>
     apiClient.put<CalendarEvent>(`/calendar/${id}`, data),
   delete: (id: number) => apiClient.delete(`/calendar/${id}`),
-  markComplete: (id: number) =>
-    apiClient.patch<CalendarEvent>(`/calendar/${id}/complete`),
+  // NOTE: there is deliberately no `markComplete`. It PATCHed `/calendar/{id}/complete`,
+  // which CalendarController does not declare (it has only GET, POST, PUT/{id},
+  // DELETE/{id}), so every call 404'd into the caller's catch and the feature never
+  // worked. Completion goes through `update(id, { isCompleted })`, which PUT binds.
 };

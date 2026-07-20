@@ -1,13 +1,13 @@
 import { apiClient } from './client';
 
 export const expenseClaimsApi = {
-  createClaim: (payload: {
-    expenseDate: string;
-    category: string;
-    amount: number;
-    description?: string;
-  }) => apiClient.post<any>('/expense-claims', payload),
-
+  /**
+   * ExpenseClaimsController.CreateClaim binds `[FromForm] CreateExpenseClaimRequest`
+   * plus an optional `IFormFile? bill`, so the request MUST be multipart. The old
+   * `createClaim` posted JSON, which cannot bind to [FromForm] — submitting a claim
+   * without a receipt failed every time. Web always builds FormData; so do we now,
+   * simply omitting the `bill` part when there is no file.
+   */
   createClaimWithBill: (formData: FormData) =>
     apiClient.post<any>('/expense-claims', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

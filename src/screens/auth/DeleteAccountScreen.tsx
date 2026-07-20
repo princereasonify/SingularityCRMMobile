@@ -7,18 +7,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  TextInput,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, EyeOff, BookOpen, ArrowLeft, Trash2, Mail } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowLeft, Trash2, Mail } from 'lucide-react-native';
 import { authApi } from '../../api/auth';
-import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { useTheme } from '../../context/ThemeContext';
+import { getAuthTheme } from '../../theme';
 import { rf } from '../../utils/responsive';
 
 export const DeleteAccountScreen = ({ navigation }: any) => {
   const { width } = useWindowDimensions();
   const tablet = width >= 768;
+  const { mode } = useTheme();
+  const T = getAuthTheme(mode);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,6 +30,7 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
 
   const handleDelete = async () => {
     if (!email.trim() || !password.trim()) {
@@ -50,33 +55,71 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
     }
   };
 
+  // Themed field — same structure as the login/signup inputs (label + bordered box).
+  const renderField = (
+    key: 'email' | 'password',
+    label: string,
+    props: React.ComponentProps<typeof TextInput> = {},
+  ) => (
+    <View style={styles.field}>
+      <Text style={[styles.label, { color: T.accentText }]}>{label}</Text>
+      <View
+        style={[
+          styles.inputWrap,
+          { backgroundColor: T.fieldBg, borderColor: T.line },
+          focusKey === key && { borderColor: T.danger },
+        ]}
+      >
+        <TextInput
+          value={key === 'email' ? email : password}
+          onChangeText={key === 'email' ? setEmail : setPassword}
+          onFocus={() => setFocusKey(key)}
+          onBlur={() => setFocusKey(null)}
+          placeholderTextColor={T.dim}
+          style={[styles.input, { color: T.text }]}
+          {...props}
+        />
+        {key === 'password' && (
+          <TouchableOpacity
+            onPress={() => setShowPwd((v) => !v)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {showPwd ? <EyeOff size={18} color={T.dim} /> : <Eye size={18} color={T.dim} />}
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+
   // ── Success Screen ──
   if (success) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: T.panelBg }]} edges={['top', 'bottom']}>
         <ScrollView
           contentContainerStyle={[styles.scroll, tablet && styles.scrollTablet]}
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.brand, tablet && styles.brandTablet]}>
-            <View style={styles.logoWrap}>
-              <BookOpen size={tablet ? 40 : 32} color="#FFF" strokeWidth={2.5} />
+            <View style={[styles.logoWrap, { backgroundColor: T.danger, shadowColor: T.danger }]}>
+              <Mail size={tablet ? 40 : 32} color="#FFF" strokeWidth={2.5} />
             </View>
-            <Text style={[styles.appName, tablet && { fontSize: rf(32) }]}>EduCRM</Text>
+            <Text style={[styles.appName, { color: T.text }, tablet && { fontSize: rf(32) }]}>
+              SingularityCRM
+            </Text>
           </View>
 
-          <View style={[styles.card, tablet && styles.cardTablet]}>
+          <View style={[styles.card, { backgroundColor: T.card, borderColor: T.line }, tablet && styles.cardTablet]}>
             <View style={styles.successIcon}>
-              <Mail size={40} color="#F59E0B" />
+              <Mail size={40} color={T.accentText} />
             </View>
-            <Text style={styles.successTitle}>Request Submitted</Text>
-            <Text style={styles.successSubtitle}>
+            <Text style={[styles.successTitle, { color: T.text }]}>Request Submitted</Text>
+            <Text style={[styles.successSubtitle, { color: T.sub }]}>
               A confirmation email has been sent to your email address. Your account will be deleted within 7-15 business days.
             </Text>
             <Button
               title="Back to Login"
               onPress={() => navigation.goBack()}
-              color="#DC2626"
+              color={T.danger}
               size="lg"
               style={styles.submitBtn}
             />
@@ -88,7 +131,7 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
 
   // ── Delete Account Form ──
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.panelBg }]} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -99,52 +142,45 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.brand, tablet && styles.brandTablet]}>
-            <View style={[styles.logoWrap, { backgroundColor: '#DC2626' }]}>
+            <View style={[styles.logoWrap, { backgroundColor: T.danger, shadowColor: T.danger }]}>
               <Trash2 size={tablet ? 40 : 32} color="#FFF" strokeWidth={2.5} />
             </View>
-            <Text style={[styles.appName, tablet && { fontSize: rf(32) }]}>EduCRM</Text>
+            <Text style={[styles.appName, { color: T.text }, tablet && { fontSize: rf(32) }]}>
+              SingularityCRM
+            </Text>
           </View>
 
-          <View style={[styles.card, tablet && styles.cardTablet]}>
+          <View style={[styles.card, { backgroundColor: T.card, borderColor: T.line }, tablet && styles.cardTablet]}>
             <TouchableOpacity
               style={styles.backRow}
               onPress={() => navigation.goBack()}
               activeOpacity={0.7}
             >
-              <ArrowLeft size={16} color="#6B7280" />
-              <Text style={styles.backText}>Back to Login</Text>
+              <ArrowLeft size={16} color={T.sub} />
+              <Text style={[styles.backText, { color: T.sub }]}>Back to Login</Text>
             </TouchableOpacity>
 
-            <Text style={styles.heading}>Delete Account</Text>
-            <Text style={styles.subheading}>Enter your credentials to request account deletion</Text>
+            <Text style={[styles.heading, { color: T.text }]}>Delete Account</Text>
+            <Text style={[styles.subheading, { color: T.sub }]}>
+              Enter your credentials to request account deletion
+            </Text>
 
-            <Input
-              label="Email Address"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              accentColor="#DC2626"
-            />
+            {renderField('email', 'Email Address', {
+              placeholder: 'Enter your email',
+              keyboardType: 'email-address',
+              autoCapitalize: 'none',
+              autoCorrect: false,
+            })}
 
-            <Input
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              secureTextEntry={!showPwd}
-              accentColor="#DC2626"
-              rightIcon={
-                showPwd ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />
-              }
-              onRightIconPress={() => setShowPwd((v) => !v)}
-            />
+            {renderField('password', 'Password', {
+              placeholder: 'Enter your password',
+              secureTextEntry: !showPwd,
+            })}
 
+            {/* spec status pattern: colour @ 15% background, solid colour text */}
             {!!error && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
+              <View style={[styles.errorBox, { backgroundColor: T.danger + '26' }]}>
+                <Text style={[styles.errorText, { color: T.danger }]}>{error}</Text>
               </View>
             )}
 
@@ -152,15 +188,15 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
               title={loading ? 'Submitting...' : 'Delete My Account'}
               onPress={handleDelete}
               loading={loading}
-              color="#DC2626"
+              color={T.danger}
               size="lg"
               style={styles.submitBtn}
               disabled={!email.trim() || !password.trim()}
             />
           </View>
 
-          <Text style={styles.footer}>
-            EduCRM v2.1 · Account deletion · All rights reserved
+          <Text style={[styles.footer, { color: T.dim }]}>
+            SingularityCRM · Account deletion · All rights reserved
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -169,7 +205,7 @@ export const DeleteAccountScreen = ({ navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#1E3A5F' },
+  safe: { flex: 1 },
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
@@ -182,51 +218,58 @@ const styles = StyleSheet.create({
   brandTablet: { marginBottom: 36 },
   logoWrap: {
     width: 72, height: 72, borderRadius: 20,
-    backgroundColor: '#DC2626',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 14,
-    shadowColor: '#DC2626',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
     elevation: 8,
   },
-  appName: {
-    fontSize: rf(28), fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5,
-  },
+  // spec "Typography": display/screen title 800
+  appName: { fontSize: rf(24), fontWeight: '800', letterSpacing: -0.5 },
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 24, padding: 24,
+    borderRadius: 22, // spec radii: card 16–22
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 24,
     width: '100%', maxWidth: 480,
     shadowColor: '#000', shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.15, shadowRadius: 32, elevation: 12,
   },
   cardTablet: { padding: 36 },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  backText: { fontSize: rf(13), color: '#6B7280', fontWeight: '500' },
-  heading: { fontSize: rf(22), fontWeight: '700', color: '#111827', marginBottom: 4 },
-  subheading: { fontSize: rf(13), color: '#6B7280', marginBottom: 20 },
-  warningBox: {
-    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginTop: 4,
+  backText: { fontSize: rf(13), fontWeight: '600' },
+  heading: { fontSize: rf(24), fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 },
+  subheading: { fontSize: rf(13), fontWeight: '400', marginBottom: 20 },
+
+  field: { marginBottom: 16 },
+  label: { fontWeight: '600', fontSize: rf(13), marginBottom: 8 },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 13, // spec control radius
+    paddingHorizontal: 16,
+    height: 48, // >= 44 min tap target
   },
-  warningText: { fontSize: rf(12), color: '#DC2626', fontWeight: '500', lineHeight: 18 },
+  input: { flex: 1, fontWeight: '500', fontSize: rf(15), padding: 0 },
+
   errorBox: {
-    backgroundColor: '#FEF2F2', borderRadius: 12,
+    borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 10, marginTop: 8,
   },
-  errorText: { fontSize: rf(12), color: '#DC2626', fontWeight: '500' },
+  errorText: { fontSize: rf(12), fontWeight: '600' },
   submitBtn: { marginTop: 12 },
   successIcon: { alignItems: 'center', marginBottom: 16, marginTop: 8 },
   successTitle: {
-    fontSize: rf(20), fontWeight: '700', color: '#111827',
+    fontSize: rf(20), fontWeight: '800', letterSpacing: -0.3,
     textAlign: 'center', marginBottom: 8,
   },
   successSubtitle: {
-    fontSize: rf(13), color: '#6B7280', textAlign: 'center',
+    fontSize: rf(13), fontWeight: '400', textAlign: 'center',
     lineHeight: 20, marginBottom: 24,
   },
   footer: {
-    fontSize: rf(11), color: 'rgba(255,255,255,0.35)',
+    fontSize: rf(11), fontWeight: '400',
     textAlign: 'center', marginTop: 24, lineHeight: 18,
   },
 });

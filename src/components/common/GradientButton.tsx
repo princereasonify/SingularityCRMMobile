@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { GradientBackground } from './GradientBackground';
-import { Fonts, Sunstone } from '../../theme';
+import { Sunstone } from '../../theme';
 import { rf } from '../../utils/responsive';
 
 interface Props {
@@ -94,20 +94,22 @@ export const GradientButton = ({ label, onPress, loading, disabled, icon, style 
 };
 
 const styles = StyleSheet.create({
+  // Spec (SingularityCRM-Components.html → "Buttons & actions"):
+  // Primary 44px · radius 13 · gradient · shadow 0 8 20 rgba(140,90,46,.28) · 13.5/700.
   btn: {
-    height: 54,
-    borderRadius: 16,
+    height: 44,
+    borderRadius: 13,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: Sunstone.from,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
     elevation: 6,
   },
   disabled: { opacity: 0.5 },
   glint: { position: 'absolute', top: 0, bottom: 0, width: 90 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  label: { fontFamily: Fonts.bold, fontSize: rf(16), color: '#FFFFFF', letterSpacing: 0.2 },
+  label: { fontWeight: '700', fontSize: rf(13.5), color: '#FFFFFF', letterSpacing: 0.2 },
 });

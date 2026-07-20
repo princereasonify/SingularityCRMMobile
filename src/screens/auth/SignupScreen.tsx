@@ -18,7 +18,7 @@ import { AuthHero } from '../../components/common/AuthHero';
 import { GradientButton } from '../../components/common/GradientButton';
 import { ThemeToggle } from '../../components/common/ThemeToggle';
 import { SelectPicker } from '../../components/common/SelectPicker';
-import { Fonts, getAuthTheme } from '../../theme';
+import { getAuthTheme } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { applyLoginOrientation } from '../../utils/orientation';
 
@@ -122,7 +122,7 @@ export const SignupScreen = ({ navigation }: any) => {
           style={[
             styles.inputWrap,
             { backgroundColor: T.fieldBg, borderColor: T.line },
-            focusKey === key && styles.inputWrapFocus,
+            focusKey === key && { borderColor: T.accentText },
             errors[key] && { borderColor: T.danger },
           ]}
         >
@@ -152,7 +152,7 @@ export const SignupScreen = ({ navigation }: any) => {
   const renderSuccess = () => (
     <View style={styles.formInner}>
       <View style={styles.successIcon}>
-        <CheckCircle size={52} color="#4C8C5C" />
+        <CheckCircle size={52} color={T.success} />
       </View>
       <Text style={[styles.welcome, { color: T.text, textAlign: 'center' }]}>Signed up successfully</Text>
       <Text style={[styles.welcomeSub, { color: T.sub, textAlign: 'center', marginBottom: 26 }]}>
@@ -192,7 +192,7 @@ export const SignupScreen = ({ navigation }: any) => {
       </View>
 
       {renderField('email', 'Email', {
-        placeholder: 'you@singularity.in',
+        placeholder: 'Enter your email',
         keyboardType: 'email-address',
         autoCapitalize: 'none',
         autoCorrect: false,
@@ -210,8 +210,8 @@ export const SignupScreen = ({ navigation }: any) => {
         <View style={[styles.pwdRules, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
           {getPasswordRules(form.password).map((rule) => (
             <View key={rule.label} style={styles.pwdRuleRow}>
-              <Check size={13} color={rule.met ? '#4C8C5C' : T.dim} />
-              <Text style={[styles.pwdRuleText, { color: rule.met ? '#4C8C5C' : T.sub }]}>{rule.label}</Text>
+              <Check size={13} color={rule.met ? T.success : T.dim} />
+              <Text style={[styles.pwdRuleText, { color: rule.met ? T.success : T.sub }]}>{rule.label}</Text>
             </View>
           ))}
         </View>
@@ -237,8 +237,9 @@ export const SignupScreen = ({ navigation }: any) => {
         />
       </View>
 
+      {/* spec status pattern: colour @ 15% background, solid colour text */}
       {!!error && (
-        <View style={[styles.errorBox, { backgroundColor: T.isDark ? 'rgba(224,114,92,0.14)' : '#FBEDEA' }]}>
+        <View style={[styles.errorBox, { backgroundColor: T.danger + '26' }]}>
           <Text style={[styles.errorText, { color: T.danger }]}>{error}</Text>
         </View>
       )}
@@ -309,8 +310,9 @@ const styles = StyleSheet.create({
 
   stackScroll: { flexGrow: 1 },
   stackForm: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    // spec radii: card 16–22
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     marginTop: -24,
     paddingHorizontal: 24,
     paddingTop: 26,
@@ -318,37 +320,37 @@ const styles = StyleSheet.create({
 
   formInner: { width: '100%', maxWidth: 420, alignSelf: 'center' },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
-  backText: { fontFamily: Fonts.medium, fontSize: rf(13) },
-  welcome: { fontFamily: Fonts.bold, fontSize: rf(26), letterSpacing: -0.5 },
-  welcomeSub: { fontFamily: Fonts.regular, fontSize: rf(14), marginTop: 6, marginBottom: 20 },
+  backText: { fontWeight: '600', fontSize: rf(13) },
+  // spec "Typography": screen title 24/800/-0.5 · sub-text 11–13
+  welcome: { fontWeight: '800', fontSize: rf(24), letterSpacing: -0.5 },
+  welcomeSub: { fontWeight: '400', fontSize: rf(13), marginTop: 6, marginBottom: 20 },
 
   nameRow: { flexDirection: 'row', gap: 12 },
   nameCol: { flex: 1 },
 
   field: { marginBottom: 16 },
-  label: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 8 },
+  label: { fontWeight: '600', fontSize: rf(13), marginBottom: 8 },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    height: 52,
+    borderRadius: 13, // spec control radius (btn 12–14 · dd-trigger 13)
+    paddingHorizontal: 16,
+    height: 48, // >= 44 min tap target
   },
-  inputWrapFocus: { borderColor: '#C99A3E' },
-  input: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(16), padding: 0 },
-  errText: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 6 },
+  input: { flex: 1, fontWeight: '500', fontSize: rf(15), padding: 0 },
+  errText: { fontWeight: '400', fontSize: rf(12), marginTop: 6 },
 
   pwdRules: { borderRadius: 12, borderWidth: 1, padding: 12, marginTop: -6, marginBottom: 16, gap: 7 },
   pwdRuleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pwdRuleText: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  pwdRuleText: { fontWeight: '400', fontSize: rf(12) },
 
   errorBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12 },
-  errorText: { fontFamily: Fonts.medium, fontSize: rf(12) },
+  errorText: { fontWeight: '600', fontSize: rf(12) },
 
   successIcon: { alignItems: 'center', marginBottom: 18, marginTop: 8 },
 
   signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },
-  signupText: { fontFamily: Fonts.regular, fontSize: rf(14) },
-  signupLink: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  signupText: { fontWeight: '400', fontSize: rf(14) },
+  signupLink: { fontWeight: '700', fontSize: rf(14) },
 });

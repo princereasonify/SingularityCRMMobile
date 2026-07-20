@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { visitReportApi } from '../../api/visitReport';
 import { AppHeader } from '../../components/ui';
 import { GradientButton } from '../../components/common/GradientButton';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
@@ -168,19 +168,19 @@ const styles = StyleSheet.create({
   formWrap: { gap: 16 },
   formWrapTablet: { alignSelf: 'center', width: '100%', maxWidth: 720 },
   infoBanner: { borderRadius: 14, padding: 12 },
-  infoBannerText: { fontFamily: Fonts.medium, fontSize: rf(14), lineHeight: 20 },
+  infoBannerText: { fontWeight: '600', fontSize: rf(14), lineHeight: 20 },
   card: {
     borderRadius: 18, borderWidth: 1, padding: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05, shadowRadius: 10, elevation: 1,
   },
-  cardTitle: { fontFamily: Fonts.bold, fontSize: rf(13), marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardTitle: { fontWeight: '700', fontSize: rf(13), marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   fieldGroup: { marginBottom: 14 },
-  fieldLabel: { fontFamily: Fonts.medium, fontSize: rf(13), marginBottom: 6 },
+  fieldLabel: { fontWeight: '600', fontSize: rf(13), marginBottom: 6 },
   input: {
     borderWidth: 1, borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 10,
-    fontFamily: Fonts.regular, fontSize: rf(14),
+    fontWeight: '400', fontSize: rf(14),
   },
   inputMulti: { minHeight: 80, textAlignVertical: 'top' },
 });

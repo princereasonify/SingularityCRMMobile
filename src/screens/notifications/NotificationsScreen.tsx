@@ -12,9 +12,9 @@ import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinn
 import { ROLE_COLORS, NOTIFICATION_COLORS } from '../../utils/constants';
 import { formatRelativeDate } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
-import { GradientBackground } from '../../components/common/GradientBackground';
+import { withAlpha, SOFT_TINT } from '../../theme';
 
 const NotifIcon = ({ type }: { type: string }) => {
   const T = useAppTheme();
@@ -82,10 +82,16 @@ export const NotificationsScreen = ({ navigation }: any) => {
     } catch {}
   };
 
-  const deleteNotif = async (id: number) => {
+  /**
+   * DELETE /notifications/{id} does NOT delete — NotificationsController calls
+   * MarkAsReadAsync and returns "Notification dismissed". Filtering the row out
+   * made it reappear on the next refresh, so this dismisses (marks read) instead,
+   * which is what the server actually does.
+   */
+  const dismissNotif = async (id: number) => {
     try {
       await notificationsApi.deleteNotification(id);
-      setNotifs((prev) => prev.filter((n) => n.id !== id));
+      setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
     } catch {}
   };
 
@@ -98,12 +104,12 @@ export const NotificationsScreen = ({ navigation }: any) => {
         style={[
           styles.notifCard,
           { backgroundColor: T.card },
-          !item.isRead && { backgroundColor: color + '10', borderLeftWidth: 3, borderLeftColor: color },
+          !item.isRead && { backgroundColor: withAlpha(color, 0.06), borderLeftWidth: 3, borderLeftColor: color },
         ]}
         onPress={() => markRead(item.id)}
         activeOpacity={0.8}
       >
-        <View style={[styles.iconWrap, { backgroundColor: color + '1E' }]}>
+        <View style={[styles.iconWrap, { backgroundColor: withAlpha(color, 0.12) }]}>
           <NotifIcon type={item.type} />
         </View>
         <View style={styles.notifContent}>
@@ -114,7 +120,7 @@ export const NotificationsScreen = ({ navigation }: any) => {
           <Text style={[styles.notifBody, { color: T.sub }]} numberOfLines={2}>{item.body}</Text>
           <Text style={[styles.notifTime, { color: T.dim }]}>{formatRelativeDate(item.createdAt)}</Text>
         </View>
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotif(item.id)}>
+        <TouchableOpacity style={styles.deleteBtn} onPress={() => dismissNotif(item.id)}>
           <Trash2 size={14} color={T.dim} />
         </TouchableOpacity>
       </TouchableOpacity>
@@ -123,27 +129,37 @@ export const NotificationsScreen = ({ navigation }: any) => {
 
   return (
     <View style={[styles.safe, { backgroundColor: T.bg }]}>
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      {/* Plain themed header on T.bg — every page shares one header treatment.
+          This is a Stack screen (reached from the topbar bell), so it keeps its
+          own back affordance and title. */}
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: T.line }]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={22} color="#FFF" />
+          <TouchableOpacity
+            style={[styles.backBtn, { backgroundColor: T.card, borderColor: T.line }]}
+            onPress={() => navigation.goBack()}
+            hitSlop={10}
+          >
+            <ArrowLeft size={20} color={T.text} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Notifications</Text>
+            <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>Notifications</Text>
             {unread > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadBadgeText}>{unread} unread</Text>
+              <View style={[styles.unreadBadge, { backgroundColor: withAlpha(T.accent, SOFT_TINT) }]}>
+                <Text style={[styles.unreadBadgeText, { color: T.accent }]}>{unread} unread</Text>
               </View>
             )}
           </View>
           {unread > 0 && (
-            <TouchableOpacity style={styles.markAllBtn} onPress={markAllRead}>
-              <Check size={16} color="#FFF" />
-              <Text style={styles.markAllText}>Mark all</Text>
+            <TouchableOpacity
+              style={[styles.markAllBtn, { backgroundColor: withAlpha(T.accent, SOFT_TINT) }]}
+              onPress={markAllRead}
+            >
+              <Check size={15} color={T.accent} />
+              <Text style={[styles.markAllText, { color: T.accent }]}>Mark all</Text>
             </TouchableOpacity>
           )}
         </View>
-      </GradientBackground>
+      </View>
 
       {loading ? (
         <LoadingSpinner fullScreen color={T.accent} />
@@ -164,22 +180,25 @@ export const NotificationsScreen = ({ navigation }: any) => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  header: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backBtn: { padding: 4 },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
+  // 40/r12 bordered face — same back affordance as the other stack screens.
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
+  // flexShrink:1 — RN defaults to 0, so an unconstrained title paints over the badge.
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3, flexShrink: 1 },
   unreadBadge: {
-    backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 100,
-    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 2, flexShrink: 0,
   },
-  unreadBadgeText: { fontFamily: Fonts.bold, fontSize: rf(11), color: '#FFF' },
+  unreadBadgeText: { fontWeight: '700', fontSize: rf(11) },
   markAllBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0,
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
   },
-  markAllText: { fontFamily: Fonts.medium, fontSize: rf(12), color: '#FFF' },
+  markAllText: { fontWeight: '600', fontSize: rf(12) },
   list: { paddingVertical: 8 },
   listEmpty: { flex: 1 },
   notifCard: {
@@ -192,10 +211,10 @@ const styles = StyleSheet.create({
   },
   notifContent: { flex: 1 },
   notifHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  notifTitle: { flex: 1, fontFamily: Fonts.bold, fontSize: rf(14) },
+  notifTitle: { flex: 1, fontWeight: '700', fontSize: rf(14) },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },
-  notifBody: { fontFamily: Fonts.regular, fontSize: rf(13), lineHeight: 19, marginBottom: 5 },
-  notifTime: { fontFamily: Fonts.regular, fontSize: rf(11) },
+  notifBody: { fontWeight: '400', fontSize: rf(13), lineHeight: 19, marginBottom: 5 },
+  notifTime: { fontWeight: '400', fontSize: rf(11) },
   deleteBtn: { padding: 6 },
   separator: { height: StyleSheet.hairlineWidth },
 });

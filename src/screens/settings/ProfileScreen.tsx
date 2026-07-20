@@ -1,0 +1,225 @@
+/**
+ * My Profile — who you are and where you sit in the org.
+ *
+ * Split from Settings deliberately: the topbar menu offers "My profile" and
+ * "Settings" but both used to navigate to `Settings`, so the two entries were
+ * indistinguishable. Settings owns *preferences* (language, notifications,
+ * offline, admin config); this screen owns *identity* (account, org placement,
+ * base location). No overlap in either direction.
+ *
+ * Reads `useAuth().user` — the UserDto persisted at login — so it needs no new
+ * endpoint. There is no `/auth/me` or `/auth/change-password` on the backend
+ * (verified against AuthController), which is why nothing here is editable.
+ */
+import React, { useState } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions,
+  Image, ActivityIndicator, Alert,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { launchImageLibrary } from 'react-native-image-picker';
+import {
+  ArrowLeft, Mail, Phone, MapPin, Building2, Users, ShieldCheck, ChevronRight, Home, Camera,
+} from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
+import { authApi } from '../../api/auth';
+import { Card } from '../../components/ui';
+import { IconBtn, StatusBadge } from '../../components/crud';
+import { ICON_STROKE } from '../../components/common/Icon';
+import { rf, isTabletDevice } from '../../utils/responsive';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+
+const ROLE_LABEL: Record<string, string> = {
+  FO: 'Field Officer',
+  ZH: 'Zonal Head',
+  RH: 'Regional Head',
+  SH: 'Sales Head',
+  SCA: 'Sales Control Admin',
+};
+
+export const ProfileScreen = ({ navigation }: any) => {
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+
+  const initials = (user?.name || '?')
+    .split(' ')
+    .map(p => p.charAt(0))
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  // `User.Avatar` was always a column with nothing writing to it; POST /auth/avatar
+  // now fills it. Optimistic local preview so the picture appears immediately —
+  // reverted if the upload fails, so we never show a picture the server didn't take.
+  const [avatar, setAvatar] = useState<string | null>(user?.avatar || null);
+  const [uploading, setUploading] = useState(false);
+
+  const pickAvatar = async () => {
+    const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+    const uri = res.assets?.[0]?.uri;
+    if (!uri) return;
+
+    const previous = avatar;
+    setAvatar(uri);
+    setUploading(true);
+    try {
+      const up = await authApi.uploadAvatar(uri);
+      setAvatar(up.data?.avatar || uri);
+    } catch (err: any) {
+      setAvatar(previous);
+      Alert.alert('Upload failed', err?.response?.data?.message || 'Could not update your picture.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const Row = ({
+    icon, label, value, onPress,
+  }: {
+    icon: React.ReactNode; label: string; value?: string | null; onPress?: () => void;
+  }) => {
+    const body = (
+      <View style={[styles.row, { borderBottomColor: T.line }]}>
+        <View style={[styles.rowIcon, { backgroundColor: T.accentSoft }]}>{icon}</View>
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: T.dim }]} numberOfLines={1}>{label}</Text>
+          {/* flexShrink:1 — RN defaults to 0, so a long value would paint over the chevron. */}
+          <Text style={[styles.rowValue, { color: value ? T.text : T.dim }]} numberOfLines={1}>
+            {value || '—'}
+          </Text>
+        </View>
+        {onPress && <ChevronRight size={16} color={T.dim} strokeWidth={ICON_STROKE} />}
+      </View>
+    );
+    return onPress
+      ? <TouchableOpacity activeOpacity={0.75} onPress={onPress}>{body}</TouchableOpacity>
+      : body;
+  };
+
+  return (
+    <View style={[styles.root, { backgroundColor: T.bg }]}>
+      {/* Plain themed title block on T.bg — matches every other page. The drawer
+          topbar supplies the nav chrome, so this must NOT re-apply insets.top. */}
+      <View style={styles.header}>
+        <IconBtn kind="view" label="Back" onPress={() => navigation.goBack()}>
+          <ArrowLeft size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+        </IconBtn>
+        <View style={styles.headerTextWrap}>
+          <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>My Profile</Text>
+          <Text style={[styles.headerSub, { color: T.sub }]} numberOfLines={1}>
+            Your account and organisation details
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 12 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={wide ? styles.centeredWide : undefined}>
+          <Card style={styles.identity}>
+            <TouchableOpacity activeOpacity={0.8} onPress={pickAvatar} disabled={uploading}>
+              <View style={[styles.avatar, { backgroundColor: T.accentSoft }]}>
+                {avatar ? (
+                  <Image source={{ uri: avatar }} style={styles.avatarImg} />
+                ) : (
+                  <Text style={[styles.avatarTxt, { color: T.accent }]}>{initials}</Text>
+                )}
+                <View style={[styles.avatarEdit, { backgroundColor: T.accent, borderColor: T.card }]}>
+                  {uploading
+                    ? <ActivityIndicator size="small" color="#FFF" />
+                    : <Camera size={13} color="#FFF" strokeWidth={2} />}
+                </View>
+              </View>
+            </TouchableOpacity>
+            <Text style={[styles.name, { color: T.text }]} numberOfLines={1}>{user?.name || '—'}</Text>
+            <Text style={[styles.email, { color: T.sub }]} numberOfLines={1}>{user?.email || '—'}</Text>
+            <View style={styles.badges}>
+              <StatusBadge label={ROLE_LABEL[user?.role || ''] || user?.role || '—'} color={T.info} />
+              <StatusBadge label="Active" color={T.success} />
+            </View>
+          </Card>
+
+          <Card style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Account</Text>
+            <Row icon={<Mail size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Email" value={user?.email} />
+            <Row icon={<Phone size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Phone" value={user?.phoneNumber} />
+            <Row
+              icon={<ShieldCheck size={15} color={T.accent} strokeWidth={ICON_STROKE} />}
+              label="Role"
+              value={ROLE_LABEL[user?.role || ''] || user?.role}
+            />
+          </Card>
+
+          <Card style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Organisation</Text>
+            <Row icon={<MapPin size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zone" value={user?.zone} />
+            <Row icon={<Building2 size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Region" value={user?.region} />
+            <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zonal Head" value={user?.zonalHead} />
+            <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Regional Head" value={user?.regionalHead} />
+          </Card>
+
+          <Card style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Base Location</Text>
+            <Row
+              icon={<Home size={15} color={T.accent} strokeWidth={ICON_STROKE} />}
+              label="Home location"
+              value="Set your travel-allowance start point"
+              onPress={() => navigation.navigate('Home Location')}
+            />
+            <Text style={[styles.hint, { color: T.dim }]}>
+              Travel allowance is measured from here, so keep it accurate.
+            </Text>
+          </Card>
+
+          <View style={[styles.note, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
+            <Text style={[styles.noteTxt, { color: T.info }]}>
+              To change your name, email or role, contact your administrator.
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  headerTextWrap: { flex: 1, minWidth: 0 },
+  headerTitle: { fontSize: rf(20), fontWeight: '700', letterSpacing: -0.4 },
+  headerSub: { fontSize: rf(12.5), fontWeight: '400', marginTop: 1 },
+
+  scroll: { flex: 1 },
+  centeredWide: { maxWidth: 720, alignSelf: 'center', width: '100%', gap: 12 },
+
+  identity: { alignItems: 'center', paddingVertical: 20, gap: 6 },
+  avatar: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 72, height: 72, borderRadius: 36 },
+  avatarTxt: { fontSize: rf(24), fontWeight: '800', letterSpacing: -0.5 },
+  avatarEdit: {
+    position: 'absolute', right: -2, bottom: -2,
+    width: 26, height: 26, borderRadius: 13, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  name: { fontSize: rf(18), fontWeight: '700', letterSpacing: -0.3, marginTop: 6 },
+  email: { fontSize: rf(13), fontWeight: '400' },
+  badges: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' },
+
+  section: { gap: 0 },
+  sectionTitle: { fontSize: rf(14), fontWeight: '700', marginBottom: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  rowIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rowText: { flex: 1, minWidth: 0 },
+  rowLabel: { fontSize: rf(11), fontWeight: '600' },
+  rowValue: { fontSize: rf(13.5), fontWeight: '600', marginTop: 1, flexShrink: 1 },
+
+  hint: { fontSize: rf(11.5), fontWeight: '400', marginTop: 8, lineHeight: 16 },
+  note: { borderRadius: 12, padding: 12, marginTop: 2 },
+  noteTxt: { fontSize: rf(12), fontWeight: '500', lineHeight: 17 },
+});

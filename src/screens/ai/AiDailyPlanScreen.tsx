@@ -12,7 +12,7 @@ import { GradientBackground } from '../../components/common/GradientBackground';
 import { GradientButton } from '../../components/common/GradientButton';
 import { Card, SectionLabel } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
@@ -215,8 +215,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), color: '#FFF', letterSpacing: -0.4 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
@@ -228,18 +228,18 @@ const styles = StyleSheet.create({
 
   tipsBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   tipsIcon: { fontSize: rf(18) },
-  tipsText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(14), lineHeight: 20 },
+  tipsText: { flex: 1, fontWeight: '600', fontSize: rf(14), lineHeight: 20 },
   targetBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   targetIcon: { fontSize: rf(18) },
-  targetText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), lineHeight: 20 },
+  targetText: { flex: 1, fontWeight: '400', fontSize: rf(14), lineHeight: 20 },
 
   agendaHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   timeBox: { minWidth: 52, alignItems: 'center', paddingTop: 2 },
-  agendaTime: { fontFamily: Fonts.bold, fontSize: rf(13) },
+  agendaTime: { fontWeight: '700', fontSize: rf(13) },
   agendaContent: { flex: 1 },
-  agendaAction: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 4 },
-  agendaSchool: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 2 },
-  agendaReason: { fontFamily: Fonts.regular, fontSize: rf(12) },
+  agendaAction: { fontWeight: '700', fontSize: rf(14), marginBottom: 4 },
+  agendaSchool: { fontWeight: '400', fontSize: rf(13), marginBottom: 2 },
+  agendaReason: { fontWeight: '400', fontSize: rf(12) },
   emptyWrap: { alignItems: 'center', gap: 16, padding: 16 },
   fullBtn: { alignSelf: 'stretch' },
   checkbox: {
@@ -249,5 +249,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   quotaBanner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  quotaText: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  quotaText: { fontWeight: '600', fontSize: rf(13) },
 });

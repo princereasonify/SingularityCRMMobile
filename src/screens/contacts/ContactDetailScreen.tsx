@@ -1,3 +1,16 @@
+/**
+ * ⚠️ UNREACHABLE DEAD CODE — kept on disk for reference only.
+ *
+ * Web has no standalone Contacts page; contacts live as a tab inside School
+ * Detail, and mobile now mirrors that. This screen's Stack.Screen registration
+ * has been removed from AppNavigator, so nothing can navigate here.
+ *
+ * It calls contacts endpoints that never existed on the backend (there is no
+ * ContactsController — see src/api/contacts.ts). Those methods are gone from
+ * contactsApi; the `legacyContactsApi` alias below only exists so this dead file
+ * still typechecks. Do NOT re-register this route or revive the alias without
+ * first adding the corresponding backend actions.
+ */
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Linking,
@@ -6,14 +19,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Edit2, Phone, Mail, Building2, MessageCircle, History, ArrowLeft } from 'lucide-react-native';
 import { contactsApi } from '../../api/contacts';
+/** Phantom endpoints this dead screen still references — see header. */
+const legacyContactsApi = contactsApi as any;
+
 import { Contact } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card, Badge } from '../../components/ui';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { formatRelativeDate } from '../../utils/formatting';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 export const ContactDetailScreen = ({ navigation, route }: any) => {
@@ -35,29 +51,29 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    contactsApi.getById(contactId)
-      .then(res => setContact(res.data))
+    legacyContactsApi.getById(contactId)
+      .then((res: any) => setContact(res.data))
       .catch(() => Alert.alert('Error', 'Failed to load contact'))
       .finally(() => setLoading(false));
   }, [contactId]);
 
   const Hero = ({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) => (
-    <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: T.line }]}>
       <View style={styles.headerRow}>
         <TouchableOpacity
-          style={styles.headerBtn}
+          style={[styles.headerBtn, { backgroundColor: T.card, borderColor: T.line }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFF" />
+          <ArrowLeft size={20} color={T.text} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-          {!!subtitle && <Text style={styles.headerSub} numberOfLines={1}>{subtitle}</Text>}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.headerTitle, { color: T.text }]} numberOfLines={1}>{title}</Text>
+          {!!subtitle && <Text style={[styles.headerSub, { color: T.sub }]} numberOfLines={1}>{subtitle}</Text>}
         </View>
         {right}
       </View>
-    </GradientBackground>
+    </View>
   );
 
   if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading..." />;
@@ -90,15 +106,20 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
         subtitle={contact.designation}
         right={
           <View style={styles.headerActions}>
+            {/* Icons re-tokenised: these were #FFF for the old gradient hero and
+                would be invisible on the themed T.card face. */}
             <TouchableOpacity
-              style={styles.headerBtn}
+              style={[styles.headerBtn, { backgroundColor: T.card, borderColor: T.line }]}
               onPress={() => navigation.navigate('AuditHistory', { entityType: 'Contact', entityId: contact.id, title: contact.name })}
             >
-              <History size={18} color="#FFF" />
+              <History size={18} color={T.text} />
             </TouchableOpacity>
             {canEdit && (
-              <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('AddContact', { contact })}>
-                <Edit2 size={18} color="#FFF" />
+              <TouchableOpacity
+                style={[styles.headerBtn, { backgroundColor: T.card, borderColor: T.line }]}
+                onPress={() => navigation.navigate('AddContact', { contact })}
+              >
+                <Edit2 size={18} color={T.text} />
               </TouchableOpacity>
             )}
           </View>
@@ -133,7 +154,7 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
             {contact.phone && (
               <>
                 <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
-                  <View style={[styles.iconBox, { backgroundColor: T.success + '22' }]}>
+                  <View style={[styles.iconBox, { backgroundColor: withAlpha(T.success, 0.13) }]}>
                     <Phone size={16} color={T.success} />
                   </View>
                   <View style={styles.actionContent}>
@@ -142,7 +163,7 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={openWhatsApp}>
-                  <View style={[styles.iconBox, { backgroundColor: T.success + '22' }]}>
+                  <View style={[styles.iconBox, { backgroundColor: withAlpha(T.success, 0.13) }]}>
                     <MessageCircle size={16} color="#25D366" />
                   </View>
                   <View style={styles.actionContent}>
@@ -154,7 +175,7 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
             )}
             {contact.email && (
               <TouchableOpacity style={[styles.actionRow, { borderBottomColor: T.line }]} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
-                <View style={[styles.iconBox, { backgroundColor: T.info + '22' }]}>
+                <View style={[styles.iconBox, { backgroundColor: withAlpha(T.info, 0.13) }]}>
                   <Mail size={16} color={T.info} />
                 </View>
                 <View style={styles.actionContent}>
@@ -168,7 +189,7 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
                 style={[styles.actionRow, { borderBottomColor: T.line }]}
                 onPress={() => contact.schoolId && navigation.navigate('SchoolDetail', { schoolId: contact.schoolId })}
               >
-                <View style={[styles.iconBox, { backgroundColor: T.accent + '22' }]}>
+                <View style={[styles.iconBox, { backgroundColor: withAlpha(T.accent, 0.13) }]}>
                   <Building2 size={16} color={T.accent} />
                 </View>
                 <View style={styles.actionContent}>
@@ -211,14 +232,14 @@ export const ContactDetailScreen = ({ navigation, route }: any) => {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
+  header: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3 },
+  headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },
 
   scroll: { flex: 1 },
@@ -231,20 +252,20 @@ const styles = StyleSheet.create({
     width: 72, height: 72, borderRadius: 36,
     alignItems: 'center', justifyContent: 'center', marginBottom: 12,
   },
-  avatarText: { fontFamily: Fonts.bold, fontSize: rf(28) },
-  profileName: { fontFamily: Fonts.bold, fontSize: rf(20), marginBottom: 4 },
-  profileDes: { fontFamily: Fonts.regular, fontSize: rf(14), marginBottom: 2 },
-  profileDept: { fontFamily: Fonts.regular, fontSize: rf(13), marginBottom: 10 },
+  avatarText: { fontWeight: '700', fontSize: rf(28) },
+  profileName: { fontWeight: '700', fontSize: rf(20), marginBottom: 4 },
+  profileDes: { fontWeight: '400', fontSize: rf(14), marginBottom: 2 },
+  profileDept: { fontWeight: '400', fontSize: rf(13), marginBottom: 10 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: rf(14), marginBottom: 12 },
+  sectionTitle: { fontWeight: '700', fontSize: rf(14), marginBottom: 12 },
   actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   iconBox: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   actionContent: { flex: 1 },
-  actionLabel: { fontFamily: Fonts.regular, fontSize: rf(11), marginBottom: 2 },
-  actionValue: { fontFamily: Fonts.medium, fontSize: rf(14) },
+  actionLabel: { fontWeight: '400', fontSize: rf(11), marginBottom: 2 },
+  actionValue: { fontWeight: '600', fontSize: rf(14) },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  infoLabel: { fontFamily: Fonts.regular, fontSize: rf(13) },
-  infoValue: { fontFamily: Fonts.medium, fontSize: rf(13) },
+  infoLabel: { fontWeight: '400', fontSize: rf(13) },
+  infoValue: { fontWeight: '600', fontSize: rf(13) },
   notesBox: { paddingTop: 8 },
-  notesText: { fontFamily: Fonts.regular, fontSize: rf(13), marginTop: 4, lineHeight: 20 },
+  notesText: { fontWeight: '400', fontSize: rf(13), marginTop: 4, lineHeight: 20 },
 });

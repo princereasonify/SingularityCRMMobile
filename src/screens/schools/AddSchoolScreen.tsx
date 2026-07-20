@@ -16,12 +16,15 @@ import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Button } from '../../components/common/Button';
 import { GradientButton } from '../../components/common/GradientButton';
 import { rf } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha } from '../../theme';
 import type { AppTheme } from '../../theme';
 
-// ─── Google Places API key (same key registered in AndroidManifest / Info.plist) ─
-const GMAPS_KEY = 'AIzaSyA3RPOnKdaBqe-fL5Ou5zqstKwghO5BqL4';
+// ─── Google Places API key — from .env via @env, not pasted into the screen.
+// (The native SDK key in AndroidManifest / Info.plist is a separate, native-side
+// registration.) See the note on GOOGLE_MAPS_API_KEY in constants.ts.
+import { GOOGLE_MAPS_API_KEY as GMAPS_KEY } from '../../utils/constants';
 
 // Match web app values exactly
 const BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'Other'];
@@ -142,7 +145,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const [name, setName]               = useState(existing?.name ?? '');
   const [board, setBoard]             = useState(existing?.board ?? '');
   const [type, setType]               = useState(existing?.type ?? '');
-  const [fullAddress, setFullAddress] = useState(existing?.fullAddress ?? '');
+  const [fullAddress, setFullAddress] = useState((existing as any)?.address ?? '');
   const [city, setCity]               = useState(existing?.city ?? '');
   const [state, setState]             = useState(existing?.state ?? '');
   const [pincode, setPincode]         = useState(existing?.pincode ?? '');
@@ -282,18 +285,11 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
 
-  // ── Debounced duplicate check ────────────────────────────────────────────
-  useEffect(() => {
-    if (isEdit || !name.trim()) { setDuplicates([]); return; }
-    if (dupTimer.current) clearTimeout(dupTimer.current);
-    dupTimer.current = setTimeout(async () => {
-      try {
-        const res = await schoolsApi.checkDuplicates(name.trim(), city || undefined);
-        setDuplicates((res.data as any) ?? []);
-      } catch { setDuplicates([]); }
-    }, 600);
-    return () => { if (dupTimer.current) clearTimeout(dupTimer.current); };
-  }, [name, city, isEdit]);
+  // Duplicate check removed: POST /schools/check-duplicates is not a route any
+  // controller serves (only Leads has `check-duplicate`), so this fired a 404 on
+  // every keystroke and could never warn about anything. Restore with a real
+  // endpoint. Leads' own duplicate check is unaffected.
+  useEffect(() => { setDuplicates([]); }, [name, city, isEdit]);
 
   // ── Place a marker on the map ────────────────────────────────────────────
   const placeMarker = useCallback((lat: number, lng: number) => {
@@ -370,7 +366,9 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         city: city || undefined,
         state: state || undefined,
         pincode: pincode || undefined,
-        fullAddress: fullAddress || undefined,
+        // CreateSchoolRequest/UpdateSchoolRequest bind `Address`, not `fullAddress`.
+        // The old key was silently dropped, discarding the address on every save.
+        address: fullAddress || undefined,
         phone: phone || undefined,
         email: email || undefined,
         studentCount: studentCount ? parseInt(studentCount) : undefined,
@@ -379,9 +377,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         principalPhone: principalPhone || undefined,
         latitude: latitude ?? 0,
         longitude: longitude ?? 0,
-        geofenceRadiusMeters: 100,
-        // required by type
-        category: type || 'Other',
+        geofenceRadiusMetres: 100, // DTO spells it Metres; Meters never bound
       };
       let schoolId: number | undefined;
       if (isEdit) {
@@ -393,17 +389,41 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
       }
       // FO assignment — self or other FO in zone
       if (isFO && visitDate && schoolId) {
+        const assignToUserId = assignToSelf ? user!.id : (selectedFO?.id ?? user!.id);
         try {
-          const assignToUserId = assignToSelf ? user!.id : (selectedFO?.id ?? user!.id);
+          // MUST merge, never send just the new school. SchoolAssignmentService
+          // .BulkAssignAsync "wholesale-replace[s] the target user's plan for this
+          // date" — it deletes every existing assignment for that user+date first.
+          // Posting `[schoolId]` alone therefore WIPED the rest of the FO's day.
+          // Web merges first (AddSchool.jsx); mobile now does the same.
+          const existingRes = assignToUserId === user!.id
+            ? await schoolAssignmentsApi.getMyAssignments(visitDate)
+            : await schoolAssignmentsApi.getUserAssignments(assignToUserId, visitDate);
+          const raw: any = existingRes.data;
+          const existing: any[] = Array.isArray(raw) ? raw : raw?.assignments ?? [];
+          const schoolIds: number[] = existing
+            .map(a => Number(a.schoolId))
+            .filter(id => Number.isFinite(id));
+          if (!schoolIds.includes(schoolId)) schoolIds.push(schoolId);
+
           await schoolAssignmentsApi.bulkAssign({
             userId: assignToUserId,
-            schoolIds: [schoolId],
+            schoolIds,
             assignmentDate: visitDate,
           });
-        } catch {}
+        } catch (err: any) {
+          // Never silent: the school was created but the assignment wasn't.
+          Alert.alert(
+            'School created',
+            err?.response?.data?.message
+              || 'The school was saved, but assigning it failed. Please assign it manually.',
+          );
+        }
       }
       navigation.goBack();
-    } catch {}
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to save the school.');
+    }
     finally { setSubmitting(false); setShowDupModal(false); }
   };
 
@@ -446,18 +466,18 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
         {/* Summary chips */}
         <View style={styles.bulkSummary}>
-          <View style={[styles.bulkChip, { backgroundColor: T.success + '22' }]}>
+          <View style={[styles.bulkChip, { backgroundColor: withAlpha(T.success, 0.13) }]}>
             <CheckCircle size={13} color={T.success} />
             <Text style={[styles.bulkChipText, { color: T.success }]}>{savable.length} ready</Text>
           </View>
           {issues.length > 0 && (
-            <View style={[styles.bulkChip, { backgroundColor: T.danger + '22' }]}>
+            <View style={[styles.bulkChip, { backgroundColor: withAlpha(T.danger, 0.13) }]}>
               <AlertTriangle size={13} color={T.danger} />
               <Text style={[styles.bulkChipText, { color: T.danger }]}>{issues.length} need attention</Text>
             </View>
           )}
           {dupes.length > 0 && (
-            <View style={[styles.bulkChip, { backgroundColor: T.warning + '22' }]}>
+            <View style={[styles.bulkChip, { backgroundColor: withAlpha(T.warning, 0.13) }]}>
               <AlertTriangle size={13} color={T.warning} />
               <Text style={[styles.bulkChipText, { color: T.warning }]}>{dupes.length} already added</Text>
             </View>
@@ -632,7 +652,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               </TouchableOpacity>
             </View>
             <Text style={styles.searchHint}>
-              Enter school name above + area here, then tap <Text style={{ fontFamily: Fonts.bold }}>Find</Text> to pin on map. Or tap the map directly.
+              Enter school name above + area here, then tap <Text style={{ fontWeight: '700' }}>Find</Text> to pin on map. Or tap the map directly.
             </Text>
 
             {/* Autocomplete dropdown */}
@@ -672,7 +692,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                     radius={100}
                     strokeColor={T.accent}
                     strokeWidth={2}
-                    fillColor={T.accent + '26'}
+                    fillColor={withAlpha(T.accent, 0.15)}
                   />
                   <Marker
                     coordinate={{ latitude, longitude }}
@@ -796,7 +816,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                   style={[styles.input, { justifyContent: 'center' }]}
                   onPress={() => setShowFOPicker(true)}
                 >
-                  <Text style={{ fontFamily: Fonts.regular, fontSize: rf(14), color: selectedFO ? T.text : T.dim }}>
+                  <Text style={{ fontWeight: '400', fontSize: rf(14), color: selectedFO ? T.text : T.dim }}>
                     {selectedFO ? selectedFO.name : 'Tap to select FO…'}
                   </Text>
                 </TouchableOpacity>
@@ -864,7 +884,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || T.sub }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <Text style={styles.dupName}>{d.matchedEntityName}</Text>
-                  <View style={[styles.matchBadge, { backgroundColor: (DUP_COLORS[d.matchType] || T.sub) + '20' }]}>
+                  <View style={[styles.matchBadge, { backgroundColor: withAlpha((DUP_COLORS[d.matchType] || T.sub), 0.13) }]}>
                     <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || T.sub }]}>{d.matchType}</Text>
                   </View>
                 </View>
@@ -956,10 +976,10 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     backgroundColor: T.card, borderWidth: 1.5, borderStyle: 'dashed',
     borderRadius: 14, paddingVertical: 14,
   },
-  bulkUploadText: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  bulkUploadText: { fontWeight: '700', fontSize: rf(14) },
   bulkSummary: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, flexWrap: 'wrap' },
   bulkChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-  bulkChipText: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  bulkChipText: { fontWeight: '700', fontSize: rf(12) },
   bulkMapWrap: { height: 240, margin: 16, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.line },
   bulkList: { flex: 1, marginHorizontal: 16 },
   bulkRow: {
@@ -967,26 +987,26 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     backgroundColor: T.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8,
     borderWidth: 1, borderColor: T.line,
   },
-  bulkRowName: { fontFamily: Fonts.medium, fontSize: rf(14), color: T.text },
-  bulkRowSub: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub, marginTop: 2 },
-  bulkRowStatus: { fontFamily: Fonts.bold, fontSize: rf(12) },
+  bulkRowName: { fontWeight: '600', fontSize: rf(14), color: T.text },
+  bulkRowSub: { fontWeight: '400', fontSize: rf(12), color: T.sub, marginTop: 2 },
+  bulkRowStatus: { fontWeight: '700', fontSize: rf(12) },
   bulkIssues: {
     marginHorizontal: 16,
     marginBottom: 4,
-    backgroundColor: T.danger + '1A',
+    backgroundColor: withAlpha(T.danger, 0.10),
     borderWidth: 1,
-    borderColor: T.danger + '55',
+    borderColor: withAlpha(T.danger, 0.33),
     borderRadius: 14,
     padding: 12,
     gap: 4,
   },
   bulkIssuesHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  bulkIssuesTitle: { fontFamily: Fonts.bold, fontSize: rf(13), color: T.danger, flex: 1 },
-  bulkIssuesHint: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.danger, lineHeight: 17, marginBottom: 2 },
-  bulkIssuesReason: { fontFamily: Fonts.medium, fontSize: rf(12), color: T.danger },
-  bulkIssuesFoot: { fontFamily: Fonts.regular, fontSize: rf(11), color: T.danger, opacity: 0.75, marginTop: 3 },
+  bulkIssuesTitle: { fontWeight: '700', fontSize: rf(13), color: T.danger, flex: 1 },
+  bulkIssuesHint: { fontWeight: '400', fontSize: rf(12), color: T.danger, lineHeight: 17, marginBottom: 2 },
+  bulkIssuesReason: { fontWeight: '600', fontSize: rf(12), color: T.danger },
+  bulkIssuesFoot: { fontWeight: '400', fontSize: rf(11), color: T.danger, opacity: 0.75, marginTop: 3 },
   bulkActions: { padding: 16, gap: 8, borderTopWidth: 1, borderTopColor: T.line, backgroundColor: T.card },
-  bulkHint: { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub, textAlign: 'center' },
+  bulkHint: { fontWeight: '400', fontSize: rf(12), color: T.sub, textAlign: 'center' },
 
   card: {
     backgroundColor: T.card, borderRadius: 18, padding: 16,
@@ -997,16 +1017,16 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     }),
   },
   cardTitle: {
-    fontFamily: Fonts.bold, fontSize: rf(12), color: T.sub,
+    fontWeight: '700', fontSize: rf(12), color: T.sub,
     marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1,
   },
 
   fieldGroup:  { marginBottom: 14 },
-  fieldLabel:  { fontFamily: Fonts.medium, fontSize: rf(13), color: T.text, marginBottom: 6 },
+  fieldLabel:  { fontWeight: '600', fontSize: rf(13), color: T.text, marginBottom: 6 },
   input: {
     borderWidth: 1, borderColor: T.line, borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 10,
-    fontFamily: Fonts.regular, fontSize: rf(14), color: T.text, backgroundColor: T.fieldBg,
+    fontWeight: '400', fontSize: rf(14), color: T.text, backgroundColor: T.fieldBg,
   },
   inputMulti: { height: 80, textAlignVertical: 'top' },
 
@@ -1015,7 +1035,7 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
     backgroundColor: T.cardAlt, borderWidth: 1, borderColor: T.line,
   },
-  chipText: { fontFamily: Fonts.medium, fontSize: rf(13), color: T.sub },
+  chipText: { fontWeight: '600', fontSize: rf(13), color: T.sub },
 
   dualRow:  { flexDirection: 'row', gap: 10 },
   triRow:   { flexDirection: 'row', gap: 8 },
@@ -1028,15 +1048,15 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     backgroundColor: T.fieldBg, paddingHorizontal: 10,
   },
   searchIcon:  { marginRight: 6 },
-  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(14), color: T.text, paddingVertical: Platform.OS === 'ios' ? 10 : 8 },
-  searchHint:  { fontFamily: Fonts.regular, fontSize: rf(11), color: T.dim, marginTop: 5 },
+  searchInput: { flex: 1, fontWeight: '400', fontSize: rf(14), color: T.text, paddingVertical: Platform.OS === 'ios' ? 10 : 8 },
+  searchHint:  { fontWeight: '400', fontSize: rf(11), color: T.dim, marginTop: 5 },
 
   findBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
   },
   findBtnDisabled: { opacity: 0.4 },
-  findBtnText: { fontFamily: Fonts.medium, fontSize: rf(13), color: '#FFF' },
+  findBtnText: { fontWeight: '600', fontSize: rf(13), color: '#FFF' },
 
   suggestionsBox: {
     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
@@ -1049,7 +1069,7 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line,
   },
-  suggestionText: { flex: 1, fontFamily: Fonts.regular, fontSize: rf(13), color: T.text },
+  suggestionText: { flex: 1, fontWeight: '400', fontSize: rf(13), color: T.text },
 
   // Map
   mapContainer: {
@@ -1064,10 +1084,10 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
     shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-  mapBadgeSet:      { backgroundColor: T.card, borderWidth: 1, borderColor: T.success + '66' },
-  mapBadgeUnset:    { backgroundColor: T.card, borderWidth: 1, borderColor: T.warning + '66' },
-  mapBadgeSetText:  { fontFamily: Fonts.medium, fontSize: rf(11), color: T.success },
-  mapBadgeUnsetText:{ fontFamily: Fonts.medium, fontSize: rf(11), color: T.warning },
+  mapBadgeSet:      { backgroundColor: T.card, borderWidth: 1, borderColor: withAlpha(T.success, 0.40) },
+  mapBadgeUnset:    { backgroundColor: T.card, borderWidth: 1, borderColor: withAlpha(T.warning, 0.40) },
+  mapBadgeSetText:  { fontWeight: '600', fontSize: rf(11), color: T.success },
+  mapBadgeUnsetText:{ fontWeight: '600', fontSize: rf(11), color: T.warning },
   geofenceLegend: {
     position: 'absolute', bottom: 10, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -1077,18 +1097,18 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
   },
   geofenceDot: {
     width: 12, height: 12, borderRadius: 6,
-    backgroundColor: T.accent + '4D', borderWidth: 1.5, borderColor: T.accent,
+    backgroundColor: withAlpha(T.accent, 0.30), borderWidth: 1.5, borderColor: T.accent,
   },
-  geofenceLegendText: { fontFamily: Fonts.regular, fontSize: rf(11), color: T.text },
+  geofenceLegendText: { fontWeight: '400', fontSize: rf(11), color: T.text },
 
-  visitHint: { fontFamily: Fonts.regular, fontSize: rf(13), color: T.sub, marginBottom: 10, lineHeight: 18 },
+  visitHint: { fontWeight: '400', fontSize: rf(13), color: T.sub, marginBottom: 10, lineHeight: 18 },
 
   // Duplicate warning
   dupBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: T.warning + '22', borderRadius: 14, padding: 12,
+    backgroundColor: withAlpha(T.warning, 0.13), borderRadius: 14, padding: 12,
   },
-  dupBannerText: { flex: 1, fontFamily: Fonts.medium, fontSize: rf(13), color: T.warning },
+  dupBannerText: { flex: 1, fontWeight: '600', fontSize: rf(13), color: T.warning },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: {
@@ -1096,15 +1116,15 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     padding: 20, paddingBottom: 40,
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle:  { fontFamily: Fonts.bold, fontSize: rf(16), color: T.text },
+  modalTitle:  { fontWeight: '700', fontSize: rf(16), color: T.text },
   dupCard: {
     borderLeftWidth: 4, backgroundColor: T.cardAlt, borderRadius: 14,
     padding: 12, marginBottom: 10,
   },
-  dupName:        { fontFamily: Fonts.bold, fontSize: rf(14), color: T.text, flex: 1 },
+  dupName:        { fontWeight: '700', fontSize: rf(14), color: T.text, flex: 1 },
   matchBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  matchBadgeText: { fontFamily: Fonts.bold, fontSize: rf(11) },
-  dupReason:      { fontFamily: Fonts.regular, fontSize: rf(12), color: T.sub },
-  viewExistingText:{ fontFamily: Fonts.medium, fontSize: rf(13) },
+  matchBadgeText: { fontWeight: '700', fontSize: rf(11) },
+  dupReason:      { fontWeight: '400', fontSize: rf(12), color: T.sub },
+  viewExistingText:{ fontWeight: '600', fontSize: rf(13) },
   modalActions:   { flexDirection: 'row', gap: 10, marginTop: 16 },
 });

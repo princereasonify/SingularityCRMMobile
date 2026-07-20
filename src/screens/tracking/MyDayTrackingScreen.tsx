@@ -15,7 +15,7 @@ import {
   Linking,
   useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import {
   MapPin,
@@ -26,15 +26,16 @@ import {
   AlertTriangle,
   Wifi,
   WifiOff,
-  ChevronDown,
-  ChevronRight,
   Wallet,
+  Play,
+  Square,
+  Route as RouteIcon,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import BackgroundService from '../../services/backgroundServiceShim';
 import BackgroundFetch from 'react-native-background-fetch';
-import { trackingApi } from '../../api/tracking';
+import { trackingApi, VehicleType } from '../../api/tracking';
 import { sendLocationPing } from '../../services/locationPingService';
 import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission } from '../../services/nativeLocationTracking';
 import {
@@ -44,21 +45,88 @@ import {
   AllowanceDto,
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
-import { GradientBackground } from '../../components/common/GradientBackground';
-import { GradientButton } from '../../components/common/GradientButton';
-import { Card, StatTile, SectionLabel, Badge } from '../../components/ui';
-import { formatCurrency, formatDate, formatTime, toISODate, toISTISOString } from '../../utils/formatting';
-import { rf, isTabletDevice, getCardWidth } from '../../utils/responsive';
-import { Fonts } from '../../theme';
+import { Btn, Segmented, StatusBadge, ConfirmModal, FormModal } from '../../components/crud';
+import { ICON_STROKE } from '../../components/common/Icon';
+import { formatCurrency, formatDate, formatTime, toISODate } from '../../utils/formatting';
+import { rf, isTabletDevice } from '../../utils/responsive';
+
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { DateInput } from '../../components/common/DateInput';
 
+/** Values must stay parseable by the backend's VehicleType enum; labels match web. */
+const VEHICLE_OPTIONS: { value: VehicleType; label: string }[] = [
+  { value: 'TwoWheeler', label: 'Two Wheeler (Activa / Bike)' },
+  { value: 'FourWheeler', label: 'Four Wheeler (Car)' },
+  { value: 'PublicTransport', label: 'Public Transport' },
+  { value: 'Other', label: 'Other' },
+];
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000; // 30 seconds
+
+const DASH = '—';
+
+/**
+ * Web renders every route point; a full 8-hour day at one ping / 30 s is ~960 rows.
+ * The bounded list below scrolls, so the cap only protects the render pass.
+ */
+const MAX_POINT_ROWS = 100;
+
+/** Web parity: the history point list is a 220px scroll area (LiveTracking.jsx). */
+const POINT_LIST_H = 220;
+
+type MapKind = 'standard' | 'satellite' | 'terrain' | 'hybrid';
+
+const MAP_TYPES: { label: string; value: MapKind }[] = [
+  { label: 'Default', value: 'standard' },
+  { label: 'Satellite', value: 'satellite' },
+  { label: 'Terrain', value: 'terrain' },
+  { label: 'Hybrid', value: 'hybrid' },
+];
+
+// ─── Presentational blocks ───────────────────────────────────────────────────
+// Module level, not defined during render: a nested definition is a new component
+// type every pass, which remounts the whole subtree (and would restart the map).
+
+/** KPI tile. Wraps by flex-basis — 4-up on iPad landscape, 2-up on a phone. */
+const Tile = ({ label, value, icon, tint, wide }: {
+  label: string; value: string; icon: React.ReactNode; tint: string; wide: boolean;
+}) => {
+  const T = useAppTheme();
+  return (
+    <View style={[s.tile, { backgroundColor: T.card, borderColor: T.line }, wide ? s.tileWide : s.tilePhone]}>
+      <View style={s.tileTop}>
+        <View style={[s.tileIcon, { backgroundColor: withAlpha(tint, SOFT_TINT) }]}>{icon}</View>
+        <Text style={[s.tileLabel, { color: T.sub }]} numberOfLines={1}>{label}</Text>
+      </View>
+      <Text style={[s.tileValue, { color: T.text }]} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+};
+
+/** Compact label/value cell used by the history summary and distance breakdown. */
+const MiniStat = ({ label, value, color }: { label: string; value: string; color?: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[s.mini, { backgroundColor: T.cardAlt }]}>
+      <Text style={[s.miniLabel, { color: T.dim }]} numberOfLines={1}>{label}</Text>
+      <Text style={[s.miniValue, { color: color || T.text }]} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+};
+
+const Empty = ({ title, subtitle }: { title: string; subtitle: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[s.empty, { borderColor: T.line }]}>
+      <RouteIcon size={30} color={T.dim} strokeWidth={ICON_STROKE} />
+      <Text style={[s.emptyTitle, { color: T.text }]}>{title}</Text>
+      <Text style={[s.emptyTxt, { color: T.dim }]}>{subtitle}</Text>
+    </View>
+  );
+};
 
 // ─── Module-level background task (app alive: foreground + background) ────────
 // BackgroundService is no longer used for active tracking (native modules handle both platforms).
@@ -67,18 +135,23 @@ const PING_INTERVAL_MS = 30000; // 30 seconds
 export const MyDayTrackingScreen = () => {
   const { user } = useAuth();
   const T = useAppTheme();
-  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const twoWide = isTabletDevice && width > height;
+  const wide = isTabletDevice && width > height;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [session, setSession] = useState<TrackingSessionDto | null>(null);
   const [startEnabled, setStartEnabled] = useState(false);
+  // Web parity (LiveTracking.jsx): Start My Day opens a vehicle picker first —
+  // the allowance rate is set from the vehicle, so starting without one silently
+  // costs the FO money. Same default as web.
+  const [showVehiclePicker, setShowVehiclePicker] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<VehicleType>('TwoWheeler');
   const [endEnabled, setEndEnabled] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [queuedPings, setQueuedPings] = useState(0);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
   const [routePoints, setRoutePoints] = useState<RoutePointDto[]>([]);
@@ -89,8 +162,7 @@ export const MyDayTrackingScreen = () => {
   const [allowancesLoading, setAllowancesLoading] = useState(false);
 
   const mapRef = useRef<MapView>(null);
-  const [mapType, setMapType] = useState<'standard' | 'satellite' | 'terrain' | 'hybrid'>('standard');
-  const [routePointsExpanded, setRoutePointsExpanded] = useState(false);
+  const [mapType, setMapType] = useState<MapKind>('standard');
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [locationChecked, setLocationChecked] = useState(false);
@@ -468,6 +540,18 @@ export const MyDayTrackingScreen = () => {
     return () => sub.remove();
   }, [session?.status, syncOfflineQueue]);
 
+  // ─── Live elapsed clock ──────────────────────────────────────────────────
+  // Display only — the "Session Time" tile read `new Date()` at render, so it
+  // froze at whatever it was when the screen last re-rendered. Ticking `now`
+  // while a session is open is what makes "am I being tracked right now" true.
+  // Touches nothing in the ping/upload pipeline.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (session?.status !== 'active') return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [session?.status]);
+
   // ─── Data Fetching ───────────────────────────────────────────────────────
 
   const fetchSession = useCallback(async () => {
@@ -491,9 +575,9 @@ export const MyDayTrackingScreen = () => {
   const fetchAllowances = useCallback(async () => {
     setAllowancesLoading(true);
     try {
-      const now = new Date();
-      const from = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
-      const to = toISODate(now);
+      const now2 = new Date();
+      const from = toISODate(new Date(now2.getFullYear(), now2.getMonth(), 1));
+      const to = toISODate(now2);
       const res = await trackingApi.getAllowances(from, to);
       const inner = res.data as any;
       setAllowances(inner?.allowances ?? inner?.items ?? (Array.isArray(inner) ? inner : []));
@@ -524,7 +608,7 @@ export const MyDayTrackingScreen = () => {
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
-  const handleStartDay = async () => {
+  const handleStartDay = async (vehicleType: VehicleType) => {
     if (actionLoading) return; // guard against double tap
     setActionLoading(true);
 
@@ -544,7 +628,7 @@ export const MyDayTrackingScreen = () => {
     });
     if (!locationAvailable) { setActionLoading(false); return; }
     try {
-      const res = await trackingApi.startDay();
+      const res = await trackingApi.startDay(vehicleType);
       const data = res.data as SessionResponseDto;
       setSession(data?.session ?? null);
       setStartEnabled(false);
@@ -563,33 +647,26 @@ export const MyDayTrackingScreen = () => {
     }
   };
 
-  const handleEndDay = () => {
-    Alert.alert('End Day', 'Are you sure? This will stop tracking and calculate your allowance.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'End Day', style: 'destructive',
-        onPress: async () => {
-          setActionLoading(true);
-          try {
-            await stopTracking();
-            await syncOfflineQueue();
-            const res = await trackingApi.endDay();
-            const data = res.data as SessionResponseDto;
-            setSession(data?.session ?? null);
-            // Allow starting again immediately after ending
-            setStartEnabled(true);
-            setEndEnabled(false);
-            // Clear any remaining queued pings — session is now closed
-            await AsyncStorage.removeItem(PING_QUEUE_KEY);
-            setQueuedPings(0);
-          } catch (err: any) {
-            Alert.alert('Error', err?.response?.data?.message || 'Failed to end day. Please try again.');
-          } finally {
-            setActionLoading(false);
-          }
-        },
-      },
-    ]);
+  const handleEndDay = async () => {
+    setConfirmEnd(false);
+    setActionLoading(true);
+    try {
+      await stopTracking();
+      await syncOfflineQueue();
+      const res = await trackingApi.endDay();
+      const data = res.data as SessionResponseDto;
+      setSession(data?.session ?? null);
+      // Allow starting again immediately after ending
+      setStartEnabled(true);
+      setEndEnabled(false);
+      // Clear any remaining queued pings — session is now closed
+      await AsyncStorage.removeItem(PING_QUEUE_KEY);
+      setQueuedPings(0);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to end day. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleDateSelect = async (date: string) => {
@@ -623,10 +700,11 @@ export const MyDayTrackingScreen = () => {
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   const getSessionDuration = (s: TrackingSessionDto): string => {
-    if (!s.startedAt) return '--';
+    if (!s.startedAt) return DASH;
     const start = new Date(s.startedAt);
-    const end = s.endedAt ? new Date(s.endedAt) : new Date();
-    const diffMs = end.getTime() - start.getTime();
+    const end = s.endedAt ? new Date(s.endedAt).getTime() : now;
+    const diffMs = end - start.getTime();
+    if (diffMs < 0) return DASH;
     const hrs = Math.floor(diffMs / 3600000);
     const mins = Math.floor((diffMs % 3600000) / 60000);
     return `${hrs}h ${mins}m`;
@@ -648,308 +726,401 @@ export const MyDayTrackingScreen = () => {
     }
   };
 
-  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading tracking..." />;
+  const livePoints = routePoints.filter(p => !p.isFiltered);
 
-  const cols = twoWide ? 4 : 2;
-  const cardW = getCardWidth(cols, 32);
+  if (loading) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+        <View style={s.loadWrap}>
+          <ActivityIndicator color={T.accent} />
+          <Text style={[s.loadTxt, { color: T.dim }]}>Loading tracking…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── history: stats + point list (left column on iPad, stacked on phone) ──
+  const renderHistoryStats = () => (
+    <View style={s.histStats}>
+      <View style={s.miniRow}>
+        <MiniStat label="Distance" value={`${historySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`} />
+        <MiniStat label="Allowance" value={formatCurrency(historySession?.allowanceAmount ?? 0)} />
+      </View>
+      <View style={s.miniRow}>
+        <MiniStat label="Start" value={formatTime(historySession?.startedAt) || DASH} />
+        <MiniStat label="End" value={historySession?.endedAt ? formatTime(historySession.endedAt) : DASH} />
+      </View>
+      <View style={s.miniRow}>
+        <MiniStat label="Duration" value={historySession ? getSessionDuration(historySession) : DASH} />
+        {(historySession?.fraudScore ?? 0) > 0 && (
+          <MiniStat
+            label="Fraud Score"
+            value={`${historySession?.fraudScore}/100`}
+            color={historySession?.isSuspicious ? T.danger : T.text}
+          />
+        )}
+      </View>
+    </View>
+  );
+
+  const renderPointList = () => {
+    if (routePoints.length === 0) return null;
+    const shown = routePoints.slice(0, MAX_POINT_ROWS);
+    return (
+      <View style={s.pointsWrap}>
+        <Text style={[s.pointsTitle, { color: T.dim }]}>Route Points ({routePoints.length})</Text>
+        <ScrollView
+          style={[s.pointsScroll, { borderColor: T.line }]}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+        >
+          {shown.map((pt, idx) => {
+            const dot = pt.isFiltered
+              ? T.dim
+              : idx === 0
+                ? T.success
+                : idx === routePoints.length - 1
+                  ? T.danger
+                  : T.accent;
+            return (
+              <View key={idx} style={[s.pointRow, { borderBottomColor: T.line }]}>
+                <View style={[s.pointDot, { backgroundColor: dot }]} />
+                <Text style={[s.pointCoords, { color: T.sub }]} numberOfLines={1}>
+                  {pt.lat.toFixed(5)}, {pt.lon.toFixed(5)}
+                </Text>
+                <Text style={[s.pointTime, { color: T.dim }]}>{formatTime(pt.recordedAt)}</Text>
+              </View>
+            );
+          })}
+          {routePoints.length > MAX_POINT_ROWS && (
+            <Text style={[s.pointsMore, { color: T.dim }]}>
+              +{routePoints.length - MAX_POINT_ROWS} more points
+            </Text>
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderMap = () => (
+    <View style={s.mapCol}>
+      <Segmented<MapKind> value={mapType} onChange={setMapType} options={MAP_TYPES} />
+      {livePoints.length === 0 ? (
+        <Empty title="No GPS points recorded" subtitle="Pings appear here once your day is running." />
+      ) : (
+        <View style={[s.mapWrap, { borderColor: T.line, backgroundColor: T.cardAlt }, wide && s.mapWrapWide]}>
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFillObject}
+            mapType={mapType}
+            initialRegion={{ latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 }}
+          >
+            {livePoints.length > 1 && (
+              <Polyline
+                coordinates={livePoints.map(p => ({ latitude: p.lat, longitude: p.lon }))}
+                strokeColor={T.accent}
+                strokeWidth={4}
+              />
+            )}
+            {livePoints.length > 0 && (
+              <Marker
+                coordinate={{ latitude: livePoints[0].lat, longitude: livePoints[0].lon }}
+                pinColor={T.success}
+                title="Start"
+                description={formatTime(livePoints[0].recordedAt)}
+              />
+            )}
+            {livePoints.length > 1 && (
+              <Marker
+                coordinate={{
+                  latitude: livePoints[livePoints.length - 1].lat,
+                  longitude: livePoints[livePoints.length - 1].lon,
+                }}
+                pinColor={T.danger}
+                title="End"
+                description={formatTime(livePoints[livePoints.length - 1].recordedAt)}
+              />
+            )}
+          </MapView>
+        </View>
+      )}
+    </View>
+  );
 
   return (
-    <View style={[styles.root, { backgroundColor: T.bg }]}>
-      {/* Sunstone hero header */}
-      <GradientBackground glow style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
-          <DrawerMenuButton />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle} numberOfLines={1}>My Day Tracking</Text>
-            <Text style={styles.headerSub} numberOfLines={1}>{user?.zone || user?.name || 'Tracking'}</Text>
-          </View>
-          <View style={styles.statusPill}>
-            <View style={[styles.statusPillDot, { backgroundColor: getStatusColor(session?.status) }]} />
-            <Text style={styles.statusPillText}>{getStatusLabel(session?.status)}</Text>
-          </View>
-        </View>
-      </GradientBackground>
-
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 14 }}
+        contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accent} colors={[T.accent]} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accent} colors={[T.accent]} />
+        }
       >
-        {/* Location permission warning */}
         {locationChecked && !locationGranted && (
           <TouchableOpacity
-            style={[styles.locationBanner, { backgroundColor: T.danger + '18', borderColor: T.danger + '40' }]}
+            style={[s.banner, { backgroundColor: withAlpha(T.danger, SOFT_TINT), borderColor: withAlpha(T.danger, 0.35) }]}
             onPress={requestLocationPermission}
-            activeOpacity={0.7}
+            activeOpacity={0.75}
           >
-            <MapPin size={16} color={T.danger} />
+            <MapPin size={16} color={T.danger} strokeWidth={ICON_STROKE} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.locationBannerTitle, { color: T.danger }]}>Location Access Required</Text>
-              <Text style={[styles.locationBannerSubtitle, { color: T.sub }]}>Tap here to enable location for tracking</Text>
+              <Text style={[s.bannerTitle, { color: T.danger }]}>Location Access Required</Text>
+              <Text style={[s.bannerTxt, { color: T.sub }]}>Tap to enable location so your day can be tracked.</Text>
             </View>
-            <View style={[styles.locationBannerActionWrap, { backgroundColor: T.danger + '22' }]}>
-              <Text style={[styles.locationBannerAction, { color: T.danger }]}>Enable</Text>
+            <View style={[s.bannerAction, { backgroundColor: withAlpha(T.danger, 0.18) }]}>
+              <Text style={[s.bannerActionTxt, { color: T.danger }]}>Enable</Text>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* Connectivity + Queue Status */}
         {(!isOnline || queuedPings > 0) && (
-          <View style={[styles.statusBanner, { backgroundColor: (!isOnline ? T.danger : T.warning) + '18' }]}>
-            {!isOnline ? <WifiOff size={14} color={T.danger} /> : <Wifi size={14} color={T.warning} />}
-            <Text style={[styles.statusBannerText, { color: !isOnline ? T.danger : T.warning }]}>
-              {!isOnline ? 'Offline — pings are queued locally' : `${queuedPings} queued pings syncing...`}
+          <View
+            style={[
+              s.banner,
+              {
+                backgroundColor: withAlpha(!isOnline ? T.danger : T.warning, SOFT_TINT),
+                borderColor: withAlpha(!isOnline ? T.danger : T.warning, 0.3),
+              },
+            ]}
+          >
+            {!isOnline
+              ? <WifiOff size={15} color={T.danger} strokeWidth={ICON_STROKE} />
+              : <Wifi size={15} color={T.warning} strokeWidth={ICON_STROKE} />}
+            <Text style={[s.bannerTxt, { color: !isOnline ? T.danger : T.warning, flex: 1, fontWeight: '600' }]}>
+              {!isOnline
+                ? 'Offline — pings are queued on this device and will sync automatically.'
+                : `${queuedPings} queued ping${queuedPings === 1 ? '' : 's'} syncing…`}
             </Text>
           </View>
         )}
 
-        {/* My Day */}
-        <Card>
-          <SectionLabel style={{ marginTop: 0 }}>My Day</SectionLabel>
+        {/* ── My Day ── */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.cardHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.cardTitle, { color: T.text }]}>My Day</Text>
+              <Text style={[s.cardSub, { color: T.dim }]}>{formatDate(toISODate(new Date()))}</Text>
+            </View>
+            <View style={[s.pill, { backgroundColor: withAlpha(getStatusColor(session?.status), SOFT_TINT) }]}>
+              <View style={[s.pillDot, { backgroundColor: getStatusColor(session?.status) }]} />
+              <Text style={[s.pillTxt, { color: getStatusColor(session?.status) }]}>
+                {getStatusLabel(session?.status)}
+              </Text>
+            </View>
+          </View>
 
-          <View style={styles.buttonRow}>
-            <GradientButton
+          <View style={s.btnRow}>
+            <Btn
               label="Start My Day"
-              onPress={handleStartDay}
+              onPress={() => setShowVehiclePicker(true)}
               disabled={!startEnabled || actionLoading}
               loading={actionLoading && startEnabled}
-              style={styles.actionButton}
+              style={{ flex: 1 }}
+              icon={<Play size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
             />
-            <TouchableOpacity
-              style={[styles.dangerBtn, { backgroundColor: T.danger }, (!endEnabled || actionLoading) && styles.btnDisabled]}
-              onPress={handleEndDay}
+            <Btn
+              label="End Day"
+              variant="danger"
+              onPress={() => setConfirmEnd(true)}
               disabled={!endEnabled || actionLoading}
-              activeOpacity={0.9}
-            >
-              {actionLoading && endEnabled
-                ? <ActivityIndicator color="#FFF" />
-                : <Text style={styles.dangerBtnText}>End Day</Text>}
-            </TouchableOpacity>
+              loading={actionLoading && endEnabled}
+              style={{ flex: 1 }}
+              icon={<Square size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+            />
+          </View>
+
+          <View style={s.tileGrid}>
+            <Tile
+              wide={wide}
+              label="Today's Distance"
+              value={`${session?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`}
+              icon={<Navigation size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+              tint={T.accent}
+            />
+            <Tile
+              wide={wide}
+              label="Today's Allowance"
+              value={formatCurrency(session?.allowanceAmount ?? 0)}
+              icon={<Wallet size={14} color={T.success} strokeWidth={ICON_STROKE} />}
+              tint={T.success}
+            />
+            <Tile
+              wide={wide}
+              label="Session Status"
+              value={getStatusLabel(session?.status)}
+              icon={<View style={[s.pillDot, { backgroundColor: getStatusColor(session?.status) }]} />}
+              tint={getStatusColor(session?.status)}
+            />
+            <Tile
+              wide={wide}
+              label="Session Time"
+              value={session ? getSessionDuration(session) : DASH}
+              icon={<Clock size={14} color={T.info} strokeWidth={ICON_STROKE} />}
+              tint={T.info}
+            />
           </View>
 
           {session?.status === 'ended' && (
-            <View style={[styles.inlineBanner, { backgroundColor: T.success + '18' }]}>
-              <Check size={16} color={T.success} />
-              <Text style={[styles.inlineBannerText, { color: T.success }]}>Session ended. You can start again anytime.</Text>
+            <View style={[s.inline, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
+              <Check size={15} color={T.success} strokeWidth={ICON_STROKE} />
+              <Text style={[s.inlineTxt, { color: T.success }]}>Session ended. You can start again anytime.</Text>
             </View>
           )}
 
           {session?.isSuspicious && (
-            <View style={[styles.inlineBanner, { backgroundColor: T.danger + '18' }]}>
-              <AlertTriangle size={16} color={T.danger} />
-              <Text style={[styles.inlineBannerText, { color: T.danger }]}>Session flagged — fraud score: {session.fraudScore}</Text>
+            <View style={[s.inline, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+              <AlertTriangle size={15} color={T.danger} strokeWidth={ICON_STROKE} />
+              <Text style={[s.inlineTxt, { color: T.danger }]}>
+                Session flagged — fraud score: {session.fraudScore}/100
+              </Text>
             </View>
           )}
 
           {session?.status === 'ended' && session.rawDistanceKm != null && (
-            <View style={[styles.distanceBreakdown, { backgroundColor: T.cardAlt }]}>
-              <Text style={[styles.breakdownTitle, { color: T.accent }]}>Distance Breakdown</Text>
-              <View style={styles.breakdownRow}>
-                <Text style={[styles.breakdownLabel, { color: T.sub }]}>Raw GPS</Text>
-                <Text style={[styles.breakdownValue, { color: T.text }]}>{session.rawDistanceKm?.toFixed(2)} km</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={[styles.breakdownLabel, { color: T.sub }]}>After Noise Filter</Text>
-                <Text style={[styles.breakdownValue, { color: T.text }]}>{session.filteredDistanceKm?.toFixed(2)} km</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={[styles.breakdownLabel, { color: T.sub }]}>Reconstructed Path</Text>
-                <Text style={[styles.breakdownValue, styles.breakdownValueStrong, { color: T.text }]}>
-                  {session.reconstructedDistanceKm?.toFixed(2)} km
-                </Text>
+            <View style={[s.breakdown, { backgroundColor: T.cardAlt }]}>
+              <Text style={[s.breakdownTitle, { color: T.accent }]}>Distance Breakdown</Text>
+              <View style={s.breakdownRow}>
+                <View style={s.breakdownCell}>
+                  <Text style={[s.miniLabel, { color: T.dim }]}>Raw GPS</Text>
+                  <Text style={[s.miniValue, { color: T.text }]}>{session.rawDistanceKm?.toFixed(2)} km</Text>
+                </View>
+                <View style={s.breakdownCell}>
+                  <Text style={[s.miniLabel, { color: T.dim }]}>After Filtering</Text>
+                  <Text style={[s.miniValue, { color: T.text }]}>{session.filteredDistanceKm?.toFixed(2)} km</Text>
+                </View>
+                <View style={s.breakdownCell}>
+                  <Text style={[s.miniLabel, { color: T.dim }]}>Reconstructed</Text>
+                  <Text style={[s.miniValue, { color: T.text }]}>{session.reconstructedDistanceKm?.toFixed(2)} km</Text>
+                </View>
               </View>
             </View>
           )}
-        </Card>
-
-        {/* KPI grid */}
-        <View style={styles.kpiGrid}>
-          <StatTile
-            label="Distance" value={`${session?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`}
-            icon={<Navigation size={15} color={T.accent} />} tint={T.accent} style={{ width: cardW }}
-          />
-          <StatTile
-            label="Allowance" value={formatCurrency(session?.allowanceAmount ?? 0)}
-            icon={<Wallet size={15} color={T.success} />} tint={T.success} style={{ width: cardW }}
-          />
-          <StatTile
-            label="Status" value={getStatusLabel(session?.status)}
-            icon={<View style={[styles.statTileDot, { backgroundColor: getStatusColor(session?.status) }]} />}
-            tint={getStatusColor(session?.status)} style={{ width: cardW }}
-          />
-          <StatTile
-            label="Session Time" value={session ? getSessionDuration(session) : '--'}
-            icon={<Clock size={15} color={T.info} />} tint={T.info} style={{ width: cardW }}
-          />
         </View>
 
-        {/* Tracking History */}
-        <Card>
-          <View style={styles.sectionHeaderRow}>
-            <Calendar size={18} color={T.accent} />
-            <SectionLabel style={{ marginTop: 0, marginBottom: 0 }}>Tracking History</SectionLabel>
+        {/* ── Tracking History ── */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.cardHead}>
+            <View style={s.titleRow}>
+              <Calendar size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+              <Text style={[s.cardTitle, { color: T.text }]}>My Tracking History</Text>
+            </View>
           </View>
 
-          <DateInput
-            value={selectedDate}
-            onChange={handleDateSelect}
-            placeholder="Select a date"
-            accentColor={T.accent}
-          />
+          <View style={wide ? s.dateWide : undefined}>
+            <DateInput
+              value={selectedDate}
+              onChange={handleDateSelect}
+              placeholder="Select a date"
+              accentColor={T.accent}
+            />
+          </View>
 
           {historyLoading ? (
-            <LoadingSpinner color={T.accent} message="Loading route..." />
+            <View style={s.loadWrap}>
+              <ActivityIndicator color={T.accent} />
+              <Text style={[s.loadTxt, { color: T.dim }]}>Loading route…</Text>
+            </View>
           ) : historySession ? (
-            <>
-              {/* Stats summary */}
-              <View style={styles.historySummary}>
-                <View style={styles.statsRow}>
-                  <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                    <Text style={[styles.statBoxLabel, { color: T.sub }]}>Distance</Text>
-                    <Text style={[styles.statBoxValue, { color: T.text }]}>{historySession.totalDistanceKm?.toFixed(1)} km</Text>
-                  </View>
-                  <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                    <Text style={[styles.statBoxLabel, { color: T.sub }]}>Allowance</Text>
-                    <Text style={[styles.statBoxValue, { color: T.text }]}>{formatCurrency(historySession.allowanceAmount)}</Text>
-                  </View>
-                </View>
-                <View style={styles.statsRow}>
-                  <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                    <Text style={[styles.statBoxLabel, { color: T.sub }]}>Start</Text>
-                    <Text style={[styles.statBoxValue, { color: T.text }]}>{formatTime(historySession.startedAt)}</Text>
-                  </View>
-                  <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                    <Text style={[styles.statBoxLabel, { color: T.sub }]}>End</Text>
-                    <Text style={[styles.statBoxValue, { color: T.text }]}>{historySession.endedAt ? formatTime(historySession.endedAt) : '--'}</Text>
-                  </View>
-                </View>
-                <View style={styles.statsRow}>
-                  <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                    <Text style={[styles.statBoxLabel, { color: T.sub }]}>Duration</Text>
-                    <Text style={[styles.statBoxValue, { color: T.text }]}>{getSessionDuration(historySession)}</Text>
-                  </View>
-                  {(historySession.fraudScore ?? 0) > 0 && (
-                    <View style={[styles.statBox, { backgroundColor: T.cardAlt }]}>
-                      <Text style={[styles.statBoxLabel, { color: T.sub }]}>Fraud Score</Text>
-                      <Text style={[styles.statBoxValue, { color: historySession.isSuspicious ? T.danger : T.text }]}>
-                        {historySession.fraudScore}/100
-                      </Text>
-                    </View>
-                  )}
-                </View>
+            <View style={wide ? s.histWide : s.histPhone}>
+              <View style={wide ? s.histSideWide : undefined}>
+                {renderHistoryStats()}
+                {renderPointList()}
               </View>
-
-              {/* Map */}
-              <View style={[styles.mapContainer, { borderColor: T.line, backgroundColor: T.cardAlt }]}>
-                {/* Map type selector */}
-                <View style={[styles.mapTypeRow, { backgroundColor: T.cardAlt, borderBottomColor: T.line }]}>
-                  {(['standard', 'satellite', 'terrain', 'hybrid'] as const).map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.mapTypeChip, { backgroundColor: mapType === type ? T.accent : T.card }]}
-                      onPress={() => setMapType(type)}
-                    >
-                      <Text style={[styles.mapTypeText, { color: mapType === type ? T.onAccent : T.sub }]}>
-                        {type === 'standard' ? 'Default' : type.charAt(0).toUpperCase() + type.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <MapView
-                  ref={mapRef}
-                  style={[styles.map, { backgroundColor: T.cardAlt }]}
-                  mapType={mapType}
-                  initialRegion={{ latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 }}
-                >
-                  {routePoints.filter(p => !p.isFiltered).length > 1 && (
-                    <Polyline
-                      coordinates={routePoints.filter(p => !p.isFiltered).map(p => ({ latitude: p.lat, longitude: p.lon }))}
-                      strokeColor={T.accent}
-                      strokeWidth={4}
-                    />
-                  )}
-                  {routePoints.filter(p => !p.isFiltered).length > 0 && (
-                    <Marker
-                      coordinate={{ latitude: routePoints.filter(p => !p.isFiltered)[0].lat, longitude: routePoints.filter(p => !p.isFiltered)[0].lon }}
-                      pinColor={T.success}
-                      title="Start"
-                    />
-                  )}
-                  {routePoints.filter(p => !p.isFiltered).length > 1 && (
-                    <Marker
-                      coordinate={{
-                        latitude: routePoints.filter(p => !p.isFiltered)[routePoints.filter(p => !p.isFiltered).length - 1].lat,
-                        longitude: routePoints.filter(p => !p.isFiltered)[routePoints.filter(p => !p.isFiltered).length - 1].lon,
-                      }}
-                      pinColor={T.danger}
-                      title="End"
-                    />
-                  )}
-                </MapView>
-              </View>
-
-              {/* Route Points Accordion */}
-              {routePoints.length > 0 && (
-                <View style={[styles.routePointsContainer, { borderTopColor: T.line }]}>
-                  <TouchableOpacity
-                    style={styles.routePointsHeader}
-                    onPress={() => setRoutePointsExpanded(e => !e)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.routePointsTitle, { color: T.text }]}>Route Points ({routePoints.length})</Text>
-                    {routePointsExpanded
-                      ? <ChevronDown size={18} color={T.sub} />
-                      : <ChevronRight size={18} color={T.sub} />
-                    }
-                  </TouchableOpacity>
-                  {routePointsExpanded && (
-                    <>
-                      {routePoints.slice(0, 100).map((pt, idx) => (
-                        <View key={idx} style={[styles.routePointRow, { borderBottomColor: T.line }]}>
-                          <View style={[styles.routePointDot, { backgroundColor: pt.isFiltered ? T.dim : T.success }]} />
-                          <Text style={[styles.routePointCoords, { color: T.sub }]}>
-                            {pt.lat.toFixed(5)}, {pt.lon.toFixed(5)}
-                          </Text>
-                          <Text style={[styles.routePointTime, { color: T.dim }]}>{formatTime(pt.recordedAt)}</Text>
-                        </View>
-                      ))}
-                      {routePoints.length > 100 && (
-                        <Text style={[styles.routePointsMore, { color: T.dim }]}>+{routePoints.length - 100} more points</Text>
-                      )}
-                    </>
-                  )}
-                </View>
-              )}
-            </>
+              {renderMap()}
+            </View>
           ) : (
-            <EmptyState title="No tracking data" subtitle="No route data available for this date." icon="📍" />
+            <Empty title="No tracking data" subtitle="No route data was recorded for this date." />
           )}
-        </Card>
+        </View>
 
-        {/* Allowances */}
-        <Card>
-          <SectionLabel style={{ marginTop: 0 }}>This Month's Allowances</SectionLabel>
+        {/* ── This Month's Allowances ── */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.cardHead}>
+            <View style={s.titleRow}>
+              <Wallet size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+              <Text style={[s.cardTitle, { color: T.text }]}>This Month's Allowances</Text>
+            </View>
+          </View>
+
           {allowancesLoading ? (
-            <LoadingSpinner color={T.accent} />
+            <View style={s.loadWrap}>
+              <ActivityIndicator color={T.accent} />
+            </View>
           ) : allowances.length === 0 ? (
-            <EmptyState title="No allowances" subtitle="No allowance records for this month." icon="💰" />
+            <Empty title="No allowances" subtitle="No allowance records for this month yet." />
           ) : (
             allowances.map((a, i, arr) => (
-              <View key={a.id} style={[styles.allowanceRow, i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}>
-                <View style={styles.allowanceInfo}>
-                  <Text style={[styles.allowanceDate, { color: T.text }]}>{formatDate(a.allowanceDate)}</Text>
-                  <Text style={[styles.allowanceMeta, { color: T.dim }]}>{a.distanceKm.toFixed(1)} km</Text>
+              <View
+                key={a.id}
+                style={[
+                  s.allowRow,
+                  i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.allowDate, { color: T.text }]} numberOfLines={1}>{formatDate(a.allowanceDate)}</Text>
+                  <Text style={[s.allowMeta, { color: T.dim }]} numberOfLines={1}>{a.distanceKm.toFixed(1)} km</Text>
                 </View>
-                <View style={styles.allowanceRight}>
-                  <Text style={[styles.allowanceAmount, { color: T.text }]}>{formatCurrency(a.grossAmount)}</Text>
-                  <Badge label={a.approved ? 'Approved' : 'Pending'} color={a.approved ? T.success : T.warning} />
+                <View style={s.allowRight}>
+                  <Text style={[s.allowAmt, { color: T.text }]}>{formatCurrency(a.grossAmount)}</Text>
+                  <StatusBadge label={a.approved ? 'Approved' : 'Pending'} color={a.approved ? T.success : T.warning} />
                 </View>
               </View>
             ))
           )}
-        </Card>
+        </View>
       </ScrollView>
+
+      <ConfirmModal
+        visible={confirmEnd}
+        tone="danger"
+        title="End Your Day?"
+        message="This will stop location tracking and calculate your travel allowance."
+        icon={<Square size={22} color={T.danger} strokeWidth={ICON_STROKE} />}
+        confirmLabel="End Day"
+        onConfirm={handleEndDay}
+        onCancel={() => setConfirmEnd(false)}
+      />
+
+      <FormModal
+        visible={showVehiclePicker}
+        title="Select Your Vehicle"
+        onClose={() => setShowVehiclePicker(false)}
+        footer={
+          <>
+            <View style={{ flex: 1 }} />
+            <Btn label="Cancel" variant="secondary" small onPress={() => setShowVehiclePicker(false)} />
+            <Btn
+              label="Start My Day"
+              small
+              onPress={() => { setShowVehiclePicker(false); handleStartDay(selectedVehicle); }}
+            />
+          </>
+        }
+      >
+        <Text style={[s.vehHint, { color: T.sub }]}>
+          Your allowance rate will be set based on the vehicle you select.
+        </Text>
+        {VEHICLE_OPTIONS.map(v => {
+          const on = selectedVehicle === v.value;
+          return (
+            <TouchableOpacity
+              key={v.value}
+              activeOpacity={0.8}
+              onPress={() => setSelectedVehicle(v.value)}
+              style={[
+                s.vehRow,
+                { borderColor: on ? T.accent : T.line, backgroundColor: on ? T.accentSoft : T.cardAlt },
+              ]}
+            >
+              <Text style={[s.vehTxt, { color: on ? T.accent : T.text, fontWeight: on ? '700' : '500' }]}>
+                {v.label}
+              </Text>
+              {on && <Check size={16} color={T.accent} strokeWidth={2.4} />}
+            </TouchableOpacity>
+          );
+        })}
+      </FormModal>
 
       {/* Prominent Disclosure modal — required by Google Play before background location request */}
       <BackgroundLocationDisclosure
@@ -965,103 +1136,98 @@ export const MyDayTrackingScreen = () => {
           bgPermissionResolveRef.current = null;
         }}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerText: { flex: 1 },
-  headerTitle: { fontFamily: Fonts.bold, fontSize: rf(20), color: '#FFF', letterSpacing: -0.3 },
-  headerSub: { fontFamily: Fonts.regular, fontSize: rf(12.5), color: 'rgba(255,255,255,0.8)', marginTop: 1 },
-  statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100,
-    paddingHorizontal: 10, paddingVertical: 6,
-  },
-  statusPillDot: { width: 8, height: 8, borderRadius: 4 },
-  statusPillText: { fontFamily: Fonts.bold, fontSize: rf(11.5), color: '#8C5A2E' },
+// ─── Styles (layout only — every colour comes from the theme, inline) ─────────
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12, paddingBottom: 28 },
+  scrollWide: { paddingHorizontal: 22 },
 
-  scroll: { flex: 1 },
-  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  statTileDot: { width: 12, height: 12, borderRadius: 6 },
+  loadWrap: { paddingVertical: 34, alignItems: 'center', gap: 8 },
+  loadTxt: { fontSize: rf(12.5), fontWeight: '500' },
 
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  // card — matches SchoolsListScreen: r16 · 1px line · pad 12 · gap 10
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 },
+  cardTitle: { fontSize: rf(14.5), fontWeight: '700' },
+  cardSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
 
-  buttonRow: { flexDirection: 'row', gap: 12, marginTop: 4 },
-  actionButton: { flex: 1 },
-  dangerBtn: { flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  dangerBtnText: { fontFamily: Fonts.bold, fontSize: rf(16), color: '#FFF', letterSpacing: 0.2 },
-  btnDisabled: { opacity: 0.5 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
+  pillDot: { width: 8, height: 8, borderRadius: 4 },
+  pillTxt: { fontSize: rf(11), fontWeight: '700' },
 
-  inlineBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 12, padding: 12, marginTop: 12,
-  },
-  inlineBannerText: { fontFamily: Fonts.medium, fontSize: rf(13), flex: 1 },
-
-  statusBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 12, padding: 12,
-  },
-  statusBannerText: { fontFamily: Fonts.medium, fontSize: rf(12) },
-
-  locationBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderRadius: 14, padding: 14, borderWidth: 1,
-  },
-  locationBannerTitle: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  locationBannerSubtitle: { fontFamily: Fonts.regular, fontSize: rf(11), marginTop: 2 },
-  locationBannerActionWrap: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  locationBannerAction: { fontFamily: Fonts.bold, fontSize: rf(12) },
-
-  distanceBreakdown: { marginTop: 16, borderRadius: 14, padding: 14 },
-  breakdownTitle: { fontFamily: Fonts.bold, fontSize: rf(13), marginBottom: 10 },
-  breakdownRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4,
-  },
-  breakdownLabel: { fontFamily: Fonts.regular, fontSize: rf(12) },
-  breakdownValue: { fontFamily: Fonts.medium, fontSize: rf(12) },
-  breakdownValueStrong: { fontFamily: Fonts.bold },
-
-  historySummary: { marginTop: 12, gap: 10 },
-  statsRow: { flexDirection: 'row', gap: 10 },
-  statBox: { flex: 1, borderRadius: 12, padding: 12 },
-  statBoxLabel: { fontFamily: Fonts.medium, fontSize: rf(11), marginBottom: 4 },
-  statBoxValue: { fontFamily: Fonts.bold, fontSize: rf(14) },
-
-  mapContainer: { marginTop: 14, borderRadius: 14, overflow: 'hidden', borderWidth: 1 },
-  mapTypeRow: {
-    flexDirection: 'row', gap: 6, padding: 8, borderBottomWidth: 1,
-  },
-  mapTypeChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  mapTypeText: { fontFamily: Fonts.medium, fontSize: rf(11) },
-  map: { height: 220 },
-
-  routePointsContainer: { marginTop: 14, borderTopWidth: 1, paddingTop: 12 },
-  routePointsHeader: {
+  // Vehicle picker (spec: r13 field face, 1.5px border, soft tint + check when on)
+  vehHint: { fontSize: rf(12), lineHeight: 17, marginBottom: 12 },
+  vehRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 4, marginBottom: 4,
+    minHeight: 46, paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 13, borderWidth: 1.5, marginBottom: 8,
   },
-  routePointsTitle: { fontFamily: Fonts.bold, fontSize: rf(13) },
-  routePointRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 5, borderBottomWidth: 1,
-  },
-  routePointDot: { width: 8, height: 8, borderRadius: 4 },
-  routePointCoords: { flex: 1, fontSize: rf(11), fontFamily: 'monospace' },
-  routePointTime: { fontFamily: Fonts.regular, fontSize: rf(11) },
-  routePointsMore: { fontFamily: Fonts.regular, fontSize: rf(12), textAlign: 'center', paddingVertical: 8, fontStyle: 'italic' },
+  vehTxt: { fontSize: rf(13), flex: 1 },
 
-  allowanceRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 12,
-  },
-  allowanceInfo: { flex: 1 },
-  allowanceDate: { fontFamily: Fonts.medium, fontSize: rf(13) },
-  allowanceMeta: { fontFamily: Fonts.regular, fontSize: rf(12), marginTop: 2 },
-  allowanceRight: { alignItems: 'flex-end', gap: 4 },
-  allowanceAmount: { fontFamily: Fonts.bold, fontSize: rf(14) },
+  btnRow: { flexDirection: 'row', gap: 10 },
+
+  // Tiles wrap by flex-basis — 4-up on iPad landscape, 2-up on a phone. No window math,
+  // so nothing can be clipped or leave a dead column at any width.
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile: { borderRadius: 13, borderWidth: 1, padding: 11, gap: 7, flexGrow: 1 },
+  tileWide: { flexBasis: '22%' },
+  tilePhone: { flexBasis: '46%' },
+  tileTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  tileIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  tileLabel: { fontSize: rf(11), fontWeight: '600', flex: 1 },
+  tileValue: { fontSize: rf(16), fontWeight: '700', letterSpacing: -0.2 },
+
+  inline: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, padding: 11 },
+  inlineTxt: { fontSize: rf(12.5), fontWeight: '600', flex: 1 },
+
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 12 },
+  bannerTitle: { fontSize: rf(12.5), fontWeight: '700' },
+  bannerTxt: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  bannerAction: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 9 },
+  bannerActionTxt: { fontSize: rf(11.5), fontWeight: '700' },
+
+  breakdown: { borderRadius: 13, padding: 12, gap: 9 },
+  breakdownTitle: { fontSize: rf(12), fontWeight: '700' },
+  breakdownRow: { flexDirection: 'row', gap: 10 },
+  breakdownCell: { flex: 1, gap: 2 },
+
+  // history — iPad puts the summary/points beside the map (web parity: 260px rail + flex map)
+  histPhone: { gap: 12 },
+  histWide: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  histSideWide: { width: 268, flexShrink: 0, gap: 12 },
+  dateWide: { maxWidth: 320 },
+
+  histStats: { gap: 8 },
+  miniRow: { flexDirection: 'row', gap: 8 },
+  mini: { flex: 1, borderRadius: 12, padding: 10, gap: 2 },
+  miniLabel: { fontSize: rf(10.5), fontWeight: '600' },
+  miniValue: { fontSize: rf(13.5), fontWeight: '700' },
+
+  pointsWrap: { gap: 6 },
+  pointsTitle: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  pointsScroll: { maxHeight: POINT_LIST_H, borderRadius: 12, borderWidth: 1 },
+  pointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  pointDot: { width: 7, height: 7, borderRadius: 3.5 },
+  pointCoords: { flex: 1, fontSize: rf(11), fontWeight: '500' },
+  pointTime: { fontSize: rf(10.5), fontWeight: '500' },
+  pointsMore: { fontSize: rf(11), fontWeight: '500', textAlign: 'center', paddingVertical: 8 },
+
+  mapCol: { flex: 1, minWidth: 0, gap: 8 },
+  mapWrap: { height: 260, borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  mapWrapWide: { height: 420 },
+
+  empty: { borderRadius: 14, borderWidth: 1, paddingVertical: 34, paddingHorizontal: 16, alignItems: 'center', gap: 7 },
+  emptyTitle: { fontSize: rf(13.5), fontWeight: '700' },
+  emptyTxt: { fontSize: rf(12), fontWeight: '500', textAlign: 'center' },
+
+  allowRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
+  allowDate: { fontSize: rf(13), fontWeight: '600' },
+  allowMeta: { fontSize: rf(11.5), fontWeight: '500', marginTop: 2 },
+  allowRight: { alignItems: 'flex-end', gap: 5 },
+  allowAmt: { fontSize: rf(13.5), fontWeight: '700' },
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet, TouchableOpacity, ActivityIndicator, View } from 'react-native';
 import { ScanFace, FingerprintPattern } from 'lucide-react-native';
-import { AuthTheme, Fonts } from '../../theme';
+import { AuthTheme } from '../../theme';
 import { rf } from '../../utils/responsive';
 import type { BiometricType } from '../../services/biometricService';
 
@@ -43,13 +43,14 @@ export const BiometricButton = ({ theme: T, label, biometryType, loading, disabl
 
 const styles = StyleSheet.create({
   btn: {
-    height: 52,
-    borderRadius: 14,
+    // spec "Buttons & actions" → Secondary: 44px · radius 13 · 1.5px border · 13.5/700
+    height: 44,
+    borderRadius: 13,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  txt: { fontFamily: Fonts.bold, fontSize: rf(15) },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  txt: { fontWeight: '700', fontSize: rf(13.5) },
 });
