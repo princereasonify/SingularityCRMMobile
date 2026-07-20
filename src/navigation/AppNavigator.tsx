@@ -20,6 +20,7 @@ import messaging from '@react-native-firebase/messaging';
 import { requestFCMPermission } from '../services/pushNotificationService';
 
 import { useAuth } from '../context/AuthContext';
+import { RoleSplash } from '../components/splash/RoleSplash';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ROLE_COLORS } from '../utils/constants';
 import { rf, isTabletDevice } from '../utils/responsive';
@@ -452,7 +453,7 @@ const notifBannerStyles = StyleSheet.create({
 
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export const AppNavigator = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, justLoggedIn, clearJustLoggedIn } = useAuth();
 
   // Apply the per-device orientation lock (tablet → landscape, phone → portrait)
   // for whichever flow is active. This also covers the app starting already
@@ -543,6 +544,12 @@ export const AppNavigator = () => {
           </>
         )}
       </Stack.Navigator>
+      {/* Role splash — plays once over the freshly-mounted app after an
+          interactive login. The app renders underneath meanwhile, so there is no
+          second loading beat when the splash clears. */}
+      {user && justLoggedIn && (
+        <RoleSplash role={user.role} onComplete={clearJustLoggedIn} />
+      )}
     </NavigationContainer>
   );
 };

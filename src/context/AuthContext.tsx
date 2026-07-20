@@ -28,6 +28,14 @@ interface AuthContextType {
   user: UserDto | null;
   token: string | null;
   isLoading: boolean;
+  /**
+   * True only after an interactive `login()` — NOT when a saved session is
+   * restored on app launch. The role splash reads this so reopening the app
+   * doesn't replay a 6.6s animation every time.
+   */
+  justLoggedIn: boolean;
+  /** Called by the splash once it has finished playing. */
+  clearJustLoggedIn: () => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -40,6 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserDto | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
   const isLoggingOut = useRef(false);
 
   // clearSession: wipes local state only — safe to call from the 401 handler.
@@ -147,6 +156,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     setToken(token);
     setUser(user);
+    setJustLoggedIn(true); // arms the role splash; bootstrap() never sets this
 
     // A tracking service left over from a previous session still holds the old
     // token; overwrite it now so it doesn't 401 its way through the new session.
@@ -157,7 +167,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        user, token, isLoading, login, logout,
+        justLoggedIn,
+        clearJustLoggedIn: () => setJustLoggedIn(false),
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
