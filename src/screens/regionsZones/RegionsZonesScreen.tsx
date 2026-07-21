@@ -1,140 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
-  TextInput, ActivityIndicator, FlatList,
+  View, Text, ScrollView, StyleSheet, Alert, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Pencil, Trash2, Map, MapPin, X, Check, Info } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, Map, MapPin, Check, Info } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { authApi } from '../../api/auth';
-import { SelectPicker } from '../../components/common/SelectPicker';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
-import { rf } from '../../utils/responsive';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge,
+  ListCard, FormModal, ConfirmModal,
+} from '../../components/crud';
+import { useAppTheme } from '../../theme/useAppTheme';
+import type { AppTheme } from '../../theme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
-// ─── Edit Modal ──────────────────────────────────────────────────────────────
-
-function EditModal({ visible, item, regions, isRhScoped, onClose, onSave, saving }: any) {
-  const [name, setName] = useState(item?.name || '');
-  const [regionId, setRegionId] = useState(item?.regionId ? String(item.regionId) : '');
-
-  useEffect(() => {
-    setName(item?.name || '');
-    setRegionId(item?.regionId ? String(item.regionId) : '');
-  }, [item]);
-
-  const regionOptions = regions.map((r: any) => ({ value: String(r.id), label: r.name }));
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={em.overlay}>
-        <View style={em.box}>
-          <View style={em.header}>
-            <Text style={em.title}>Edit {item?.type === 'region' ? 'Region' : 'Zone'}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={20} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-          <Text style={em.label}>Name</Text>
-          <TextInput
-            style={em.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Name"
-            placeholderTextColor="#9CA3AF"
-          />
-          {item?.type === 'zone' && (
-            <SelectPicker
-              label="Region"
-              options={regionOptions}
-              value={regionId}
-              onChange={v => setRegionId(String(v))}
-              accentColor="#0D9488"
-              containerStyle={{ marginTop: 4 }}
-            />
-          )}
-          <View style={em.actions}>
-            <TouchableOpacity style={em.cancelBtn} onPress={onClose}>
-              <Text style={em.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[em.saveBtn, saving && { opacity: 0.6 }]}
-              disabled={saving}
-              onPress={() => {
-                if (!name.trim()) { Alert.alert('Error', 'Name is required'); return; }
-                if (item?.type === 'zone' && !regionId) { Alert.alert('Error', 'Region is required'); return; }
-                onSave(name.trim(), regionId ? Number(regionId) : undefined);
-              }}
-            >
-              {saving ? <ActivityIndicator color="#FFF" size="small" /> : <Check size={14} color="#FFF" />}
-              <Text style={em.saveText}>{saving ? 'Saving...' : 'Save'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const em = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  box: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
-  label: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: rf(14), color: '#111827', marginBottom: 8 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  cancelText: { fontSize: rf(14), fontWeight: '600', color: '#374151' },
-  saveBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#0D9488', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  saveText: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
-});
-
-// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
-
-function DeleteModal({ visible, item, onClose, onDelete, deleting }: any) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={dm.overlay}>
-        <View style={dm.box}>
-          <View style={dm.iconWrap}>
-            <Trash2 size={24} color="#DC2626" />
-          </View>
-          <Text style={dm.title}>Delete {item?.type === 'region' ? 'Region' : 'Zone'}</Text>
-          <Text style={dm.msg}>Delete <Text style={{ fontWeight: '700' }}>{item?.name}</Text>? This cannot be undone.</Text>
-          <View style={dm.actions}>
-            <TouchableOpacity style={dm.cancelBtn} onPress={onClose}>
-              <Text style={dm.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[dm.deleteBtn, deleting && { opacity: 0.6 }]} onPress={onDelete} disabled={deleting}>
-              <Text style={dm.deleteText}>{deleting ? 'Deleting...' : 'Delete'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const dm = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  box: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 360, alignItems: 'center' },
-  iconWrap: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  title: { fontSize: rf(16), fontWeight: '700', color: '#111827', marginBottom: 6 },
-  msg: { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginBottom: 20 },
-  actions: { flexDirection: 'row', gap: 10, width: '100%' },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  cancelText: { fontSize: rf(14), fontWeight: '600', color: '#374151' },
-  deleteBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#DC2626', alignItems: 'center' },
-  deleteText: { fontSize: rf(14), fontWeight: '600', color: '#FFF' },
-});
+const DASH = '—';
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export const RegionsZonesScreen = () => {
   const { user } = useAuth();
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+  /** iPad gets a real table; phones get list rows. */
+  const table = isTabletDevice;
+
   const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
 
   const canManageRegions = role === 'SH' || role === 'SCA';
   const canManageZones = ['RH', 'SH', 'SCA'].includes(role);
@@ -145,17 +40,24 @@ export const RegionsZonesScreen = () => {
   const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  const [newRegion, setNewRegion] = useState('');
+  const [zoneRegionFilter, setZoneRegionFilter] = useState('ALL');
+  const [openFilterDd, setOpenFilterDd] = useState(false);
+
+  // Region create/edit modal
+  const [showRegionModal, setShowRegionModal] = useState(false);
+  const [editingRegion, setEditingRegion] = useState<any>(null);
+  const [regionName, setRegionName] = useState('');
   const [savingRegion, setSavingRegion] = useState(false);
 
-  const [newZone, setNewZone] = useState('');
-  const [newZoneRegionId, setNewZoneRegionId] = useState('');
+  // Zone create/edit modal
+  const [showZoneModal, setShowZoneModal] = useState(false);
+  const [editingZone, setEditingZone] = useState<any>(null);
+  const [zoneName, setZoneName] = useState('');
+  const [zoneRegionId, setZoneRegionId] = useState('');
+  const [openZoneDd, setOpenZoneDd] = useState(false);
   const [savingZone, setSavingZone] = useState(false);
 
-  const [zoneRegionFilter, setZoneRegionFilter] = useState('ALL');
-
-  const [editItem, setEditItem] = useState<any>(null);
-  const [editSaving, setEditSaving] = useState(false);
+  // Delete confirm
   const [deleteItem, setDeleteItem] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -163,7 +65,6 @@ export const RegionsZonesScreen = () => {
 
   useEffect(() => {
     if (isRhScoped && user?.regionId) {
-      setNewZoneRegionId(String(user.regionId));
       setZoneRegionFilter(String(user.regionId));
     }
   }, [isRhScoped, user?.regionId]);
@@ -180,8 +81,8 @@ export const RegionsZonesScreen = () => {
         authApi.getRegions().catch(() => ({ data: [] })),
         authApi.getZones().catch(() => ({ data: [] })),
       ]);
-      setRegions(regRes.data || []);
-      setZones(zonesRes.data || []);
+      setRegions((regRes.data as any) || []);
+      setZones((zonesRes.data as any) || []);
     } finally {
       setLoading(false);
     }
@@ -203,58 +104,93 @@ export const RegionsZonesScreen = () => {
     return list;
   }, [zones, zoneRegionFilter, isRhScoped, user?.regionId]);
 
-  const handleCreateRegion = async () => {
-    const name = newRegion.trim();
+  const regionNameById = (id: any) => regions.find((r: any) => r.id === Number(id))?.name;
+
+  // Filter options — labels are NAMES (with counts), never ids.
+  const regionFilterOptions = [
+    { value: 'ALL', label: `All regions (${zones.length})` },
+    ...regions.map((r: any) => ({
+      value: String(r.id),
+      label: `${r.name} (${zones.filter((z: any) => z.regionId === r.id).length})`,
+    })),
+  ];
+  const filterLabel = regionFilterOptions.find(o => o.value === zoneRegionFilter)?.label || 'All regions';
+
+  // ── Region modal open/save ──────────────────────────────────────────────────
+  const openCreateRegion = () => {
+    setEditingRegion(null);
+    setRegionName('');
+    setShowRegionModal(true);
+  };
+  const openEditRegion = (r: any) => {
+    setEditingRegion(r);
+    setRegionName(r.name || '');
+    setShowRegionModal(true);
+  };
+  const saveRegion = async () => {
+    const name = regionName.trim();
     if (!name) return;
     setSavingRegion(true);
     try {
-      await authApi.createRegion(name);
-      setNewRegion('');
+      if (editingRegion) {
+        await authApi.updateRegion(editingRegion.id, name);
+        showFlash('success', 'Region updated');
+      } else {
+        await authApi.createRegion(name);
+        showFlash('success', `Region "${name}" created`);
+      }
+      setShowRegionModal(false);
       await refresh();
-      showFlash('success', `Region "${name}" created`);
     } catch (err: any) {
-      showFlash('error', err?.response?.data?.message || 'Failed to create region');
+      showFlash('error', err?.response?.data?.message || 'Failed to save region');
     } finally {
       setSavingRegion(false);
     }
   };
 
-  const handleCreateZone = async () => {
-    const name = newZone.trim();
-    if (!name || !newZoneRegionId) return;
+  // ── Zone modal open/save ────────────────────────────────────────────────────
+  const openCreateZone = () => {
+    setEditingZone(null);
+    setZoneName('');
+    setOpenZoneDd(false);
+    // RH is auto-pinned to their own region; others start empty (or the active filter).
+    setZoneRegionId(
+      isRhScoped && user?.regionId
+        ? String(user.regionId)
+        : (zoneRegionFilter !== 'ALL' ? zoneRegionFilter : ''),
+    );
+    setShowZoneModal(true);
+  };
+  const openEditZone = (z: any) => {
+    setEditingZone(z);
+    setZoneName(z.name || '');
+    setOpenZoneDd(false);
+    setZoneRegionId(z.regionId ? String(z.regionId) : '');
+    setShowZoneModal(true);
+  };
+  const saveZone = async () => {
+    const name = zoneName.trim();
+    const regionId = isRhScoped && user?.regionId ? Number(user.regionId) : Number(zoneRegionId);
+    if (!name || !regionId) return;
     setSavingZone(true);
     try {
-      await authApi.createZone(name, Number(newZoneRegionId));
-      setNewZone('');
-      if (!isRhScoped) setNewZoneRegionId('');
+      if (editingZone) {
+        await authApi.updateZone(editingZone.id, name, regionId);
+        showFlash('success', 'Zone updated');
+      } else {
+        await authApi.createZone(name, regionId);
+        showFlash('success', `Zone "${name}" created`);
+      }
+      setShowZoneModal(false);
       await refresh();
-      showFlash('success', `Zone "${name}" created`);
     } catch (err: any) {
-      showFlash('error', err?.response?.data?.message || 'Failed to create zone');
+      showFlash('error', err?.response?.data?.message || 'Failed to save zone');
     } finally {
       setSavingZone(false);
     }
   };
 
-  const handleEditSave = async (name: string, regionId?: number) => {
-    if (!editItem) return;
-    setEditSaving(true);
-    try {
-      if (editItem.type === 'region') {
-        await authApi.updateRegion(editItem.id, name);
-      } else {
-        await authApi.updateZone(editItem.id, name, regionId!);
-      }
-      setEditItem(null);
-      await refresh();
-      showFlash('success', `${editItem.type === 'region' ? 'Region' : 'Zone'} updated`);
-    } catch (err: any) {
-      showFlash('error', err?.response?.data?.message || 'Failed to update');
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
+  // ── Delete ──────────────────────────────────────────────────────────────────
   const handleDelete = async () => {
     if (!deleteItem) return;
     setDeleting(true);
@@ -269,6 +205,8 @@ export const RegionsZonesScreen = () => {
       await refresh();
       showFlash('success', `"${label}" deleted`);
     } catch (err: any) {
+      // Surface the backend guard clearly (e.g. RH deleting a zone with assigned users
+      // gets "Cannot delete zone with assigned users").
       showFlash('error', err?.response?.data?.message || 'Failed to delete');
       setDeleteItem(null);
     } finally {
@@ -276,241 +214,423 @@ export const RegionsZonesScreen = () => {
     }
   };
 
-  const regionFilterOptions = [
-    { value: 'ALL', label: `All regions (${zones.length})` },
-    ...regions.map(r => ({ value: String(r.id), label: `${r.name} (${zones.filter(z => z.regionId === r.id).length})` })),
-  ];
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading…" />;
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
+  // ── Shared bits ─────────────────────────────────────────────────────────────
+  const rowActions = (onEdit: () => void, onDelete: () => void) => (
+    <View style={s.actions}>
+      <IconBtn kind="edit" label="Edit" onPress={onEdit}>
+        <Edit2 size={14} color={T.sub} strokeWidth={ICON_STROKE} />
+      </IconBtn>
+      <IconBtn kind="del" label="Delete" onPress={onDelete}>
+        <Trash2 size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+      </IconBtn>
+    </View>
+  );
+
+  const iconTile = (color: string, icon: React.ReactNode) => (
+    <View style={[s.tile, { backgroundColor: withAlpha(color, SOFT_TINT) }]}>{icon}</View>
+  );
+
+  const emptyCard = (msg: string, icon: React.ReactNode) => (
+    <View style={[s.empty, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+      {icon}
+      <Text style={[s.emptyTxt, { color: T.dim }]}>{msg}</Text>
+    </View>
+  );
+
+  const infoBanner = (msg: string) => (
+    <View style={[s.notice, { backgroundColor: withAlpha(T.warning, 0.12), borderColor: withAlpha(T.warning, 0.2) }]}>
+      <Info size={14} color={T.warning} strokeWidth={ICON_STROKE} />
+      <Text style={[s.noticeTxt, { color: T.warning }]}>{msg}</Text>
+    </View>
+  );
+
+  // ── Regions: table (tablet) / rows (phone) ──────────────────────────────────
+  const renderRegionsTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cRegName]}>Region</Text>
+        <Text style={[s.th, { color: T.dim }, s.cCount]}>Zones</Text>
+        {canManageRegions && <Text style={[s.th, { color: T.dim }, s.cActions]}>Actions</Text>}
+      </View>
+      {visibleRegions.map((r: any) => (
+        <View key={r.id} style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}>
+          <View style={[s.cRegName, s.nameCell]}>
+            {iconTile(T.info, <Map size={15} color={T.info} strokeWidth={ICON_STROKE} />)}
+            <Text style={[s.tdName, { color: T.text, flexShrink: 1, minWidth: 0 }]} numberOfLines={1}>{r.name}</Text>
+          </View>
+          <View style={s.cCount}>
+            <StatusBadge label={`${r.zoneCount || 0}`} color={T.info} />
+          </View>
+          {canManageRegions && (
+            <View style={s.cActions}>
+              {rowActions(
+                () => openEditRegion(r),
+                () => setDeleteItem({ type: 'region', id: r.id, name: r.name }),
+              )}
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderRegionsRows = () => (
+    <View style={{ gap: 8 }}>
+      {visibleRegions.map((r: any) => (
+        <ListCard key={r.id}>
+          {iconTile(T.info, <Map size={16} color={T.info} strokeWidth={ICON_STROKE} />)}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>{r.name}</Text>
+            <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+              {r.zoneCount || 0} zone{(r.zoneCount || 0) === 1 ? '' : 's'}
+            </Text>
+          </View>
+          {canManageRegions && rowActions(
+            () => openEditRegion(r),
+            () => setDeleteItem({ type: 'region', id: r.id, name: r.name }),
+          )}
+        </ListCard>
+      ))}
+    </View>
+  );
+
+  // ── Zones: table (tablet) / rows (phone) ────────────────────────────────────
+  const renderZonesTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cZoneName]}>Zone</Text>
+        <Text style={[s.th, { color: T.dim }, s.cZoneRegion]}>Region</Text>
+        {canManageZones && <Text style={[s.th, { color: T.dim }, s.cActions]}>Actions</Text>}
+      </View>
+      {filteredZones.map((z: any) => (
+        <View key={z.id} style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}>
+          <View style={[s.cZoneName, s.nameCell]}>
+            {iconTile(T.accent, <MapPin size={15} color={T.accent} strokeWidth={ICON_STROKE} />)}
+            <Text style={[s.tdName, { color: T.text, flexShrink: 1, minWidth: 0 }]} numberOfLines={1}>{z.name}</Text>
+          </View>
+          <Text style={[s.td, { color: T.sub }, s.cZoneRegion]} numberOfLines={1}>
+            {z.region || regionNameById(z.regionId) || DASH}
+          </Text>
+          {canManageZones && (
+            <View style={s.cActions}>
+              {rowActions(
+                () => openEditZone(z),
+                () => setDeleteItem({ type: 'zone', id: z.id, name: z.name }),
+              )}
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderZonesRows = () => (
+    <View style={{ gap: 8 }}>
+      {filteredZones.map((z: any) => (
+        <ListCard key={z.id}>
+          {iconTile(T.accent, <MapPin size={16} color={T.accent} strokeWidth={ICON_STROKE} />)}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>{z.name}</Text>
+            <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+              {z.region || regionNameById(z.regionId) || 'No region'}
+            </Text>
+          </View>
+          {canManageZones && rowActions(
+            () => openEditZone(z),
+            () => setDeleteItem({ type: 'zone', id: z.id, name: z.name }),
+          )}
+        </ListCard>
+      ))}
+    </View>
+  );
+
+  // ── Section shells ──────────────────────────────────────────────────────────
+  const regionsSection = (
+    <View style={[s.section, wide && s.sectionCol, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={s.sectionHead}>
+        {iconTile(T.info, <Map size={18} color={T.info} strokeWidth={ICON_STROKE} />)}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[s.sectionTitle, { color: T.text }]} numberOfLines={1}>
+            Regions <Text style={{ color: T.dim, fontWeight: '500' }}>({visibleRegions.length})</Text>
+          </Text>
+          <Text style={[s.sectionSub, { color: T.dim }]} numberOfLines={1}>
+            {canManageRegions ? 'Top-level regions' : isRhScoped ? 'Your assigned region' : 'Managed by Sales Head'}
+          </Text>
+        </View>
+        {canManageRegions && (
+          <Btn
+            label="Add"
+            small
+            onPress={openCreateRegion}
+            icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
+          />
+        )}
+      </View>
+
+      {visibleRegions.length === 0
+        ? emptyCard(
+            canManageRegions ? 'No regions yet. Add one to get started.' : 'No region assigned.',
+            <Map size={26} color={T.dim} strokeWidth={ICON_STROKE} />,
+          )
+        : table ? renderRegionsTable() : renderRegionsRows()}
+    </View>
+  );
+
+  const zonesSection = (
+    <View style={[s.section, wide && s.sectionCol, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={s.sectionHead}>
+        {iconTile(T.accent, <MapPin size={18} color={T.accent} strokeWidth={ICON_STROKE} />)}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[s.sectionTitle, { color: T.text }]} numberOfLines={1}>
+            Zones <Text style={{ color: T.dim, fontWeight: '500' }}>({filteredZones.length})</Text>
+          </Text>
+          <Text style={[s.sectionSub, { color: T.dim }]} numberOfLines={1}>
+            {canManageZones ? 'Add zones to a region' : 'Read-only'}
+          </Text>
+        </View>
+        {canManageZones && selectableRegions.length > 0 && (
+          <Btn
+            label="Add"
+            small
+            onPress={openCreateZone}
+            icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
+          />
+        )}
+      </View>
+
+      {canManageZones && selectableRegions.length === 0 &&
+        infoBanner(isRhScoped ? 'No region is assigned to you.' : 'Add at least one region before creating zones.')}
+
+      {/* Region filter — names + counts, never ids (non-RH only). */}
+      {!isRhScoped && regions.length > 0 && zones.length > 0 && (
+        <Field style={{ zIndex: 20 }}>
+          <Trigger
+            label={filterLabel}
+            open={openFilterDd}
+            onPress={() => setOpenFilterDd(v => !v)}
+          />
+          {openFilterDd && (
+            <Dropdown
+              style={s.ddFull}
+              maxHeight={260}
+              value={zoneRegionFilter}
+              onSelect={(v) => { setZoneRegionFilter(String(v)); setOpenFilterDd(false); }}
+              options={regionFilterOptions}
+            />
+          )}
+        </Field>
+      )}
+
+      {filteredZones.length === 0
+        ? emptyCard(
+            zones.length === 0 ? 'No zones yet.' : 'No zones in this region.',
+            <MapPin size={26} color={T.dim} strokeWidth={ICON_STROKE} />,
+          )
+        : table ? renderZonesTable() : renderZonesRows()}
+    </View>
+  );
+
+  // ── Zone modal: region trigger label ────────────────────────────────────────
+  const zoneRegionOptions = selectableRegions.map((r: any) => ({ label: r.name, value: String(r.id) }));
+  const zoneRegionLabel = zoneRegionOptions.find(o => o.value === zoneRegionId)?.label || 'Select a region…';
 
   return (
-    <SafeAreaView style={s.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={s.content}>
-        {/* Title */}
-        <Text style={s.pageTitle}>Regions & Zones</Text>
-        <Text style={s.pageSub}>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <ScrollView contentContainerStyle={[s.scroll, wide && s.scrollWide]} keyboardShouldPersistTaps="handled">
+        <Text style={[s.pageSub, { color: T.sub }]}>
           {canManageRegions
             ? 'Add regions first, then zones. Used when assigning users.'
-            : 'Add zones to your managed regions.'}
+            : 'Add zones to your managed region.'}
         </Text>
 
-        {/* Flash */}
         {flash && (
-          <View style={[s.flashBanner, { backgroundColor: flash.type === 'success' ? '#D1FAE5' : '#FEE2E2' }]}>
-            {flash.type === 'success' ? <Check size={14} color="#059669" /> : <Info size={14} color="#DC2626" />}
-            <Text style={[s.flashText, { color: flash.type === 'success' ? '#059669' : '#DC2626' }]}>{flash.msg}</Text>
+          <View
+            style={[
+              s.flash,
+              {
+                backgroundColor: withAlpha(flash.type === 'success' ? T.success : T.danger, 0.12),
+                borderColor: withAlpha(flash.type === 'success' ? T.success : T.danger, 0.2),
+              },
+            ]}
+          >
+            {flash.type === 'success'
+              ? <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+              : <Info size={14} color={T.danger} strokeWidth={ICON_STROKE} />}
+            <Text style={[s.flashTxt, { color: flash.type === 'success' ? T.success : T.danger }]}>{flash.msg}</Text>
           </View>
         )}
 
-        {/* ─── REGIONS ─── */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <View style={[s.sectionIcon, { backgroundColor: '#DBEAFE' }]}>
-              <Map size={18} color="#2563EB" />
-            </View>
-            <View>
-              <Text style={s.sectionTitle}><Text style={{ color: '#2563EB', fontWeight: '800' }}>1. </Text>Regions <Text style={s.sectionCount}>({visibleRegions.length})</Text></Text>
-              <Text style={s.sectionSub}>{canManageRegions ? 'Top-level regions' : isRhScoped ? 'Your assigned region' : 'Managed by Sales Head'}</Text>
-            </View>
-          </View>
-
-          {canManageRegions && (
-            <View style={s.addRow}>
-              <TextInput
-                style={s.addInput}
-                value={newRegion}
-                onChangeText={setNewRegion}
-                placeholder="e.g. Gujarat"
-                placeholderTextColor="#9CA3AF"
-                editable={!savingRegion}
-              />
-              <TouchableOpacity
-                style={[s.addBtn, { backgroundColor: '#2563EB' }, (!newRegion.trim() || savingRegion) && { opacity: 0.5 }]}
-                onPress={handleCreateRegion}
-                disabled={!newRegion.trim() || savingRegion}
-              >
-                {savingRegion ? <ActivityIndicator color="#FFF" size="small" /> : <Plus size={18} color="#FFF" />}
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {visibleRegions.length === 0 ? (
-            <View style={s.emptySmall}>
-              <Map size={24} color="#D1D5DB" />
-              <Text style={s.emptySmallText}>{canManageRegions ? 'No regions yet. Add one above.' : 'No region assigned.'}</Text>
-            </View>
-          ) : (
-            visibleRegions.map((r: any) => (
-              <View key={r.id} style={s.listItem}>
-                <View style={[s.itemIcon, { backgroundColor: '#DBEAFE' }]}>
-                  <Map size={13} color="#2563EB" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.itemName}>{r.name}</Text>
-                  <Text style={s.itemSub}>{r.zoneCount || 0} zone{(r.zoneCount || 0) === 1 ? '' : 's'}</Text>
-                </View>
-                {canManageRegions && (
-                  <View style={s.itemActions}>
-                    <TouchableOpacity style={s.editBtn} onPress={() => setEditItem({ type: 'region', id: r.id, name: r.name })}>
-                      <Pencil size={13} color="#2563EB" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.delBtn} onPress={() => setDeleteItem({ type: 'region', id: r.id, name: r.name })}>
-                      <Trash2 size={13} color="#DC2626" />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* ─── ZONES ─── */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <View style={[s.sectionIcon, { backgroundColor: '#CCFBF1' }]}>
-              <MapPin size={18} color="#0D9488" />
-            </View>
-            <View>
-              <Text style={s.sectionTitle}><Text style={{ color: '#0D9488', fontWeight: '800' }}>2. </Text>Zones <Text style={s.sectionCount}>({zones.length})</Text></Text>
-              <Text style={s.sectionSub}>{canManageZones ? 'Select a region, then add zones' : 'Read-only'}</Text>
-            </View>
-          </View>
-
-          {canManageZones && (
-            selectableRegions.length === 0 ? (
-              <View style={[s.infoBanner]}>
-                <Info size={14} color="#D97706" />
-                <Text style={s.infoText}>
-                  {isRhScoped ? 'No region is assigned to you.' : 'Add at least one region before creating zones.'}
-                </Text>
-              </View>
-            ) : (
-              <View style={s.addZoneBlock}>
-                {!isRhScoped && (
-                  <SelectPicker
-                    placeholder="Select region"
-                    options={selectableRegions.map((r: any) => ({ value: String(r.id), label: r.name }))}
-                    value={newZoneRegionId}
-                    onChange={v => setNewZoneRegionId(String(v))}
-                    accentColor="#0D9488"
-                    containerStyle={{ marginBottom: 8 }}
-                  />
-                )}
-                <View style={s.addRow}>
-                  <TextInput
-                    style={s.addInput}
-                    value={newZone}
-                    onChangeText={setNewZone}
-                    placeholder="e.g. Ahmedabad"
-                    placeholderTextColor="#9CA3AF"
-                    editable={!savingZone}
-                  />
-                  <TouchableOpacity
-                    style={[s.addBtn, { backgroundColor: '#0D9488' }, (!newZone.trim() || !newZoneRegionId || savingZone) && { opacity: 0.5 }]}
-                    onPress={handleCreateZone}
-                    disabled={!newZone.trim() || !newZoneRegionId || savingZone}
-                  >
-                    {savingZone ? <ActivityIndicator color="#FFF" size="small" /> : <Plus size={18} color="#FFF" />}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )
-          )}
-
-          {/* Zone region filter */}
-          {!isRhScoped && regions.length > 0 && zones.length > 0 && (
-            <SelectPicker
-              placeholder="All regions"
-              options={regionFilterOptions}
-              value={zoneRegionFilter}
-              onChange={v => setZoneRegionFilter(String(v))}
-              accentColor="#0D9488"
-              containerStyle={{ marginBottom: 8 }}
-            />
-          )}
-
-          {filteredZones.length === 0 ? (
-            <View style={s.emptySmall}>
-              <MapPin size={24} color="#D1D5DB" />
-              <Text style={s.emptySmallText}>{zones.length === 0 ? 'No zones yet.' : 'No zones in this region.'}</Text>
-            </View>
-          ) : (
-            filteredZones.map((z: any) => (
-              <View key={z.id} style={s.listItem}>
-                <View style={[s.itemIcon, { backgroundColor: '#CCFBF1' }]}>
-                  <MapPin size={13} color="#0D9488" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.itemName}>{z.name}</Text>
-                  <Text style={s.itemSub}>{z.region || 'No region'}</Text>
-                </View>
-                {canManageZones && (
-                  <View style={s.itemActions}>
-                    <TouchableOpacity style={s.editBtn} onPress={() => setEditItem({ type: 'zone', id: z.id, name: z.name, regionId: z.regionId })}>
-                      <Pencil size={13} color="#2563EB" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.delBtn} onPress={() => setDeleteItem({ type: 'zone', id: z.id, name: z.name })}>
-                      <Trash2 size={13} color="#DC2626" />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ))
-          )}
+        {/* Two columns only when the Regions side has real content to manage
+            (SH/SCA). An RH has a single read-only region, so side-by-side left a
+            near-empty Regions column next to a tall Zones one — stack instead, so
+            the region reads as a compact banner above the full-width Zones table. */}
+        <View style={wide && canManageRegions ? s.columns : s.stack}>
+          {regionsSection}
+          {zonesSection}
         </View>
       </ScrollView>
 
-      {/* Edit Modal */}
-      <EditModal
-        visible={!!editItem}
-        item={editItem}
-        regions={selectableRegions}
-        isRhScoped={isRhScoped}
-        onClose={() => setEditItem(null)}
-        onSave={handleEditSave}
-        saving={editSaving}
-      />
+      {/* Region create / edit */}
+      <FormModal
+        visible={showRegionModal}
+        title={editingRegion ? 'Edit Region' : 'Add Region'}
+        onClose={() => setShowRegionModal(false)}
+        footer={
+          <>
+            <View style={{ flex: 1 }} />
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowRegionModal(false)} small />
+            <Btn
+              label={editingRegion ? 'Save' : 'Create'}
+              onPress={saveRegion}
+              loading={savingRegion}
+              disabled={savingRegion || !regionName.trim()}
+              small
+            />
+          </>
+        }
+      >
+        <Input
+          label="Region Name *"
+          value={regionName}
+          onChangeText={setRegionName}
+          placeholder="e.g. Gujarat"
+          autoFocus
+        />
+      </FormModal>
 
-      {/* Delete Modal */}
-      <DeleteModal
+      {/* Zone create / edit */}
+      <FormModal
+        visible={showZoneModal}
+        title={editingZone ? 'Edit Zone' : 'Add Zone'}
+        onClose={() => setShowZoneModal(false)}
+        footer={
+          <>
+            <View style={{ flex: 1 }} />
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowZoneModal(false)} small />
+            <Btn
+              label={editingZone ? 'Save' : 'Create'}
+              onPress={saveZone}
+              loading={savingZone}
+              disabled={savingZone || !zoneName.trim() || (!isRhScoped && !zoneRegionId)}
+              small
+            />
+          </>
+        }
+      >
+        <View style={s.mForm}>
+          <Input
+            label="Zone Name *"
+            value={zoneName}
+            onChangeText={setZoneName}
+            placeholder="e.g. Ahmedabad"
+          />
+          {isRhScoped ? (
+            <View style={[s.autoRegion, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+              <Text style={[s.autoRegionTxt, { color: T.sub }]}>
+                <Text style={{ color: T.text, fontWeight: '700' }}>Region: </Text>
+                {regionNameById(user?.regionId) || 'Your region'}
+              </Text>
+              <Text style={[s.autoRegionHint, { color: T.dim }]}>
+                Zones are added to your assigned region automatically.
+              </Text>
+            </View>
+          ) : (
+            <Field label="Region *" style={{ zIndex: 20 }}>
+              <Trigger
+                label={zoneRegionLabel}
+                open={openZoneDd}
+                onPress={() => setOpenZoneDd(v => !v)}
+              />
+              {openZoneDd && (
+                <Dropdown
+                  style={s.ddFull}
+                  maxHeight={220}
+                  value={zoneRegionId}
+                  onSelect={(v) => { setZoneRegionId(String(v)); setOpenZoneDd(false); }}
+                  options={zoneRegionOptions}
+                />
+              )}
+            </Field>
+          )}
+        </View>
+      </FormModal>
+
+      {/* Delete confirm — dependents error is surfaced via the flash banner. */}
+      <ConfirmModal
         visible={!!deleteItem}
-        item={deleteItem}
-        onClose={() => setDeleteItem(null)}
-        onDelete={handleDelete}
-        deleting={deleting}
+        tone="danger"
+        title={`Delete ${deleteItem?.type === 'region' ? 'Region' : 'Zone'}?`}
+        message={
+          deleteItem?.type === 'zone'
+            ? `${deleteItem?.name || 'This zone'} will be removed. A zone with assigned users can't be deleted.`
+            : `${deleteItem?.name || 'This region'} will be permanently removed. This can't be undone.`
+        }
+        icon={<Trash2 size={24} color={T.danger} strokeWidth={ICON_STROKE} />}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteItem(null)}
       />
     </SafeAreaView>
   );
 };
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
+// ─── Styles (layout only — colour comes from the theme, inline) ───────────────
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  content: { padding: 16, gap: 8, paddingBottom: 48 },
-  pageTitle: { fontSize: rf(20), fontWeight: '800', color: '#111827' },
-  pageSub: { fontSize: rf(13), color: '#6B7280', marginBottom: 8 },
-  flashBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12 },
-  flashText: { fontSize: rf(13), fontWeight: '600', flex: 1 },
-  section: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#F3F4F6', gap: 10 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
-  sectionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  sectionCount: { fontSize: rf(12), color: '#9CA3AF', fontWeight: '400' },
-  sectionSub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 1 },
-  addRow: { flexDirection: 'row', gap: 8 },
-  addInput: { flex: 1, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(14), color: '#111827' },
-  addBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  addZoneBlock: { gap: 0 },
-  infoBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FDE68A' },
-  infoText: { fontSize: rf(12), color: '#D97706', fontWeight: '500', flex: 1 },
-  emptySmall: { alignItems: 'center', paddingVertical: 24, gap: 8 },
-  emptySmallText: { fontSize: rf(12), color: '#9CA3AF' },
-  listItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#F9FAFB', borderRadius: 10 },
-  itemIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  itemName: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  itemSub: { fontSize: rf(11), color: '#9CA3AF' },
-  itemActions: { flexDirection: 'row', gap: 4 },
-  editBtn: { padding: 6, borderRadius: 8, backgroundColor: '#DBEAFE' },
-  delBtn: { padding: 6, borderRadius: 8, backgroundColor: '#FEE2E2' },
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12, paddingBottom: 32 },
+  scrollWide: { paddingHorizontal: 22 },
+
+  pageSub: { fontSize: rf(12.5), fontWeight: '500' },
+
+  flash: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 11,
+  },
+  flashTxt: { fontSize: rf(12.5), fontWeight: '600', flexShrink: 1, minWidth: 0 },
+
+  // two-column (tablet landscape) / stacked (phone) — equal-height columns
+  columns: { flexDirection: 'row', gap: 12, alignItems: 'stretch' },
+  stack: { gap: 12 },
+
+  section: { borderRadius: 16, borderWidth: 1, padding: 14, gap: 12 },
+  sectionCol: { flex: 1 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionTitle: { fontSize: rf(14.5), fontWeight: '800', letterSpacing: -0.2 },
+  sectionSub: { fontSize: rf(11), fontWeight: '500', marginTop: 1 },
+
+  tile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+
+  // table — house spec (SchoolsListScreen/UserManagementScreen): r16 · tr pad 12/16
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cRegName: { flex: 2, minWidth: 0 },
+  cCount: { width: 64 },
+  cZoneName: { flex: 1.6, minWidth: 0 },
+  cZoneRegion: { flex: 1.2, minWidth: 0 },
+  cActions: { width: 76 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+
+  empty: { borderRadius: 13, borderWidth: 1, paddingVertical: 30, alignItems: 'center', gap: 8 },
+  emptyTxt: { fontSize: rf(12), fontWeight: '500', textAlign: 'center', paddingHorizontal: 16 },
+
+  notice: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10,
+  },
+  noticeTxt: { fontSize: rf(12), fontWeight: '600', flexShrink: 1, minWidth: 0 },
+
+  // modals
+  mForm: { gap: 14 },
+  ddFull: { width: '100%' },
+  autoRegion: { borderWidth: 1, borderRadius: 13, padding: 12 },
+  autoRegionTxt: { fontSize: rf(13), fontWeight: '500' },
+  autoRegionHint: { fontSize: rf(11), fontWeight: '500', marginTop: 4 },
 });

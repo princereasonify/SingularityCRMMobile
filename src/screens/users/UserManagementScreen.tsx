@@ -352,7 +352,9 @@ export const UserManagementScreen = (_props: any) => {
   const openCreate = () => {
     setEditingUser(null);
     setOpenDd(null);
-    setForm({ name: '', email: '', password: '', role: CREATABLE_ROLES[role]?.[0] || 'FO', zoneId: '', regionId: '' });
+    // An RH creates only within its own region, so pin it up front (like ZH's zone).
+    setForm({ name: '', email: '', password: '', role: CREATABLE_ROLES[role]?.[0] || 'FO',
+      zoneId: '', regionId: role === 'RH' ? String(user?.regionId ?? '') : '' });
     setShowUserModal(true);
   };
 
@@ -384,7 +386,11 @@ export const UserManagementScreen = (_props: any) => {
       } else {
         // ZH auto-assigns their own zone/region
         const zoneId = role === 'ZH' ? (user?.zoneId || undefined) : (form.zoneId ? Number(form.zoneId) : undefined);
-        const regionId = role === 'ZH' ? (user?.regionId || undefined) : (form.regionId ? Number(form.regionId) : undefined);
+        // ZH pins its own region; RH also creates only inside its own region (the backend
+        // now enforces this, so never send another region that would just 403).
+        const regionId = (role === 'ZH' || role === 'RH')
+          ? (user?.regionId || undefined)
+          : (form.regionId ? Number(form.regionId) : undefined);
         await authApi.createUser({
           name: form.name, email: form.email, password: form.password,
           role: form.role,
@@ -830,22 +836,37 @@ export const UserManagementScreen = (_props: any) => {
           ) : (
             <>
               {needsRegion && (
-                <Field label="Region" style={{ zIndex: 30 }}>
-                  <Trigger
-                    label={regionOptions.find((o) => o.value === String(form.regionId))?.label || 'Select a region…'}
-                    open={openDd === 'region'}
-                    onPress={() => setOpenDd(openDd === 'region' ? null : 'region')}
-                  />
-                  {openDd === 'region' && (
-                    <Dropdown
-                      style={s.ddFull}
-                      maxHeight={200}
-                      value={String(form.regionId)}
-                      onSelect={(v) => { set('regionId', v); set('zoneId', ''); setOpenDd(null); }}
-                      options={regionOptions}
+                role === 'RH' ? (
+                  // An RH creates only inside its own region, so pin it read-only
+                  // (mirrors the ZH auto-zone tile) rather than offering every region —
+                  // the backend rejects any other region, so a picker would only mislead.
+                  <View style={[s.autoZone, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                    <Text style={[s.autoZoneTxt, { color: T.sub }]}>
+                      <Text style={[s.autoZoneBold, { color: T.text }]}>Region: </Text>
+                      {user?.region || 'Your region'}
+                    </Text>
+                    <Text style={[s.autoZoneHint, { color: T.dim }]}>
+                      New user will be assigned to your region automatically.
+                    </Text>
+                  </View>
+                ) : (
+                  <Field label="Region" style={{ zIndex: 30 }}>
+                    <Trigger
+                      label={regionOptions.find((o) => o.value === String(form.regionId))?.label || 'Select a region…'}
+                      open={openDd === 'region'}
+                      onPress={() => setOpenDd(openDd === 'region' ? null : 'region')}
                     />
-                  )}
-                </Field>
+                    {openDd === 'region' && (
+                      <Dropdown
+                        style={s.ddFull}
+                        maxHeight={200}
+                        value={String(form.regionId)}
+                        onSelect={(v) => { set('regionId', v); set('zoneId', ''); setOpenDd(null); }}
+                        options={regionOptions}
+                      />
+                    )}
+                  </Field>
+                )
               )}
               {needsZone && (
                 <Field label="Zone" style={{ zIndex: 20 }}>

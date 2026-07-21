@@ -324,7 +324,7 @@ function DetailModal({ link, refreshing, onRefresh, onClose }: {
 
         <View>
           <DetailRow label="ID" value={link.id} />
-          <DetailRow label="School" value={link.schoolName || `School #${link.schoolId}`} />
+          <DetailRow label="School" value={link.schoolName || DASH} />
           <DetailRow label="Order Id" value={link.orderId} />
           <DetailRow label="Amount" value={`${Number(link.amount || 0)} ${link.currency || 'INR'}`} />
           <DetailRow label="Due Date" value={fmtDate(link.dueDate)} />
@@ -684,7 +684,7 @@ export const PaymentsScreen = (_props: any) => {
             {/* flexShrink defaults to 0 in RN — without it a long school name refuses
                 to shrink and pushes every column after it out of its header. */}
             <Text style={[s.tdName, { color: T.text }, s.cellTxt]} numberOfLines={1}>
-              {p.schoolName || `School #${p.schoolId}`}
+              {p.schoolName || DASH}
             </Text>
           </View>
           <Text style={[s.td, { color: T.sub }, s.cOrder]} numberOfLines={1}>{p.orderId || DASH}</Text>
@@ -711,7 +711,7 @@ export const PaymentsScreen = (_props: any) => {
           <View style={{ flex: 1 }}>
             <View style={s.rowTop}>
               <Text style={[s.tdName, { color: T.text, flex: 1 }]} numberOfLines={1}>
-                {p.schoolName || `School #${p.schoolId}`}
+                {p.schoolName || DASH}
               </Text>
               <Text style={[s.tdAmt, { color: T.text }]}>{fmtCurrency(p.amount)}</Text>
             </View>

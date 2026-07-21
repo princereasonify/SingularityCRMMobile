@@ -504,7 +504,7 @@ export const ActivityLogScreen = ({ route }: any) => {
                 <StatusBadge label={typeLabel(act.type)} color={ACTIVITY_COLORS[act.type] || T.accent} />
               </View>
               <Text style={[s.tdName, { color: T.text }, s.cSchool]} numberOfLines={1}>
-                {act.school || `Lead #${act.leadId}`}
+                {act.school || DASH}
               </Text>
               <Text style={[s.td, { color: T.sub }, s.cNotes]} numberOfLines={1}>{act.notes || DASH}</Text>
               <Text style={[s.td, { color: T.sub }, s.cDate]} numberOfLines={1}>{formatRelativeDate(act.date)}</Text>
@@ -539,7 +539,7 @@ export const ActivityLogScreen = ({ route }: any) => {
                   <StatusBadge label={act.outcome} color={outcomeColor(act.outcome, T)} />
                 </View>
                 <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>
-                  {act.school || `Lead #${act.leadId}`}
+                  {act.school || DASH}
                 </Text>
                 {!!act.notes && (
                   <Text style={[s.td, { color: T.sub }]} numberOfLines={open ? undefined : 1}>{act.notes}</Text>
@@ -696,7 +696,7 @@ export const ActivityLogScreen = ({ route }: any) => {
               <Field label="Linked Lead">
                 <View style={[s.readOnly, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
                   <Text style={[s.readOnlyTxt, { color: T.text }]} numberOfLines={1}>
-                    {editing.school || `Lead #${editing.leadId}`}
+                    {editing.school || DASH}
                   </Text>
                 </View>
                 <Text style={[s.hint, { color: T.dim }]}>
@@ -854,7 +854,7 @@ export const ActivityLogScreen = ({ route }: any) => {
         title="Delete Activity?"
         message={
           `This ${typeLabel(deleteTarget?.type || 'activity').toLowerCase()} on ` +
-          `${deleteTarget?.school || `Lead #${deleteTarget?.leadId ?? ''}`} will be permanently removed.`
+          `${deleteTarget?.school || 'This activity'} will be permanently removed.`
         }
         icon={<Trash2 size={24} color={T.danger} strokeWidth={ICON_STROKE} />}
         confirmLabel="Delete"

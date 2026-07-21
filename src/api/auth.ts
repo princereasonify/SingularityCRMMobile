@@ -123,13 +123,25 @@ export const authApi = {
    * the profile screen had a picture slot with nowhere to upload to. Same multipart
    * shape as activitiesApi.uploadPhoto; server stores it and returns the public URL.
    */
-  uploadAvatar: (imageUri: string) => {
+  uploadAvatar: (imageUri: string, mime?: string, name?: string) => {
     const formData = new FormData();
-    const filename = imageUri.split('/').pop() || 'avatar.jpg';
-    const type = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const filename = name || imageUri.split('/').pop() || 'avatar.jpg';
+    // Prefer the picker's REAL mime type; only guess from the extension as a fallback.
+    // The backend accepts jpeg/png/webp — the picker's quality:0.8 re-encodes iOS HEIC
+    // to JPEG, so we never send an unsupported HEIC. Guessing purely from the filename
+    // mislabelled PNG/WebP as JPEG, which is why the real type is threaded through now.
+    const lower = filename.toLowerCase();
+    const type = mime
+      || (lower.endsWith('.png') ? 'image/png'
+        : lower.endsWith('.webp') ? 'image/webp'
+        : 'image/jpeg');
     formData.append('file', { uri: imageUri, name: filename, type } as any);
     return apiClient.post<{ avatar: string }>('/auth/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+
+  /** Remove the profile picture — backend resets Avatar to the name initials and
+   *  returns that value, so the UI falls back to an initials avatar. */
+  removeAvatar: () => apiClient.delete<{ avatar: string }>('/auth/avatar'),
 };

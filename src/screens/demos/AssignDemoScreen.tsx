@@ -36,7 +36,7 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
 
   // Form
   const [selectedSchool, setSelectedSchool] = useState<any>(
-    routeSchoolId ? { id: routeSchoolId, name: routeSchoolName || `School #${routeSchoolId}` } : null
+    routeSchoolId ? { id: routeSchoolId, name: routeSchoolName || 'Selected school' } : null
   );
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [scheduledDate, setScheduledDate] = useState('');

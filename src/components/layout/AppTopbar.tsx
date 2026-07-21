@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Menu, Sun, Moon, Bell, ChevronDown, User, Settings as SettingsIcon, LogOut } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
@@ -62,6 +62,34 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
   const heading = labelForRoute(groups, title);
   const roleName = ROLE_NAME[user?.role ?? 'FO'] ?? 'Field Officer';
   const initials = initialsOf(user?.name);
+  const [imgFailed, setImgFailed] = useState(false);
+  // Treat the avatar as a photo only if it's a fetchable URL — the column also holds
+  // initials ("BN") for users who never uploaded, and <Image uri:"BN"> fails silently.
+  const avatarUri =
+    user?.avatar && /^(https?:|file:|content:|data:)/i.test(user.avatar) ? user.avatar : null;
+  // A change of avatar (upload/remove) clears a prior load failure so the new one gets a try.
+  React.useEffect(() => { setImgFailed(false); }, [user?.avatar]);
+
+  // Photo when uploaded, gradient+initials otherwise — the same avatar shows in the
+  // pill and the menu, so a change on the Profile screen reflects here immediately
+  // (both read the live `user` from AuthContext). onError falls back to initials if
+  // the stored URL 404s (object deleted from the bucket, stale value).
+  const renderAvatar = (circleStyle: any, txtStyle: any) => (
+    <View style={circleStyle}>
+      {avatarUri && !imgFailed ? (
+        <Image
+          source={{ uri: avatarUri }}
+          style={StyleSheet.absoluteFillObject}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <>
+          <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
+          <Text style={[txtStyle, { color: T.onAccent }]}>{initials}</Text>
+        </>
+      )}
+    </View>
+  );
 
   const handleLogout = () => {
     setShowLogout(false);
@@ -140,10 +168,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           activeOpacity={0.75}
           style={[styles.pill, { backgroundColor: T.card, borderColor: T.line }]}
         >
-          <View style={styles.avatar}>
-            <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.avatarTxt, { color: T.onAccent }]}>{initials}</Text>
-          </View>
+          {renderAvatar(styles.avatar, styles.avatarTxt)}
           {isTabletDevice && (
             <Text numberOfLines={1} style={[styles.pillName, { color: T.text }]}>
               {user?.name}
@@ -169,10 +194,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           >
             {/* Header */}
             <View style={[styles.menuHead, { borderBottomColor: T.line }]}>
-              <View style={styles.avatarLg}>
-                <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
-                <Text style={[styles.avatarTxtLg, { color: T.onAccent }]}>{initials}</Text>
-              </View>
+              {renderAvatar(styles.avatarLg, styles.avatarTxtLg)}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={[styles.menuName, { color: T.text }]}>{user?.name}</Text>
                 <Text numberOfLines={1} style={[styles.menuMail, { color: T.sub }]}>{user?.email}</Text>

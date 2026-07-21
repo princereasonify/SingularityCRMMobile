@@ -71,14 +71,16 @@ export const ProfileScreen = ({ navigation }: any) => {
 
   const pickAvatar = async () => {
     const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
-    const uri = res.assets?.[0]?.uri;
+    const asset = res.assets?.[0];
+    const uri = asset?.uri;
     if (!uri) return;
 
     const previous = avatar;
     setAvatar(uri);
     setUploading(true);
     try {
-      const up = await authApi.uploadAvatar(uri);
+      // Pass the picker's real mime + filename so the backend gets the correct type.
+      const up = await authApi.uploadAvatar(uri, asset?.type, asset?.fileName);
       const url = up.data?.avatar || uri;
       setAvatar(url);
       // Persist to the auth context AND to AsyncStorage. Without this the new
@@ -91,6 +93,31 @@ export const ProfileScreen = ({ navigation }: any) => {
     } finally {
       setUploading(false);
     }
+  };
+
+  const removeAvatar = () => {
+    Alert.alert('Remove photo', 'Remove your profile picture? Your initials will show instead.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const previous = avatar;
+          setAvatar(null); // optimistic — fall back to initials immediately
+          setUploading(true);
+          try {
+            await authApi.removeAvatar();
+            // Persist the initials the server now stores, so it survives navigation.
+            await updateUser({ avatar: initials });
+          } catch (err: any) {
+            setAvatar(previous);
+            Alert.alert('Remove failed', err?.response?.data?.message || 'Could not remove your picture.');
+          } finally {
+            setUploading(false);
+          }
+        },
+      },
+    ]);
   };
 
   // `last` drops the divider on the final row of a section — otherwise every card
@@ -166,6 +193,12 @@ export const ProfileScreen = ({ navigation }: any) => {
             </TouchableOpacity>
             <Text style={[styles.name, { color: T.text }]} numberOfLines={1}>{user?.name || '—'}</Text>
             <Text style={[styles.email, { color: T.sub }]} numberOfLines={1}>{user?.email || '—'}</Text>
+            {/* Remove only appears when a real photo is set — tapping the avatar changes it. */}
+            {!!avatar && !uploading && (
+              <TouchableOpacity onPress={removeAvatar} hitSlop={8} style={styles.removeBtn}>
+                <Text style={[styles.removeTxt, { color: T.danger }]}>Remove photo</Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.badges}>
               <StatusBadge label={ROLE_LABEL[user?.role || ''] || user?.role || '—'} color={T.info} />
               <StatusBadge label="Active" color={T.success} />
@@ -240,6 +273,8 @@ const styles = StyleSheet.create({
   name: { fontSize: rf(18), fontWeight: '700', letterSpacing: -0.3, marginTop: 6 },
   email: { fontSize: rf(13), fontWeight: '400' },
   badges: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' },
+  removeBtn: { marginTop: 8, paddingVertical: 2 },
+  removeTxt: { fontSize: rf(12.5), fontWeight: '600' },
 
   section: { gap: 0 },
   sectionTitle: { fontSize: rf(14), fontWeight: '700', marginBottom: 6 },
