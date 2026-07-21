@@ -7,7 +7,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { GradientBackground } from '../common/GradientBackground';
 import { LogoutModal } from '../common/LogoutModal';
-import { NAV_BY_ROLE, groupForRoute } from '../../navigation/navConfig';
+import { NAV_BY_ROLE, groupForRoute, NavGroup } from '../../navigation/navConfig';
 import { isTabletDevice } from '../../utils/responsive';
 
 const ROLE_NAME: Record<string, string> = {
@@ -17,6 +17,16 @@ const ROLE_NAME: Record<string, string> = {
   SH: 'Sales Head',
   SCA: 'SuperSale Admin',
 };
+
+/**
+ * The drawer passes `route.name`, but the sidebar shows the nav item's *label*, and
+ * for ZH the two differ: the route is "Dashboard" while the sidebar reads "Zone
+ * Dashboard". The topbar therefore said "Dashboard" while the highlighted sidebar row
+ * said "Zone Dashboard" — same screen, two names. Resolve the label from navConfig and
+ * fall back to the route, so FO (where label === route throughout) is unaffected.
+ */
+const labelForRoute = (groups: NavGroup[], route: string): string =>
+  groups.flatMap(g => g.items).find(i => i.route === route)?.label ?? route;
 
 const initialsOf = (name?: string) =>
   (name ?? '')
@@ -49,6 +59,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
 
   const groups = NAV_BY_ROLE[user?.role ?? 'FO'] ?? [];
   const group = groupForRoute(groups, title);
+  const heading = labelForRoute(groups, title);
   const roleName = ROLE_NAME[user?.role ?? 'FO'] ?? 'Field Officer';
   const initials = initialsOf(user?.name);
 
@@ -76,7 +87,12 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           paddingTop: insets.top + 8, // LAYOUT_SPEC A6
           paddingBottom: 10,
           paddingHorizontal: isTabletDevice ? 22 : 16,
-          backgroundColor: T.isDark ? 'rgba(19,16,9,0.92)' : 'rgba(255,255,255,0.92)',
+          // T.card, not the hand-mixed rgba(19,16,9,.92)/rgba(255,255,255,.92) that was
+          // here. Those were near-opaque over nothing (the bar is not blurred, and the
+          // scene scrolls *below* it, not behind it), so the alpha bought no translucency
+          // — it just meant the bar tracked no token and drifted from the sidebar, which
+          // already uses T.card for the same "raised chrome over T.bg" role.
+          backgroundColor: T.card,
           borderBottomColor: T.line,
         },
       ]}
@@ -88,7 +104,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
       {/* Title + breadcrumb */}
       <View style={styles.titleBlock}>
         <Text numberOfLines={1} style={[styles.title, { color: T.text }]}>
-          {title}
+          {heading}
         </Text>
         {isTabletDevice && (
           <Text numberOfLines={1} style={[styles.crumb, { color: T.sub }]}>
@@ -97,8 +113,6 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           </Text>
         )}
       </View>
-
-      <View style={{ flex: 1 }} />
 
       {/* Actions */}
       <View style={styles.cluster}>
@@ -128,7 +142,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
         >
           <View style={styles.avatar}>
             <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
-            <Text style={styles.avatarTxt}>{initials}</Text>
+            <Text style={[styles.avatarTxt, { color: T.onAccent }]}>{initials}</Text>
           </View>
           {isTabletDevice && (
             <Text numberOfLines={1} style={[styles.pillName, { color: T.text }]}>
@@ -157,9 +171,9 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
             <View style={[styles.menuHead, { borderBottomColor: T.line }]}>
               <View style={styles.avatarLg}>
                 <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
-                <Text style={styles.avatarTxtLg}>{initials}</Text>
+                <Text style={[styles.avatarTxtLg, { color: T.onAccent }]}>{initials}</Text>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={[styles.menuName, { color: T.text }]}>{user?.name}</Text>
                 <Text numberOfLines={1} style={[styles.menuMail, { color: T.sub }]}>{user?.email}</Text>
               </View>
@@ -212,11 +226,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     zIndex: 10,
   },
-  titleBlock: { justifyContent: 'center', maxWidth: '46%' },
+  /**
+   * The title used to be `maxWidth:'46%'` followed by a `<View style={{flex:1}}/>`
+   * spacer. Because RN defaults flexShrink to 0, neither the title block nor the
+   * action cluster could give way: on a 390pt iPhone the row wanted 16+40+12+179
+   * (title) +12+ 174 (cluster) + 16 ≈ 439pt, so the spacer collapsed to zero and the
+   * profile pill still ran off the right edge — the chevron and part of the avatar
+   * were cut off in portrait. Now the title block is the flexible element (flex:1 +
+   * minWidth:0 so it can shrink below its text width and ellipsise) and the cluster
+   * is pinned at its natural size. Tablet is visually unchanged: the title block
+   * absorbing the slack keeps the title left and the cluster hard right, exactly as
+   * the spacer did.
+   */
+  titleBlock: { flex: 1, minWidth: 0, justifyContent: 'center' },
   title: { fontSize: 17, fontWeight: '800', letterSpacing: -0.4 },
   crumb: { fontSize: 11.5, fontWeight: '400', marginTop: 1 },
 
-  cluster: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cluster: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
   action: {
     width: 40, height: 40, borderRadius: 12, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
@@ -235,7 +261,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16, overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarTxt: { fontSize: 12, fontWeight: '700', color: '#FFF' },
+  avatarTxt: { fontSize: 12, fontWeight: '700' },
   pillName: { fontSize: 13, fontWeight: '600', maxWidth: 120 },
 
   // Dropdown — width 230 · radius 16 · shadow 0 16 40 rgba(0,0,0,.18) · pad 8
@@ -255,7 +281,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarTxtLg: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  avatarTxtLg: { fontSize: 14, fontWeight: '700' },
   menuName: { fontSize: 13.5, fontWeight: '700' },
   menuMail: { fontSize: 11, fontWeight: '400', marginTop: 1 },
 

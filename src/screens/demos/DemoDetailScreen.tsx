@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity,
-  TextInput, Modal, Linking, useWindowDimensions,
+  TextInput, Linking, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Link, ThumbsUp, ThumbsDown, Minus, Play, ArrowLeft } from 'lucide-react-native';
+import { Link, ThumbsUp, ThumbsDown, Minus, Play, ArrowLeft, XCircle } from 'lucide-react-native';
 import { demosApi } from '../../api/demos';
 import { DemoAssignment } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card, Badge } from '../../components/ui';
-import { GradientButton } from '../../components/common/GradientButton';
 import { ICON_STROKE } from '../../components/common/Icon';
-import { IconBtn } from '../../components/crud';
+import { IconBtn, Btn, FormModal, ConfirmModal } from '../../components/crud';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { formatDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -66,6 +65,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
   const [demo, setDemo] = useState<DemoAssignment | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState<FeedbackForm>(EMPTY_FEEDBACK);
   const [updating, setUpdating] = useState(false);
 
@@ -251,7 +251,7 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
             <Text style={[styles.sectionTitle, { color: T.text }]}>Actions</Text>
             <View style={styles.actionsGrid}>
               {demo.status === 'Requested' ? (
-                <GradientButton
+                <Btn
                   label="Approve & Schedule"
                   disabled={updating}
                   onPress={() => handleStatusUpdate('Scheduled')}
@@ -259,15 +259,15 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                 />
               ) : null}
               {(demo.status === 'Scheduled' || demo.status === 'Approved') ? (<>
-                <OutlineBtn
-                  T={T}
+                <Btn
                   label="Start Demo"
-                  color={T.accent}
+                  variant="secondary"
                   icon={<Play size={14} color={T.accent} />}
                   disabled={updating}
                   onPress={() => { handleStatusUpdate('InProgress'); Linking.openURL(DEMO_APP_URL).catch(() => {}); }}
+                  style={styles.primaryAction}
                 />
-                <GradientButton
+                <Btn
                   label="Mark Completed"
                   disabled={updating}
                   onPress={openCompleteModal}
@@ -275,44 +275,53 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                 />
               </>) : null}
               {demo.status === 'InProgress' ? (<>
-                <OutlineBtn
-                  T={T}
+                <Btn
                   label="Resume Demo"
-                  color={T.accent}
+                  variant="secondary"
                   icon={<Play size={14} color={T.accent} />}
                   disabled={updating}
                   onPress={() => Linking.openURL(DEMO_APP_URL).catch(() => {})}
+                  style={styles.primaryAction}
                 />
-                <GradientButton
+                <Btn
                   label="Mark Completed"
                   disabled={updating}
                   onPress={openCompleteModal}
                   style={styles.primaryAction}
                 />
               </>) : null}
-              <OutlineBtn
-                T={T}
+              {/* Destructive → ConfirmModal (danger), not a native Alert. */}
+              <Btn
                 label="Cancel Demo"
-                color={T.danger}
+                variant="dangerGhost"
                 disabled={updating}
-                onPress={() =>
-                  Alert.alert('Cancel Demo', 'Are you sure you want to cancel this demo?', [
-                    { text: 'No', style: 'cancel' },
-                    { text: 'Yes, Cancel', style: 'destructive', onPress: () => handleStatusUpdate('Cancelled') },
-                  ])
-                }
+                onPress={() => setShowCancelConfirm(true)}
+                style={styles.primaryAction}
               />
             </View>
           </Card>
         ) : null}
       </ScrollView>
 
-      {/* Complete Demo Modal */}
-      <Modal visible={showCompleteModal} transparent animationType="slide" onRequestClose={() => setShowCompleteModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: T.card }]}>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={[styles.modalTitle, { color: T.text }]}>Complete Demo</Text>
+      {/* Complete Demo — kit FormModal (edit flow), wide so the outcome and
+          sentiment rows are not cramped on an iPad. */}
+      <FormModal
+        visible={showCompleteModal}
+        title="Complete Demo"
+        wide
+        onClose={() => setShowCompleteModal(false)}
+        footer={
+          <View style={styles.modalBtns}>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowCompleteModal(false)} style={styles.modalBtn} />
+            <Btn label="Complete Demo" onPress={handleCompleteDemo} loading={updating} disabled={updating} style={styles.modalBtn} />
+          </View>
+        }
+      >
+        <ScrollView
+          style={styles.modalScroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
               <Text style={[styles.modalSub, { color: T.sub }]}>Provide feedback after demo completion</Text>
 
               {/* Outcome */}
@@ -379,48 +388,23 @@ export const DemoDetailScreen = ({ navigation, route }: any) => {
                   automatically, so hand-pasted links are no longer collected here.
                   The DTO still accepts the fields; nothing sends them now. */}
 
-              <View style={styles.modalBtns}>
-                <TouchableOpacity style={[styles.cancelBtn, { borderColor: T.line }]} onPress={() => setShowCompleteModal(false)}>
-                  <Text style={[styles.cancelText, { color: T.sub }]}>Cancel</Text>
-                </TouchableOpacity>
-                <GradientButton
-                  label={updating ? 'Saving...' : 'Complete Demo'}
-                  onPress={handleCompleteDemo}
-                  disabled={updating}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </FormModal>
+
+      {/* Cancelling a demo is destructive → ConfirmModal, danger tone. */}
+      <ConfirmModal
+        visible={showCancelConfirm}
+        tone="danger"
+        title="Cancel Demo"
+        message="Are you sure you want to cancel this demo? This cannot be undone."
+        icon={<XCircle size={22} color={T.danger} strokeWidth={2} />}
+        confirmLabel="Yes, Cancel"
+        onConfirm={() => { setShowCancelConfirm(false); handleStatusUpdate('Cancelled'); }}
+        onCancel={() => setShowCancelConfirm(false)}
+      />
     </View>
   );
 };
-
-// ─── Themed outline action button (secondary / destructive) ──────────────────────
-const OutlineBtn = ({ label, color, icon, disabled, onPress, T }: any) => (
-  <TouchableOpacity
-    disabled={disabled}
-    onPress={onPress}
-    style={[
-      actionStyles.btn,
-      { backgroundColor: T.card, borderWidth: 1, borderColor: color },
-      disabled && { opacity: 0.5 },
-    ]}
-  >
-    {icon ? <View style={{ marginRight: 6 }}>{icon}</View> : null}
-    <Text style={[actionStyles.label, { color }]}>{label}</Text>
-  </TouchableOpacity>
-);
-
-const actionStyles = StyleSheet.create({
-  btn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    height: 50, paddingHorizontal: 14, borderRadius: 14, width: '100%',
-  },
-  label: { fontWeight: '700', fontSize: rf(14) },
-});
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -454,12 +438,6 @@ const styles = StyleSheet.create({
   actionsGrid: { gap: 10 },
   primaryAction: { width: '100%', height: 50 },
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalBox: {
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40, maxHeight: '90%',
-  },
-  modalTitle: { fontWeight: '700', fontSize: rf(18), marginBottom: 4 },
   modalSub: { fontWeight: '400', fontSize: rf(13), marginBottom: 16 },
   fieldLabel: { fontWeight: '600', fontSize: rf(13), marginBottom: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -483,7 +461,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10,
     fontWeight: '400', fontSize: rf(14),
   },
-  modalBtns: { flexDirection: 'row', gap: 10, marginTop: 20, alignItems: 'center' },
-  cancelBtn: { flex: 1, height: 54, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  cancelText: { fontWeight: '700', fontSize: rf(15) },
+  modalBtns: { flexDirection: 'row', gap: 10, flex: 1 },
+  modalBtn: { flex: 1 },
+  modalScroll: { maxHeight: 420 },
 });

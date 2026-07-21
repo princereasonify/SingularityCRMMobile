@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Eye, EyeOff, ArrowRight } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowRight, Check } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
@@ -32,6 +32,7 @@ import {
   BiometricInfo,
 } from '../../services/biometricService';
 import { saveCredentials, loadCredentials, clearCredentials } from '../../services/secureStorage';
+import { loadRememberedEmail, saveRememberedEmail, clearRememberedEmail } from '../../services/rememberMe';
 import { androidAuthenticate } from '../../services/nativeBiometric';
 
 export const LoginScreen = ({ navigation }: any) => {
@@ -51,6 +52,7 @@ export const LoginScreen = ({ navigation }: any) => {
   // The in-app keyboard is open for whichever field is active (null = closed).
   const [activeField, setActiveField] = useState<'email' | 'password' | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [rememberMe, setRememberMe] = useState(false);
 
   // ── Biometric quick sign-in ──
   const [biometricInfo, setBiometricInfo] = useState<BiometricInfo | null>(null);
@@ -68,6 +70,19 @@ export const LoginScreen = ({ navigation }: any) => {
       applyLoginOrientation();
     }, []),
   );
+
+  // Prefill the remembered address once, on mount. Runs before any biometric
+  // prompt so the field is already populated if the user cancels that sheet.
+  useEffect(() => {
+    let alive = true;
+    loadRememberedEmail().then(saved => {
+      if (alive && saved) {
+        setEmail(saved);
+        setRememberMe(true);
+      }
+    });
+    return () => { alive = false; };
+  }, []);
 
   // Lift the form so the active field clears the in-app keyboard.
   useEffect(() => {
@@ -115,6 +130,9 @@ export const LoginScreen = ({ navigation }: any) => {
       applyAuthedOrientation();
       const em = email.trim().toLowerCase();
       await login(em, password);
+      // Only persist after the credentials are proven good, so a typo is never
+      // remembered. Fire-and-forget: storage must not delay the navigation.
+      (rememberMe ? saveRememberedEmail(em) : clearRememberedEmail()).catch(() => {});
       // Auto-enroll biometrics silently on the first successful password login
       // (only when the hardware is available). Fire-and-forget so it can never
       // block or fail the login — the screen is already navigating away.
@@ -257,6 +275,29 @@ export const LoginScreen = ({ navigation }: any) => {
         </View>
         {!!errors.password && <Text style={[styles.errText, { color: T.danger }]}>{errors.password}</Text>}
       </View>
+
+      {/* Remember me — stores the EMAIL only. The password stays in the Keychain
+          behind biometrics (see services/rememberMe.ts for why). */}
+      <TouchableOpacity
+        style={styles.rememberRow}
+        activeOpacity={0.7}
+        onPress={() => setRememberMe(v => !v)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: rememberMe }}
+        accessibilityLabel="Remember my email address"
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <View
+          style={[
+            styles.checkbox,
+            { borderColor: rememberMe ? T.accentText : T.line },
+            rememberMe && { backgroundColor: T.accentText },
+          ]}
+        >
+          {rememberMe && <Check size={13} color="#FFF" strokeWidth={3} />}
+        </View>
+        <Text style={[styles.rememberTxt, { color: T.sub }]}>Remember my email</Text>
+      </TouchableOpacity>
 
       {/* Sign in — Sunstone gradient with sweeping shimmer */}
       <GradientButton
@@ -416,6 +457,17 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontWeight: '500', fontSize: rf(15), padding: 0 },
   errText: { fontWeight: '400', fontSize: rf(12), marginTop: 6 }, // caption 11–12
 
+  rememberRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 9,
+    marginTop: 14, alignSelf: 'flex-start',
+  },
+  checkbox: {
+    width: 19, height: 19, borderRadius: 6, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  // flexShrink:1 + minWidth:0 — RN defaults flexShrink to 0, so the label would
+  // lay out at full width and push the checkbox off on a narrow phone.
+  rememberTxt: { fontSize: rf(13), fontWeight: '600', flexShrink: 1, minWidth: 0 },
   signIn: { marginTop: 6 },
 
   signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },

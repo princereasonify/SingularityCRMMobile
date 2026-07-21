@@ -1,38 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput,
+  View, Text, ScrollView, StyleSheet, Alert, TextInput,
+  ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ArrowLeft, User as UserIcon, CalendarDays, CheckCircle2, ClipboardList,
+} from 'lucide-react-native';
+
 import { onboardingApi } from '../../api/onboarding';
-import { OnboardAssignment } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
+import { OnboardAssignment, parseModules } from '../../types';
 import { ProgressBar } from '../../components/common/ProgressBar';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
-import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge, FilterChip,
+} from '../../components/crud';
+
+import { useAppTheme } from '../../theme/useAppTheme';
+import { AppTheme } from '../../theme/appTheme';
 import { formatDate } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
+import { rf, isTabletDevice } from '../../utils/responsive';
+
+const DASH = '—';
 
 const STATUS_OPTIONS = ['Assigned', 'InProgress', 'Completed', 'OnHold', 'Cancelled'];
-const STATUS_COLORS: Record<string, string> = {
-  Assigned: '#F59E0B', InProgress: '#2563EB', Completed: '#16A34A',
-  OnHold: '#9CA3AF', Cancelled: '#DC2626',
+
+/** Status ramp — spec tokens only, same five states the list screen paints. */
+const statusColor = (T: AppTheme, st?: string) => {
+  switch (st) {
+    case 'Assigned':   return T.warning;
+    case 'InProgress': return T.info;
+    case 'Completed':  return T.success;
+    case 'Cancelled':  return T.danger;
+    default:           return T.sub;   // OnHold
+  }
 };
+
+/** Attainment ramp — three distinct spec hues, never two adjacent tiers sharing one. */
+const attainColor = (T: AppTheme, p: number) => (p >= 100 ? T.success : p >= 50 ? T.info : T.warning);
 
 export const OnboardDetailScreen = ({ navigation, route }: any) => {
   const { onboardId } = route.params;
-  const { user } = useAuth();
-  const role = user?.role || 'FO';
-  const COLOR = ROLE_COLORS[role as keyof typeof ROLE_COLORS];
+  const T = useAppTheme();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
 
   const [item, setItem] = useState<OnboardAssignment | null>(null);
   const [loading, setLoading] = useState(true);
   const [progressInput, setProgressInput] = useState('');
   const [progressNotes, setProgressNotes] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [statusOpen, setStatusOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
 
   const load = () => {
@@ -74,155 +92,233 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
     finally { setUpdating(false); }
   };
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading..." />;
-  if (!item) return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader title="Onboarding" color={COLOR.primary} onBack={() => navigation.goBack()} />
-      <EmptyState title="Not found" icon="📋" />
-    </SafeAreaView>
+  const backBtn = (
+    <IconBtn kind="view" label="Back" onPress={() => navigation.goBack()}>
+      <ArrowLeft size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+    </IconBtn>
   );
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title={item.schoolName} subtitle="Onboarding Details" color={COLOR.primary} onBack={() => navigation.goBack()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        {/* Progress Circle */}
-        <View style={styles.progressCard}>
-          <View style={[styles.progressCircle, { borderColor: COLOR.primary }]}>
-            <Text style={[styles.progressPct, { color: COLOR.primary }]}>{item.completionPercentage}%</Text>
-            <Text style={styles.progressLabel}>Complete</Text>
+  if (loading) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+        <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!item) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+        <ScrollView contentContainerStyle={[s.scroll, wide && s.scrollWide]}>
+          <View style={s.head}>
+            {backBtn}
+            <View style={{ flex: 1 }}>
+              <Text style={[s.title, { color: T.text }]}>Onboarding</Text>
+            </View>
           </View>
-          <View style={styles.progressInfo}>
-            <Badge label={item.status} color={STATUS_COLORS[item.status] || '#9CA3AF'} />
-            <Text style={styles.assignedTo}>👤 {item.assignedToName}</Text>
-            {item.scheduledEndDate && (
-              <Text style={styles.deadline}>Due {formatDate(item.scheduledEndDate)}</Text>
-            )}
+          <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+            <ClipboardList size={34} color={T.dim} strokeWidth={ICON_STROKE} />
+            <Text style={[s.emptyTitle, { color: T.text }]}>Not found</Text>
+            <Text style={[s.emptyTxt, { color: T.dim }]}>
+              This onboarding assignment is no longer available.
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // `modules` arrives as a packed JSON string, not an array — see parseModules().
+  const modules = parseModules(item.modules);
+  const p = item.completionPercentage;
+  const ring = attainColor(T, p);
+
+  const details: { label: string; value: string }[] = [
+    { label: 'Lead ID', value: String(item.leadId) },
+    { label: 'Deal ID', value: item.dealId ? String(item.dealId) : DASH },
+    { label: 'Start Date', value: item.scheduledStartDate ? formatDate(item.scheduledStartDate) : DASH },
+    { label: 'End Date', value: item.scheduledEndDate ? formatDate(item.scheduledEndDate) : DASH },
+  ];
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={[s.scroll, wide && s.scrollWide]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={s.head}>
+          {backBtn}
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, { color: T.text }]} numberOfLines={2}>{item.schoolName}</Text>
+            <Text style={[s.subtitle, { color: T.sub }]}>Onboarding Details</Text>
           </View>
         </View>
 
-        <ProgressBar value={item.completionPercentage} color={COLOR.primary} style={{ marginHorizontal: 0 }} />
+        {/* Progress ring + status summary */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.summaryRow}>
+            <View style={[s.ring, { borderColor: ring }]}>
+              <Text style={[s.ringPct, { color: ring }]}>{p}%</Text>
+              <Text style={[s.ringLabel, { color: T.dim }]}>Complete</Text>
+            </View>
+            <View style={s.summaryInfo}>
+              <StatusBadge label={item.status} color={statusColor(T, item.status)} />
+              <View style={s.metaRow}>
+                <UserIcon size={13} color={T.dim} strokeWidth={ICON_STROKE} />
+                <Text style={[s.metaTxt, { color: T.sub }]} numberOfLines={1}>
+                  {item.assignedToName || DASH}
+                </Text>
+              </View>
+              {!!item.scheduledEndDate && (
+                <View style={s.metaRow}>
+                  {p === 100
+                    ? <CheckCircle2 size={13} color={T.success} strokeWidth={ICON_STROKE} />
+                    : <CalendarDays size={13} color={T.dim} strokeWidth={ICON_STROKE} />}
+                  <Text style={[s.metaTxt, { color: T.sub }]} numberOfLines={1}>
+                    Due {formatDate(item.scheduledEndDate)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+          <ProgressBar value={p} height={6} color={ring} trackColor={T.line} style={{ marginTop: 14 }} />
+        </View>
 
-        {/* Info */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Details</Text>
-          {[
-            { label: 'Lead ID', value: String(item.leadId) },
-            { label: 'Deal ID', value: item.dealId ? String(item.dealId) : '—' },
-            { label: 'Start Date', value: item.scheduledStartDate ? formatDate(item.scheduledStartDate) : '—' },
-            { label: 'End Date', value: item.scheduledEndDate ? formatDate(item.scheduledEndDate) : '—' },
-          ].map(row => (
-            <View key={row.label} style={styles.infoRow}>
-              <Text style={styles.infoLabel}>{row.label}</Text>
-              <Text style={styles.infoValue}>{row.value}</Text>
+        {/* Details */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Text style={[s.sectionTitle, { color: T.text }]}>Details</Text>
+          {details.map((row, i) => (
+            <View
+              key={row.label}
+              style={[s.infoRow, i < details.length - 1 && { borderBottomWidth: 1, borderBottomColor: T.line }]}
+            >
+              <Text style={[s.infoLabel, { color: T.sub }]} numberOfLines={1}>{row.label}</Text>
+              <Text style={[s.infoValue, { color: T.text }]} numberOfLines={1}>{row.value}</Text>
             </View>
           ))}
-        </Card>
+        </View>
 
         {/* Modules */}
-        {item.modules && item.modules.length > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Modules</Text>
-            <View style={styles.moduleRow}>
-              {item.modules.map((m, i) => (
-                <View key={i} style={[styles.moduleChip, { backgroundColor: COLOR.light }]}>
-                  <Text style={[styles.moduleText, { color: COLOR.primary }]}>{m}</Text>
-                </View>
-              ))}
+        {modules.length > 0 && (
+          <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+            <Text style={[s.sectionTitle, { color: T.text }]}>Modules</Text>
+            <View style={s.chipWrap}>
+              {modules.map((m, i) => <FilterChip key={`${m}-${i}`} label={m} />)}
             </View>
-          </Card>
+          </View>
         )}
 
         {/* Update Progress */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Update Progress</Text>
-          <View style={styles.progressInputRow}>
-            <TextInput
-              style={styles.progressInput}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Text style={[s.sectionTitle, { color: T.text }]}>Update Progress</Text>
+          <View style={s.pctRow}>
+            <Input
+              label="Completion"
               value={progressInput}
               onChangeText={setProgressInput}
               keyboardType="numeric"
               placeholder="0–100"
-              placeholderTextColor="#9CA3AF"
+              containerStyle={{ width: 130 }}
             />
-            <Text style={styles.pctSymbol}>%</Text>
+            <Text style={[s.pctSym, { color: T.sub }]}>%</Text>
           </View>
-          <TextInput
-            style={styles.notesInput}
-            value={progressNotes}
-            onChangeText={setProgressNotes}
-            placeholder="Update notes (optional)..."
-            placeholderTextColor="#9CA3AF"
-            multiline
-            numberOfLines={2}
+          <Field label="Update Notes">
+            <TextInput
+              value={progressNotes}
+              onChangeText={setProgressNotes}
+              placeholder="Update notes (optional)…"
+              placeholderTextColor={T.dim}
+              multiline
+              style={[s.textArea, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
+            />
+          </Field>
+          <Btn
+            label={updating ? 'Updating…' : 'Update Progress'}
+            onPress={handleUpdateProgress}
+            loading={updating}
+            style={wide ? { alignSelf: 'flex-start' } : undefined}
           />
-          <Button title={updating ? 'Updating...' : 'Update Progress'} onPress={handleUpdateProgress} variant="primary" disabled={updating} style={{ marginTop: 8 }} />
-        </Card>
+        </View>
 
         {/* Update Status */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Update Status</Text>
-          <View style={styles.chipRow}>
-            {STATUS_OPTIONS.map(s => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.chip, selectedStatus === s && { backgroundColor: COLOR.primary }]}
-                onPress={() => setSelectedStatus(s)}
-              >
-                <Text style={[styles.chipText, selectedStatus === s && { color: '#FFF' }]}>{s}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Button title={updating ? 'Updating...' : 'Update Status'} onPress={handleUpdateStatus} variant="secondary" disabled={updating} style={{ marginTop: 8 }} />
-        </Card>
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <Text style={[s.sectionTitle, { color: T.text }]}>Update Status</Text>
+          <Field label="Status">
+            <Trigger
+              label={selectedStatus || 'Select status'}
+              open={statusOpen}
+              onPress={() => setStatusOpen(o => !o)}
+            />
+            {statusOpen && (
+              <Dropdown
+                style={{ width: wide ? 260 : '100%' }}
+                value={selectedStatus}
+                onSelect={v => { setSelectedStatus(v); setStatusOpen(false); }}
+                options={STATUS_OPTIONS.map(o => ({ label: o, value: o }))}
+              />
+            )}
+          </Field>
+          {/* Same weight as "Update Progress" — both are parallel commits, so
+              they get the same treatment rather than primary vs secondary. */}
+          <Btn
+            label={updating ? 'Updating…' : 'Update Status'}
+            onPress={handleUpdateStatus}
+            loading={updating}
+            disabled={updating}
+            style={wide ? { alignSelf: 'flex-start' } : undefined}
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
-  progressCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 20,
-    backgroundColor: '#FFF', borderRadius: 16, padding: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
-  progressCircle: {
+// ─── Styles (layout only — colour is applied inline from the theme) ────────────
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12 },
+  scrollWide: { paddingHorizontal: 22 },
+
+  head: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  title: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.4 },
+  subtitle: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 14, gap: 12 },
+  sectionTitle: { fontSize: rf(14), fontWeight: '700' },
+
+  // summary
+  summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  ring: {
     width: 80, height: 80, borderRadius: 40, borderWidth: 4,
     alignItems: 'center', justifyContent: 'center',
   },
-  progressPct: { fontSize: rf(20), fontWeight: '700' },
-  progressLabel: { fontSize: rf(11), color: '#9CA3AF' },
-  progressInfo: { flex: 1, gap: 6 },
-  assignedTo: { fontSize: rf(13), color: '#6B7280' },
-  deadline: { fontSize: rf(12), color: '#9CA3AF' },
-  section: {},
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 12 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  infoLabel: { fontSize: rf(13), color: '#6B7280' },
-  infoValue: { fontSize: rf(13), color: '#111827', fontWeight: '500' },
-  moduleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  moduleChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  moduleText: { fontSize: rf(13), fontWeight: '500' },
-  progressInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  progressInput: {
-    width: 80, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(16), color: '#111827',
-    textAlign: 'center',
+  ringPct: { fontSize: rf(19), fontWeight: '800' },
+  ringLabel: { fontSize: rf(10), fontWeight: '600' },
+  summaryInfo: { flex: 1, gap: 7, minWidth: 0 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaTxt: { fontSize: rf(12.5), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+
+  // details rows
+  infoRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, paddingVertical: 9,
   },
-  pctSymbol: { fontSize: rf(18), color: '#6B7280', fontWeight: '700' },
-  notesInput: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(14), color: '#111827',
-    height: 60, textAlignVertical: 'top',
+  infoLabel: { fontSize: rf(12.5), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+  infoValue: { fontSize: rf(12.5), fontWeight: '700', flexShrink: 1, minWidth: 0, textAlign: 'right' },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+
+  // update progress
+  pctRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  pctSym: { fontSize: rf(16), fontWeight: '700', marginBottom: 12 },
+  // kit Input hard-codes height:46 — multiline needs its own themed TextInput
+  textArea: {
+    minHeight: 64, borderRadius: 13, borderWidth: 1.5,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: rf(14), fontWeight: '500', textAlignVertical: 'top',
   },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
 });

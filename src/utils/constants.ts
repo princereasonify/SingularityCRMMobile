@@ -1,9 +1,35 @@
+import { Platform } from 'react-native';
 import { LeadStage } from '../types';
 import { Colors } from '../theme';
 import { API_BASE_URL as ENV_API_BASE_URL, GOOGLE_MAPS_API_KEY as ENV_GMAPS_KEY } from '@env';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-export const API_BASE_URL = ENV_API_BASE_URL;
+/**
+ * Base URL from .env, with one platform correction.
+ *
+ * The Android emulator runs behind its own NAT: `localhost` there resolves to
+ * the EMULATOR, not to the Mac running the backend. The host is reachable at the
+ * special alias 10.0.2.2. iOS simulators share the host's network stack, so
+ * `localhost` is already correct there.
+ *
+ * Rewriting here means .env carries ONE local line that works on both, instead
+ * of needing a hand-edit every time you switch simulator — which is the usual
+ * cause of "the backend is running but the app can't reach it" on Android.
+ *
+ * Only localhost/127.0.0.1 is touched. A LAN IP (physical device) or the live
+ * https:// host passes through untouched.
+ */
+const resolveBaseUrl = (raw: string): string => {
+  if (Platform.OS !== 'android') return raw;
+  return raw.replace(/\/\/(localhost|127\.0\.0\.1)(:|\/)/, '//10.0.2.2$2');
+};
+
+export const API_BASE_URL = resolveBaseUrl(ENV_API_BASE_URL);
+
+/** True when pointed at a local backend — handy for a debug badge or logging. */
+export const IS_LOCAL_API = /\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(
+  API_BASE_URL,
+);
 
 /**
  * Google Maps key for the Places/Geocoding REST calls (AddSchool, HomeLocation).

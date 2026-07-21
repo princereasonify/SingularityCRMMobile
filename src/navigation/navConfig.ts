@@ -71,9 +71,75 @@ export const FO_NAV: NavGroup[] = [
   },
 ];
 
+/**
+ * ZH — mirrors web's `Sidebar.jsx` ZH array exactly, all 20 items in web's order,
+ * regrouped into the same Overview/Sales/Demos/Field/Finance/Insights/Admin bands
+ * FO uses. Two of these had no mobile drawer entry before (Record Demo, Payment
+ * Integration) even though both screens already existed.
+ *
+ * Differences from FO, all matching web:
+ *   · "Zone Dashboard" not "Dashboard"; adds Team, Onboarding, Manage Users
+ *   · "Live Tracking" (the manager view) instead of FO's own "My Tracking"
+ *   · "Targets" not "My Targets"; no Activity Log, no Route Planner, no My Performance
+ */
+export const ZH_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { route: 'Dashboard', label: 'Zone Dashboard', icon: 'Dashboard' },
+      { route: 'Team', label: 'Team', icon: 'Users' },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'Schools', label: 'Schools', icon: 'Schools' },
+      { route: 'All Leads', label: 'All Leads', icon: 'Leads' },
+      { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
+      { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
+      { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+    ],
+  },
+  {
+    label: 'Demos',
+    items: [
+      { route: 'Demo Management', label: 'Demo Management', icon: 'Demos' },
+      { route: 'Record Demo', label: 'Record Demo', icon: 'Record' },
+      { route: 'Onboarding', label: 'Onboarding', icon: 'Onboarding' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Live Tracking', label: 'Live Tracking', icon: 'Tracking' },
+      { route: 'Home Location', label: 'Home Location', icon: 'Home' },
+      { route: 'Weekly Plan', label: 'Weekly Plan', icon: 'Weekly' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { route: 'Payment Integration', label: 'Payment Integration', icon: 'Payment' },
+      { route: 'Targets', label: 'Targets', icon: 'Targets' },
+      { route: 'Allowances', label: 'Allowances', icon: 'Allowance' },
+      { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+  },
+  {
+    label: 'Admin',
+    items: [{ route: 'Manage Users', label: 'Manage Users', icon: 'Users' }],
+  },
+];
+
 /** Role → grouped nav. Other roles land here as they're migrated to the new shell. */
 export const NAV_BY_ROLE: Record<string, NavGroup[]> = {
   FO: FO_NAV,
+  ZH: ZH_NAV,
 };
 
 /** The group a route belongs to — used by the topbar breadcrumb ("Role · Group"). */

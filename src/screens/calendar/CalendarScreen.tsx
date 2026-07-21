@@ -16,7 +16,7 @@ import { DateInput } from '../../components/common/DateInput';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import {
-  Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge, ListCard, FormModal,
+  Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge, ListCard, FormModal, Pagination,
 } from '../../components/crud';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -43,6 +43,23 @@ type CreateType = typeof CREATE_TYPES[number];
  * as pseudo-events and `Call` is a valid WeeklyActivity type. It can be displayed, never created.
  */
 const LEGEND_TYPES = ['Meeting', 'Demo', 'FollowUp', 'Visit', 'Onboarding', 'Call', 'Other'] as const;
+
+/**
+ * House page size for the selected-day agenda, which is paged CLIENT-SIDE.
+ *
+ * CalendarController exposes exactly one read route:
+ *   [HttpGet] … GetEvents([FromQuery] string from, [FromQuery] string to)
+ * `from` and `to` are the ONLY bound query parameters — there is no `page`, `limit` or
+ * `pageSize` binding, and the response is `ApiResponse<List<CalendarEventDto>>` (a bare
+ * list, not a PaginatedResult). The whole month therefore arrives in one payload, and the
+ * agenda's approved weekly-plan pseudo-events are synthesised on the client anyway, so
+ * server-side paging is not available to us here.
+ *
+ * The month grid itself is NOT paged: it is a calendar, not a record list.
+ */
+const PAGE_SIZE = 10;
+
+const DASH = '—';
 
 /**
  * Event-type colours resolved from the theme so light and dark both stay on-palette.
@@ -96,6 +113,25 @@ const formatTime = (iso?: string) => {
   return `${h12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 };
 
+/**
+ * Full "date + time" label for the event-details modal (web parity: Calendar.jsx
+ * renders `new Date(startTime).toLocaleString('en-IN')` for both Start and End).
+ *
+ * Built from the ISO string's OWN Y-M-D and H:M for the same reason formatTime is —
+ * the server re-labels the wall clock as UTC rather than converting it, so handing the
+ * string to `new Date()` and formatting it would shift every event by the device offset.
+ * Only the date half goes through Date(), and it is constructed from the parsed parts
+ * as a LOCAL date so no offset can move it across midnight.
+ */
+const formatDateTime = (iso?: string) => {
+  if (!iso) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(iso);
+  if (!m) return iso;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const datePart = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return m[4] ? `${datePart}, ${formatTime(iso)}` : datePart;
+};
+
 const isPlanEvent = (ev: CalendarEvent) => !!(ev as any).isWeeklyPlan;
 
 export const CalendarScreen = (_: any) => {
@@ -104,6 +140,8 @@ export const CalendarScreen = (_: any) => {
   const { isOnline } = useOffline();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  /** iPad always gets the real agenda table — never a card stack. Phones get list rows. */
+  const table = isTabletDevice;
 
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
@@ -115,6 +153,7 @@ export const CalendarScreen = (_: any) => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState(today.getDate());
+  const [agendaPage, setAgendaPage] = useState(1);
 
   /**
    * The grid's width is MEASURED, never derived from useWindowDimensions(): the permanent
@@ -131,6 +170,10 @@ export const CalendarScreen = (_: any) => {
   const cellW = gridW > 0 ? Math.floor(gridW / 7) : 0;
   // Cells FLEX — this is only a floor. Rows stretch to their tallest cell (alignItems:'stretch').
   const cellMinH = Math.round(Math.max(46, Math.min(cellW * 1.05, 92)));
+
+  // Event-details modal — opened by tapping a pill in the month grid (web parity:
+  // Calendar.jsx's pills are <button onClick={() => setSelectedEvent(ev)}>).
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // Create modal
   const [showModal, setShowModal] = useState(false);
@@ -259,6 +302,15 @@ export const CalendarScreen = (_: any) => {
 
   const selectedDateStr = toDateStr(year, month, selectedDay);
   const selectedEvents = byDay[selectedDateStr] ?? [];
+
+  // Client-side agenda paging (see PAGE_SIZE). Picking another day — or a refetch that
+  // rewrites `events` — resets to page 1, so a page-2 view can never render empty.
+  useEffect(() => { setAgendaPage(1); }, [selectedDateStr, events]);
+
+  const agendaPageCount = Math.max(1, Math.ceil(selectedEvents.length / PAGE_SIZE));
+  const pagedEvents = selectedEvents.slice((agendaPage - 1) * PAGE_SIZE, agendaPage * PAGE_SIZE);
+  const agendaFrom = selectedEvents.length === 0 ? 0 : (agendaPage - 1) * PAGE_SIZE + 1;
+  const agendaTo = Math.min(agendaPage * PAGE_SIZE, selectedEvents.length);
 
   const isToday = (day: number | null) =>
     !!day && day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
@@ -393,8 +445,13 @@ export const CalendarScreen = (_: any) => {
                           {dayEvs.slice(0, 3).map(ev => {
                             const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
                             return (
-                              <View
+                              <TouchableOpacity
                                 key={String(ev.id)}
+                                // Tapping a pill selects its day AND opens the details
+                                // modal, so the day panel below stays in sync with it.
+                                onPress={() => { if (day) setSelectedDay(day); setSelectedEvent(ev); }}
+                                activeOpacity={0.7}
+                                accessibilityLabel={`${ev.title} — event details`}
                                 style={[
                                   s.pill,
                                   { backgroundColor: withAlpha(c, SOFT_TINT) },
@@ -402,8 +459,17 @@ export const CalendarScreen = (_: any) => {
                                   isPlanEvent(ev) && { borderLeftWidth: 2, borderLeftColor: c },
                                 ]}
                               >
-                                <Text style={[s.pillTxt, { color: c }]} numberOfLines={1}>{ev.title}</Text>
-                              </View>
+                                <Text
+                                  style={[
+                                    s.pillTxt,
+                                    { color: c },
+                                    ev.isCompleted && { textDecorationLine: 'line-through' },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {ev.isCompleted ? '✓ ' : ''}{ev.title}
+                                </Text>
+                              </TouchableOpacity>
                             );
                           })}
                           {dayEvs.length > 3 && (
@@ -433,7 +499,114 @@ export const CalendarScreen = (_: any) => {
     </View>
   );
 
-  // ── Selected-day detail ────────────────────────────────────────────────────
+  // ── Selected-day agenda ────────────────────────────────────────────────────
+  /** Shared completion control so the table cell and the phone row cannot drift. */
+  const doneCtl = (ev: CalendarEvent) =>
+    ev.isCompleted ? (
+      <View style={[s.done, { backgroundColor: T.success }]}>
+        <Check size={14} color="#FFF" strokeWidth={3} />
+      </View>
+    ) : (
+      <TouchableOpacity
+        accessibilityLabel="Mark complete"
+        style={[s.todo, { borderColor: T.lineStrong }]}
+        onPress={() => handleMarkComplete(ev)}
+      >
+        <Check size={14} color={T.dim} strokeWidth={3} />
+      </TouchableOpacity>
+    );
+
+  /** iPad: a real table. Header and body share the c* column constants verbatim. */
+  const renderAgendaTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cTime]}>Time</Text>
+        <Text style={[s.th, { color: T.dim }, s.cEvent]}>Event</Text>
+        <Text style={[s.th, { color: T.dim }, s.cType]}>Type</Text>
+        <Text style={[s.th, { color: T.dim }, s.cDone]}>Done</Text>
+      </View>
+
+      {pagedEvents.map(ev => {
+        const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
+        const plan = isPlanEvent(ev);
+        const sub = [ev.schoolName, ev.description].filter(Boolean).join(' • ');
+        return (
+          <TouchableOpacity
+            key={String(ev.id)}
+            activeOpacity={0.75}
+            onPress={() => setSelectedEvent(ev)}
+            style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}
+          >
+            <Text style={[s.td, { color: T.sub }, s.cTime]} numberOfLines={1}>
+              {formatTime(ev.startTime) || DASH}
+            </Text>
+            <View style={s.cEvent}>
+              <Text
+                style={[
+                  s.tdName,
+                  { color: T.text },
+                  ev.isCompleted && { color: T.dim, textDecorationLine: 'line-through' },
+                ]}
+                numberOfLines={1}
+              >
+                {ev.title}
+              </Text>
+              <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+                {sub || (plan ? 'Weekly plan activity' : DASH)}
+              </Text>
+            </View>
+            <View style={s.cType}>
+              <StatusBadge label={ev.eventType} color={c} />
+            </View>
+            {/* Plan pseudo-events have no calendar row to update — no control at all. */}
+            <View style={s.cDone}>{plan ? null : doneCtl(ev)}</View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  /** Phone: ListCard rows from the kit — a list, never a card grid. */
+  const renderAgendaRows = () => (
+    <View style={{ gap: 8 }}>
+      {pagedEvents.map(ev => {
+        const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
+        const plan = isPlanEvent(ev);
+        return (
+          <ListCard key={String(ev.id)} style={s.evCard} onPress={() => setSelectedEvent(ev)}>
+            <View style={[s.evBar, { backgroundColor: c }]} />
+            <View style={s.flexMin}>
+              <Text
+                style={[
+                  s.evTitle,
+                  { color: T.text },
+                  ev.isCompleted && { color: T.dim, textDecorationLine: 'line-through' },
+                ]}
+                numberOfLines={2}
+              >
+                {ev.title}
+              </Text>
+              <Text style={[s.evTime, { color: T.sub }]} numberOfLines={1}>
+                {formatTime(ev.startTime)} – {formatTime(ev.endTime)}
+              </Text>
+              {!!ev.schoolName && (
+                <Text style={[s.evMeta, { color: T.dim }]} numberOfLines={1}>{ev.schoolName}</Text>
+              )}
+              {!!ev.description && (
+                <Text style={[s.evMeta, { color: T.sub }]} numberOfLines={2}>{ev.description}</Text>
+              )}
+              <View style={s.evBadges}>
+                <StatusBadge label={ev.eventType} color={c} />
+                {plan && <StatusBadge label="Weekly Plan" color={T.info} />}
+              </View>
+            </View>
+            {!plan && doneCtl(ev)}
+          </ListCard>
+        );
+      })}
+    </View>
+  );
+
   const renderDayPanel = () => (
     <View style={s.panel}>
       <View style={s.panelHead}>
@@ -464,57 +637,17 @@ export const CalendarScreen = (_: any) => {
           </Text>
         </View>
       ) : (
-        <View style={{ gap: 8 }}>
-          {selectedEvents.map(ev => {
-            const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
-            const plan = isPlanEvent(ev);
-            return (
-              <ListCard key={String(ev.id)} style={s.evCard}>
-                <View style={[s.evBar, { backgroundColor: c }]} />
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text
-                    style={[
-                      s.evTitle,
-                      { color: T.text },
-                      ev.isCompleted && { color: T.dim, textDecorationLine: 'line-through' },
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {ev.title}
-                  </Text>
-                  <Text style={[s.evTime, { color: T.sub }]}>
-                    {formatTime(ev.startTime)} – {formatTime(ev.endTime)}
-                  </Text>
-                  {!!ev.schoolName && (
-                    <Text style={[s.evMeta, { color: T.dim }]} numberOfLines={1}>{ev.schoolName}</Text>
-                  )}
-                  {!!ev.description && (
-                    <Text style={[s.evMeta, { color: T.sub }]} numberOfLines={2}>{ev.description}</Text>
-                  )}
-                  <View style={s.evBadges}>
-                    <StatusBadge label={ev.eventType} color={c} />
-                    {plan && <StatusBadge label="Weekly Plan" color={T.info} />}
-                  </View>
-                </View>
-                {!plan && (
-                  ev.isCompleted ? (
-                    <View style={[s.done, { backgroundColor: T.success }]}>
-                      <Check size={14} color="#FFF" strokeWidth={3} />
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      accessibilityLabel="Mark complete"
-                      style={[s.todo, { borderColor: T.lineStrong }]}
-                      onPress={() => handleMarkComplete(ev)}
-                    >
-                      <Check size={14} color={T.dim} strokeWidth={3} />
-                    </TouchableOpacity>
-                  )
-                )}
-              </ListCard>
-            );
-          })}
-        </View>
+        <>
+          {table ? renderAgendaTable() : renderAgendaRows()}
+          {agendaPageCount > 1 && (
+            <View style={s.pgRow}>
+              <Text style={[s.count, { color: T.dim }]}>
+                Showing {agendaFrom}{DASH}{agendaTo} of {selectedEvents.length}
+              </Text>
+              <Pagination page={agendaPage} pageCount={agendaPageCount} onChange={setAgendaPage} />
+            </View>
+          )}
+        </>
       )}
     </View>
   );
@@ -534,12 +667,9 @@ export const CalendarScreen = (_: any) => {
           />
         }
       >
-        {/* House pattern: plain themed title block on T.bg — no gradient hero. */}
-        <View style={s.header}>
-          <View style={s.titleBlock}>
-            <Text style={[s.h1, { color: T.text }]}>Calendar</Text>
-            <Text style={[s.h2, { color: T.dim }]}>Your schedule at a glance</Text>
-          </View>
+        {/* No in-page title or hamburger — the topbar (native drawer header for
+            RH/SH/SCA) already names the screen and carries the menu. Just the action. */}
+        <View style={s.actionBar}>
           <Btn
             label="New Event"
             small
@@ -564,6 +694,80 @@ export const CalendarScreen = (_: any) => {
           </View>
         )}
       </ScrollView>
+
+      {/* ── Event details (web parity: Calendar.jsx's selectedEvent modal) ──
+          The day panel already shows title, type, description and the HH:MM range;
+          what only lives here is the fully formatted START and END datetime, which the
+          panel's bare "9:00 AM – 10:00 AM" omits the date half of. */}
+      {!!selectedEvent && (() => {
+        const ev = selectedEvent;
+        const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
+        const plan = isPlanEvent(ev);
+        return (
+          <FormModal
+            visible
+            wide={wide}
+            title="Event Details"
+            onClose={() => setSelectedEvent(null)}
+            footer={
+              <>
+                <View style={{ flex: 1 }} />
+                <Btn label="Close" variant="secondary" onPress={() => setSelectedEvent(null)} small />
+                {!plan && !ev.isCompleted && (
+                  <Btn
+                    label="Mark complete"
+                    small
+                    icon={<Check size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+                    onPress={() => { handleMarkComplete(ev); setSelectedEvent(null); }}
+                  />
+                )}
+              </>
+            }
+          >
+            <View style={s.detail}>
+              <View style={s.detailBadges}>
+                <StatusBadge label={ev.eventType} color={c} />
+                {plan && <StatusBadge label="Weekly Plan" color={T.info} />}
+                {ev.isCompleted && <StatusBadge label="Completed" color={T.success} />}
+              </View>
+
+              <Text
+                style={[
+                  s.detailTitle,
+                  { color: T.text },
+                  ev.isCompleted && { color: T.dim, textDecorationLine: 'line-through' },
+                ]}
+              >
+                {ev.title}
+              </Text>
+
+              {!!ev.schoolName && (
+                <Text style={[s.detailBody, { color: T.dim }]}>{ev.schoolName}</Text>
+              )}
+              {!!ev.description && (
+                <Text style={[s.detailBody, { color: T.sub }]}>{ev.description}</Text>
+              )}
+
+              <View style={s.detailTimes}>
+                <View style={s.flex}>
+                  <Text style={[s.detailLabel, { color: T.dim }]}>Start</Text>
+                  <Text style={[s.detailValue, { color: T.text }]}>{formatDateTime(ev.startTime)}</Text>
+                </View>
+                <View style={s.flex}>
+                  <Text style={[s.detailLabel, { color: T.dim }]}>End</Text>
+                  <Text style={[s.detailValue, { color: T.text }]}>{formatDateTime(ev.endTime)}</Text>
+                </View>
+              </View>
+
+              {plan && (
+                <Text style={[s.detailNote, { color: T.dim }]}>
+                  This is a weekly plan activity and cannot be completed from the calendar.
+                </Text>
+              )}
+            </View>
+          </FormModal>
+        );
+      })()}
 
       {showModal && (
         <FormModal
@@ -649,10 +853,8 @@ const s = StyleSheet.create({
   scroll: { padding: 14, gap: 12 },
   scrollWide: { paddingHorizontal: 22 },
 
-  header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
-  titleBlock: { flex: 1, gap: 2 },
-  h1: { fontSize: rf(21), fontWeight: '800', letterSpacing: -0.4 },
-  h2: { fontSize: rf(12.5), fontWeight: '500' },
+  /** Just the primary action, right-aligned, now the title/subtitle are gone. */
+  actionBar: { flexDirection: 'row', justifyContent: 'flex-end' },
 
   banner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -660,10 +862,13 @@ const s = StyleSheet.create({
   },
   bannerTxt: { flex: 1, fontSize: rf(12.5), fontWeight: '600' },
 
-  // two-pane on iPad landscape — uses the horizontal room instead of leaving it empty
+  // Two-pane on iPad landscape — uses the horizontal room instead of leaving it empty.
+  // Both columns are FLEX FRACTIONS of the row, never a slice of useWindowDimensions():
+  // the permanent 240pt sidebar means the window is wider than this row's content box,
+  // so any `width * n` here would push the grid's last column off screen.
   two: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
-  gridCol: { flex: 1.55 },
-  panelCol: { flex: 1 },
+  gridCol: { flex: 1.35, flexShrink: 1, minWidth: 0 },
+  panelCol: { flex: 1, flexShrink: 1, minWidth: 0 },
 
   card: { borderRadius: 16, borderWidth: 1, padding: 10, gap: 10 },
 
@@ -711,6 +916,28 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: rf(13.5), fontWeight: '700' },
   emptyTxt: { fontSize: rf(12), fontWeight: '500', textAlign: 'center' },
 
+  // ── Agenda table — .tbl r16 · .th cardAlt 11/700/.4 upper · .tr borderTop line ──
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+
+  /* One constant per column, used by BOTH the header cell and the body cell so they can
+     never drift. flexShrink defaults to 0 in RN — without it a long event title refuses
+     to shrink and shoves Type and Done out of alignment on every other row. minWidth:0
+     is what lets that shrink actually bite on a text node. cDone is a fixed width and
+     deliberately gets neither. */
+  cTime: { flex: 1.1, flexShrink: 1, minWidth: 0 },
+  cEvent: { flex: 2.4, flexShrink: 1, minWidth: 0 },
+  cType: { flex: 1.2, flexShrink: 1, minWidth: 0 },
+  cDone: { width: 44 },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  count: { fontSize: rf(11.5), fontWeight: '600' },
+
+  flexMin: { flex: 1, minWidth: 0, gap: 3 },
   evCard: { alignItems: 'flex-start' },
   evBar: { width: 4, borderRadius: 2, alignSelf: 'stretch', minHeight: 38 },
   evTitle: { fontSize: rf(13.5), fontWeight: '700' },
@@ -719,6 +946,17 @@ const s = StyleSheet.create({
   evBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 3 },
   todo: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   done: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+
+  // event-details modal
+  flex: { flex: 1 },
+  detail: { gap: 9 },
+  detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  detailTitle: { fontSize: rf(15), fontWeight: '800', letterSpacing: -0.3 },
+  detailBody: { fontSize: rf(12.5), fontWeight: '500', lineHeight: 18 },
+  detailTimes: { flexDirection: 'row', gap: 12, marginTop: 2 },
+  detailLabel: { fontSize: rf(10.5), fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  detailValue: { fontSize: rf(12.5), fontWeight: '700', marginTop: 2 },
+  detailNote: { fontSize: rf(11.5), fontWeight: '500', lineHeight: 16, marginTop: 2 },
 
   // modal form
   form: { gap: 14 },

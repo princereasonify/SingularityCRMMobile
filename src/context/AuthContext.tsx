@@ -38,6 +38,15 @@ interface AuthContextType {
   clearJustLoggedIn: () => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Merge fields into the cached user and persist them.
+   *
+   * Needed because screens that mutate the profile (avatar upload, name change)
+   * previously only set their own local state — so the change vanished the moment
+   * you navigated away, and the stale value came back from `auth_user` until the
+   * next login. Writes AsyncStorage as well as context so it survives a restart.
+   */
+  updateUser: (patch: Partial<UserDto>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -166,10 +175,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     requestFCMPermission().catch(() => {});
   };
 
+  /**
+   * Merge a patch into the cached user, in state AND in AsyncStorage.
+   * Storage write is best-effort: losing the persisted copy is recoverable at
+   * next login, so it must never surface as an error to the caller.
+   */
+  const updateUser = useCallback(async (patch: Partial<UserDto>) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      AsyncStorage.setItem('auth_user', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
-        user, token, isLoading, login, logout,
+        user, token, isLoading, login, logout, updateUser,
         justLoggedIn,
         clearJustLoggedIn: () => setJustLoggedIn(false),
       }}

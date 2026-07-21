@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
   useWindowDimensions, Alert, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import MapView, { Marker, Callout, Circle } from 'react-native-maps';
 import {
   Plus, Navigation, Filter, List as ListIcon, Map as MapIcon,
-  Edit2, Trash2, UserCheck, MapPin, Users, Phone,
+  Edit2, Trash2, UserCheck, MapPin, Users, Phone, X,
 } from 'lucide-react-native';
 
 import { schoolsApi } from '../../api/schools';
@@ -24,10 +24,16 @@ import {
 } from '../../components/crud';
 
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { GOOGLE_MAPS_API_KEY as GMAPS_KEY } from '../../utils/constants';
 
-/** Web parity: the list pages 10 at a time and reports the server's real totalCount. */
+/** Web parity: the list pages 10 at a time and reports the server's real totalCount.
+ *  Schools.jsx `const limit = 10` — both platforms now match the house page size. */
 const PAGE_SIZE = 10;
+
+/** Web parity: SchoolMap falls back to a 100 m circle when the DTO radius is 0/absent. */
+const DEFAULT_GEOFENCE_M = 100;
 
 const BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'Other'];
 
@@ -84,6 +90,45 @@ function memberOptions(members: Member[]) {
       label: `${m.name}${m.group ? ` — ${m.group}` : ''} · ${m.role}`,
       value: String(m.userId),
     }));
+}
+
+/**
+ * Google Places / Geocode over REST — the same three endpoints HomeLocationScreen
+ * already calls (react-native-maps has no JS Places SDK, so web's
+ * `maps.places.Autocomplete` becomes a debounced fetch).
+ */
+async function placesAutocomplete(input: string): Promise<{ label: string; value: string }[]> {
+  if (!input.trim()) return [];
+  try {
+    const url =
+      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
+      `?input=${encodeURIComponent(input)}` +
+      `&types=establishment|geocode` +
+      `&components=country:in` +
+      `&key=${GMAPS_KEY}`;
+    const json = await (await fetch(url)).json();
+    return (json.predictions ?? []).map((p: any) => ({ label: p.description, value: p.place_id }));
+  } catch { return []; }
+}
+
+async function placeDetails(placeId: string): Promise<{ lat: number; lng: number; address: string } | null> {
+  try {
+    const url =
+      `https://maps.googleapis.com/maps/api/place/details/json` +
+      `?place_id=${placeId}&fields=geometry,formatted_address&key=${GMAPS_KEY}`;
+    const json = await (await fetch(url)).json();
+    const r = json.result;
+    if (!r?.geometry) return null;
+    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, address: r.formatted_address ?? '' };
+  } catch { return null; }
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GMAPS_KEY}`;
+    const json = await (await fetch(url)).json();
+    return json.results?.[0]?.formatted_address ?? '';
+  } catch { return ''; }
 }
 
 // ─── Assign Schools modal ─────────────────────────────────────────────────────
@@ -360,7 +405,7 @@ function ReassignModal({ school, onClose, onSaved }: {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
-export const SchoolsListScreen = ({ navigation }: any) => {
+export const SchoolsListScreen = ({ navigation, route }: any) => {
   const { user } = useAuth();
   const T = useAppTheme();
   const { width, height } = useWindowDimensions();
@@ -383,8 +428,17 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * Route param `assignedTo` is web's `?assignedTo=` deep link — TeamManagementScreen
+   * navigates `('SchoolsList', { assignedTo: fo.foId })`. Web seeds `foFilter` from the
+   * query string and opens the filter panel (Schools.jsx). Mirrored verbatim.
+   */
+  const deepLinkAssignedTo = route?.params?.assignedTo;
+
   const [search, setSearch] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  /** Web keeps the map's school filter separate from the list's (Schools.jsx `mapSearch`). */
+  const [mapSearch, setMapSearch] = useState('');
+  const [showFilters, setShowFilters] = useState(!!deepLinkAssignedTo);
   const [city, setCity] = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [board, setBoard] = useState('');
@@ -394,13 +448,22 @@ export const SchoolsListScreen = ({ navigation }: any) => {
    * bound, so ASP.NET silently dropped it and the dropdown did nothing.
    * SchoolListDto has no Status field either. Web has no Status filter.
    */
-  const [foFilter, setFoFilter] = useState('');
+  const [foFilter, setFoFilter] = useState(deepLinkAssignedTo ? String(deepLinkAssignedTo) : '');
   const [onlyMine, setOnlyMine] = useState(false);
   const [filterableUsers, setFilterableUsers] = useState<Member[]>([]);
   const [openDd, setOpenDd] = useState<'board' | 'assignee' | null>(null);
 
   const [mapSchools, setMapSchools] = useState<AnySchool[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
+
+  // ── Map location search (web's MapSearchBar overlay with enableMapClick) ──
+  const mapRef = useRef<MapView | null>(null);
+  const [locQuery, setLocQuery] = useState('');
+  const [locSuggestions, setLocSuggestions] = useState<{ label: string; value: string }[]>([]);
+  const [showLocSug, setShowLocSug] = useState(false);
+  const [dropPin, setDropPin] = useState<{ latitude: number; longitude: number } | null>(null);
+  /** Suppresses the autocomplete round-trip when *we* wrote the field (pick / map tap). */
+  const locSilentRef = useRef(false);
 
   const [showAssign, setShowAssign] = useState(false);
   const [reassignSchool, setReassignSchool] = useState<AnySchool | null>(null);
@@ -465,18 +528,68 @@ export const SchoolsListScreen = ({ navigation }: any) => {
   useEffect(() => {
     if (view !== 'map') return;
     setMapLoading(true);
-    // Web parity: the map honours the assignee filter too (Schools.jsx).
+    /**
+     * Web parity (Schools.jsx): the map fetch sends only `{ page, limit, assignedTo }` —
+     * the school text filter is applied client-side against `mapSearch`, which is
+     * deliberately NOT the list's `search`. Sending `search` here used to couple them.
+     */
     const mapParams = {
       page: 1,
       limit: 500,
-      search: search.trim() || undefined,
       assignedTo: foFilter ? Number(foFilter) : undefined,
     };
     schoolsApi.getAll(mapParams)
       .then(res => setMapSchools(((res.data as any)?.schools ?? []) as School[]))
       .catch(() => setMapSchools([]))
       .finally(() => setMapLoading(false));
-  }, [view, search, foFilter]);
+  }, [view, foFilter]);
+
+  // Debounced Places autocomplete for the map's location search overlay.
+  useEffect(() => {
+    if (view !== 'map') return;
+    if (locSilentRef.current) { locSilentRef.current = false; return; }
+    if (locQuery.trim().length < 3) { setLocSuggestions([]); setShowLocSug(false); return; }
+    const t = setTimeout(async () => {
+      const list = await placesAutocomplete(locQuery);
+      setLocSuggestions(list);
+      setShowLocSug(list.length > 0);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [locQuery, view]);
+
+  const goToCoord = (lat: number, lng: number) => {
+    setDropPin({ latitude: lat, longitude: lng });
+    mapRef.current?.animateToRegion(
+      { latitude: lat, longitude: lng, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+      400,
+    );
+  };
+
+  const pickLocSuggestion = async (placeId: string) => {
+    setShowLocSug(false);
+    const d = await placeDetails(placeId);
+    if (!d) { Alert.alert('Not found', 'Could not resolve that location.'); return; }
+    goToCoord(d.lat, d.lng);
+    locSilentRef.current = true;
+    setLocQuery(d.address);
+  };
+
+  /** Web's `enableMapClick`: tapping the map drops a pin and reverse-geocodes it. */
+  const handleMapPress = async (e: any) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    setShowLocSug(false);
+    goToCoord(latitude, longitude);
+    const formatted = await reverseGeocode(latitude, longitude);
+    locSilentRef.current = true;
+    setLocQuery(formatted || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+  };
+
+  const clearDropPin = () => {
+    setDropPin(null);
+    locSilentRef.current = true;
+    setLocQuery('');
+    setShowLocSug(false);
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -491,10 +604,18 @@ export const SchoolsListScreen = ({ navigation }: any) => {
     }
   };
 
-  const pinned = useMemo(
-    () => mapSchools.filter(sc => Number(sc.latitude) && Number(sc.longitude)),
-    [mapSchools],
-  );
+  /**
+   * Web parity (Schools.jsx SchoolMap): the map list is filtered client-side on
+   * name/city by `mapSearch`, then reduced to the ones that actually have coords.
+   */
+  const pinned = useMemo(() => {
+    const q = mapSearch.trim().toLowerCase();
+    return mapSchools.filter(sc => {
+      if (!Number(sc.latitude) || !Number(sc.longitude)) return false;
+      if (!q) return true;
+      return sc.name?.toLowerCase().includes(q) || sc.city?.toLowerCase().includes(q);
+    });
+  }, [mapSchools, mapSearch]);
 
   const assigneeOptions = useMemo(() => memberOptions(filterableUsers), [filterableUsers]);
   const selectedAssignee = filterableUsers.find(m => String(m.userId) === foFilter);
@@ -664,12 +785,24 @@ export const SchoolsListScreen = ({ navigation }: any) => {
         {/* Search + filters + count */}
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={s.searchRow}>
-            <SearchBar
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search schools by name or city…"
-              style={{ flex: 1, minWidth: 180 }}
-            />
+            {/* Web keeps two independent boxes (Schools.jsx :331 list, :596 map). One
+                slot here, but each view is bound to its own state — typing on the map
+                no longer refetches or re-pages the list. */}
+            {view === 'map' ? (
+              <SearchBar
+                value={mapSearch}
+                onChangeText={setMapSearch}
+                placeholder="Search schools on map by name or city…"
+                style={{ flex: 1, minWidth: 180 }}
+              />
+            ) : (
+              <SearchBar
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search schools by name or city…"
+                style={{ flex: 1, minWidth: 180 }}
+              />
+            )}
             {view === 'list' && (
               <Trigger
                 label="Filters"
@@ -816,7 +949,9 @@ export const SchoolsListScreen = ({ navigation }: any) => {
           ) : (
             <View style={[s.mapWrap, { borderColor: T.line }, wide && { height: 520 }]}>
               <MapView
+                ref={mapRef}
                 style={StyleSheet.absoluteFillObject}
+                onPress={handleMapPress}
                 initialRegion={{
                   latitude: Number(pinned[0].latitude),
                   longitude: Number(pinned[0].longitude),
@@ -824,28 +959,77 @@ export const SchoolsListScreen = ({ navigation }: any) => {
                   longitudeDelta: 0.4,
                 }}
               >
-                {pinned.map(sc => (
-                  <Marker
-                    key={sc.id}
-                    coordinate={{ latitude: Number(sc.latitude), longitude: Number(sc.longitude) }}
-                    title={sc.name}
-                    pinColor={T.accent}
-                  >
-                    <Callout onPress={() => openDetail(sc.id)}>
-                      <View style={s.callout}>
-                        <Text style={s.calloutName} numberOfLines={2}>{sc.name}</Text>
-                        <Text style={s.calloutMeta} numberOfLines={1}>
-                          {[sc.city, sc.state].filter(Boolean).join(', ') || DASH}
-                        </Text>
-                        <Text style={s.calloutMeta} numberOfLines={1}>
-                          {[sc.board, sc.type].filter(Boolean).join(' • ')}
-                        </Text>
-                        <Text style={s.calloutLink}>View details</Text>
-                      </View>
-                    </Callout>
-                  </Marker>
-                ))}
+                {pinned.map(sc => {
+                  const coordinate = {
+                    latitude: Number(sc.latitude),
+                    longitude: Number(sc.longitude),
+                  };
+                  /**
+                   * SchoolListDto ships `GeofenceRadiusMetres` (verified in
+                   * SalesCRM.Core/DTOs/Schools/SchoolDtos.cs) → camelCased over the
+                   * wire. The `School` TS type misspells it `geofenceRadiusMeters`,
+                   * so read the real key and fall back to 100 m exactly like web.
+                   */
+                  const radius =
+                    Number((sc as any).geofenceRadiusMetres) || DEFAULT_GEOFENCE_M;
+                  return (
+                    <React.Fragment key={sc.id}>
+                      <Circle
+                        center={coordinate}
+                        radius={radius}
+                        fillColor={withAlpha(T.accent, SOFT_TINT)}
+                        strokeColor={withAlpha(T.accent, 0.5)}
+                        strokeWidth={1.5}
+                      />
+                      <Marker coordinate={coordinate} title={sc.name} pinColor={T.accent}>
+                        <Callout onPress={() => openDetail(sc.id)}>
+                          <View style={s.callout}>
+                            <Text style={s.calloutName} numberOfLines={2}>{sc.name}</Text>
+                            <Text style={s.calloutMeta} numberOfLines={1}>
+                              {[sc.city, sc.state].filter(Boolean).join(', ') || DASH}
+                            </Text>
+                            <Text style={s.calloutMeta} numberOfLines={1}>
+                              {[sc.board, sc.type].filter(Boolean).join(' • ')}
+                            </Text>
+                            <Text style={s.calloutMeta}>{radius}m geofence</Text>
+                            <Text style={s.calloutLink}>View details</Text>
+                          </View>
+                        </Callout>
+                      </Marker>
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* The tap/search pin — web's MapSearchBar red marker. */}
+                {dropPin && (
+                  <Marker coordinate={dropPin} pinColor={T.danger} title="Selected location" />
+                )}
               </MapView>
+
+              {/* Location search overlay — web's <MapSearchBar enableMapClick /> */}
+              <View style={s.mapSearchOverlay} pointerEvents="box-none">
+                <Input
+                  value={locQuery}
+                  onChangeText={setLocQuery}
+                  placeholder="Search location on map…"
+                  containerStyle={s.mapSearchInput}
+                  right={
+                    dropPin || locQuery ? (
+                      <TouchableOpacity onPress={clearDropPin} hitSlop={8}>
+                        <X size={15} color={T.dim} strokeWidth={ICON_STROKE} />
+                      </TouchableOpacity>
+                    ) : undefined
+                  }
+                />
+                {showLocSug && (
+                  <Dropdown
+                    style={{ width: '100%' }}
+                    maxHeight={200}
+                    options={locSuggestions}
+                    onSelect={pickLocSuggestion}
+                  />
+                )}
+              </View>
             </View>
           )
         )}
@@ -921,6 +1105,10 @@ const s = StyleSheet.create({
   emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', paddingVertical: 18 },
 
   mapWrap: { height: 460, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  // Overlay sits over the MapView; `box-none` on the wrapper keeps map pans alive
+  // everywhere the input/dropdown isn't actually drawn.
+  mapSearchOverlay: { position: 'absolute', top: 10, left: 10, right: 10 },
+  mapSearchInput: { marginBottom: 0 },
   callout: { width: 190, paddingVertical: 2, gap: 1 },
   calloutName: { fontSize: rf(13), fontWeight: '700' },
   calloutMeta: { fontSize: rf(11), fontWeight: '500' },

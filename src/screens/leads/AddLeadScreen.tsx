@@ -8,13 +8,10 @@ import { leadsApi } from '../../api/leads';
 import { UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
-import { SelectPicker } from '../../components/common/SelectPicker';
 // Free text 400s the create: CreateLeadRequest.CloseDate is a C# DateTime?.
 import { DateInput } from '../../components/common/DateInput';
-import { GradientButton } from '../../components/common/GradientButton';
 import { ICON_STROKE } from '../../components/common/Icon';
-import { IconBtn } from '../../components/crud';
+import { IconBtn, Btn, Field, Trigger, Dropdown } from '../../components/crud';
 import { Card } from '../../components/ui';
 import { BOARDS, SCHOOL_TYPES, LEAD_SOURCES } from '../../utils/constants';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -50,6 +47,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
   const twoWide = isTabletDevice && width > height;
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [openDd, setOpenDd] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [foList, setFoList] = useState<UserDto[]>([]);
 
@@ -201,6 +199,38 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
+  /**
+   * Every select on this screen is a Trigger + inline Dropdown that opens below
+   * it. These were `SelectPicker`, which is a centred Modal — not a control this
+   * design system has. One `openDd` key means opening one closes the others.
+   */
+  const renderSelect = (
+    key: string,
+    label: string,
+    options: { label: string; value: string }[],
+    value: string,
+    onChange: (v: string) => void,
+    placeholder: string,
+    containerStyle?: any,
+  ) => (
+    <Field label={label} style={containerStyle}>
+      <Trigger
+        label={options.find((o) => o.value === value)?.label ?? placeholder}
+        open={openDd === key}
+        onPress={() => setOpenDd(openDd === key ? null : key)}
+      />
+      {openDd === key && (
+        <Dropdown
+          style={styles.ddFull}
+          maxHeight={240}
+          value={value}
+          options={options}
+          onSelect={(v) => { onChange(v); setOpenDd(null); }}
+        />
+      )}
+    </Field>
+  );
+
   return (
     <View style={[styles.safe, { backgroundColor: T.bg }]}>
       {/* House pattern: plain themed title block on T.bg — no gradient hero. */}
@@ -226,13 +256,14 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
           {role !== 'FO' && (
           <Card style={styles.sectionCard}>
             <Text style={[styles.sectionTitle, { color: T.text }]}>👤 Assign to FO</Text>
-            <SelectPicker
-              label="Select Field Officer *"
-              options={foList.map((fo) => ({ label: fo.name, value: fo.id }))}
-              value={form.foId}
-              onChange={(v) => set('foId', v)}
-              accentColor={T.accent}
-            />
+            {renderSelect(
+              'foId',
+              'Select Field Officer *',
+              foList.map((fo) => ({ label: fo.name, value: String(fo.id) })),
+              String(form.foId ?? ''),
+              (v) => set('foId', v),
+              foList.length === 0 ? 'No field officers available' : 'Select a field officer',
+            )}
             {errors.foId ? <Text style={[styles.fieldError, { color: T.danger }]}>{errors.foId}</Text> : null}
           </Card>
         )}
@@ -254,8 +285,8 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
                   <>
                     <Input label="School Name *" value={form.school} onChangeText={(v) => set('school', v)} error={errors.school} accentColor={T.accent} placeholder="e.g. DPS Andheri" />
                     <View style={[styles.row, twoWide && styles.rowTablet]}>
-                      <SelectPicker label="Board *" options={BOARDS.map((b) => ({ label: b, value: b }))} value={form.board} onChange={(v) => set('board', v)} accentColor={T.accent} containerStyle={styles.half} />
-                      <SelectPicker label="Type *" options={SCHOOL_TYPES.map((t) => ({ label: t, value: t }))} value={form.type} onChange={(v) => set('type', v)} accentColor={T.accent} containerStyle={styles.half} />
+                      {renderSelect('board', 'Board *', BOARDS.map((b) => ({ label: b, value: b })), form.board, (v) => set('board', v), 'Select board', styles.half)}
+                      {renderSelect('type', 'Type *', SCHOOL_TYPES.map((t) => ({ label: t, value: t })), form.type, (v) => set('type', v), 'Select type', styles.half)}
                     </View>
                     <Input label="Number of Students" value={form.students} onChangeText={(v) => set('students', v)} keyboardType="numeric" placeholder="e.g. 1200" accentColor={T.accent} />
                   </>
@@ -278,7 +309,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
                   <>
                     <Input label="Estimated Value (₹)" value={form.value} onChangeText={(v) => set('value', v)} keyboardType="numeric" placeholder="e.g. 500000" accentColor={T.accent} />
                     <DateInput label="Expected Close Date" value={form.closeDate} onChange={(v) => set('closeDate', v)} accentColor={T.accent} />
-                    <SelectPicker label="Lead Source" options={LEAD_SOURCES.map((s) => ({ label: s, value: s }))} value={form.source} onChange={(v) => set('source', v)} accentColor={T.accent} />
+                    {renderSelect('source', 'Lead Source', LEAD_SOURCES.map((s) => ({ label: s, value: s })), form.source, (v) => set('source', v), 'Select source')}
                   </>
                 )}
                 {sec.key === 'extra' && (
@@ -289,9 +320,9 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
           </Card>
         ))}
 
-        <View style={[styles.footerActions, twoWide && styles.footerActionsTablet]}>
-          <Button title="Cancel" onPress={() => navigation.goBack()} variant="secondary" color={T.sub} style={styles.cancelBtn} />
-          <GradientButton label="Create Lead" onPress={handleSubmit} loading={loading} style={styles.submitBtn} />
+        <View style={styles.footerActions}>
+          <Btn label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={styles.actionBtn} />
+          <Btn label={isEdit ? 'Update Lead' : 'Create Lead'} onPress={handleSubmit} loading={loading} style={styles.actionBtn} />
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -307,16 +338,15 @@ const styles = StyleSheet.create({
   h2: { fontWeight: '500', fontSize: rf(12.5) },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 12 },
-  contentTablet: { padding: 24, maxWidth: 720, alignSelf: 'center', width: '100%' },
+  contentTablet: { padding: 24, maxWidth: 900, alignSelf: 'center', width: '100%' },
+  ddFull: { width: '100%' },
   sectionCard: { padding: 16 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontWeight: '700', fontSize: rf(15) },
   row: { flexDirection: 'row', gap: 10 },
   rowTablet: { gap: 16 },
   half: { flex: 1 },
-  footerActions: { flexDirection: 'row', gap: 12, marginTop: 8, alignItems: 'center' },
-  footerActionsTablet: { justifyContent: 'flex-end' },
-  cancelBtn: { flex: 1 },
-  submitBtn: { flex: 2 },
+  footerActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  actionBtn: { flex: 1 },
   fieldError: { fontWeight: '400', fontSize: rf(12), marginTop: 4 },
 });

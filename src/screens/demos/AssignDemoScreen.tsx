@@ -1,121 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, FlatList, ActivityIndicator, Alert, useWindowDimensions,
+  Alert, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, ChevronDown, X, Clock, User, School, ArrowLeft } from 'lucide-react-native';
+import { Clock, User, School, ArrowLeft } from 'lucide-react-native';
 import { DateInput } from '../../components/common/DateInput';
 import { demosApi } from '../../api/demos';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
-import { GradientButton } from '../../components/common/GradientButton';
+import { Btn, Trigger, Dropdown, SearchBar } from '../../components/crud';
 import { Card, Chip } from '../../components/ui';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 
 const MODES = ['Offline', 'Online', 'Hybrid'];
-
-// ─── Picker Modal ──────────────────────────────────────────────────────────────
-const PickerModal = ({
-  visible, title, items, labelKey, sublabelKey, onSelect, onClose,
-}: {
-  visible: boolean;
-  title: string;
-  items: any[];
-  labelKey: string;
-  sublabelKey?: string;
-  onSelect: (item: any) => void;
-  onClose: () => void;
-}) => {
-  const T = useAppTheme();
-  const [search, setSearch] = useState('');
-
-  const safeItems = Array.isArray(items) ? items : [];
-  const filtered = safeItems.filter(i =>
-    String(i[labelKey] || '').toLowerCase().includes(search.toLowerCase()) ||
-    (sublabelKey && String(i[sublabelKey] || '').toLowerCase().includes(search.toLowerCase()))
-  );
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={pickerStyles.overlay}>
-        <View style={[pickerStyles.sheet, { backgroundColor: T.card }]}>
-          <View style={[pickerStyles.header, { borderBottomColor: T.line }]}>
-            <Text style={[pickerStyles.title, { color: T.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={20} color={T.sub} />
-            </TouchableOpacity>
-          </View>
-          <View style={[pickerStyles.searchBar, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
-            <Search size={16} color={T.dim} />
-            <TextInput
-              style={[pickerStyles.searchInput, { color: T.text }]}
-              placeholder={`Search ${title.toLowerCase()}...`}
-              placeholderTextColor={T.dim}
-              value={search}
-              onChangeText={setSearch}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <X size={14} color={T.dim} />
-              </TouchableOpacity>
-            )}
-          </View>
-          <FlatList
-            data={filtered}
-            style={{ flexShrink: 1 }}
-            keyExtractor={item => String(item.id)}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[pickerStyles.item, { borderBottomColor: T.line }]}
-                onPress={() => { onSelect(item); onClose(); setSearch(''); }}
-              >
-                <Text style={[pickerStyles.itemLabel, { color: T.text }]} numberOfLines={1}>{item[labelKey]}</Text>
-                {sublabelKey && item[sublabelKey] ? (
-                  <Text style={[pickerStyles.itemSub, { color: T.sub }]} numberOfLines={1}>{item[sublabelKey]}</Text>
-                ) : null}
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <View style={pickerStyles.empty}>
-                <Text style={[pickerStyles.emptyText, { color: T.dim }]}>No results found</Text>
-              </View>
-            }
-            keyboardShouldPersistTaps="handled"
-          />
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 20, borderBottomWidth: 1,
-  },
-  title: { fontWeight: '700', fontSize: rf(16) },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    margin: 12, paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 12, borderWidth: 1,
-  },
-  searchInput: { flex: 1, fontWeight: '400', fontSize: rf(14) },
-  item: {
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  itemLabel: { fontWeight: '600', fontSize: rf(14) },
-  itemSub: { fontWeight: '400', fontSize: rf(12), marginTop: 2 },
-  empty: { padding: 32, alignItems: 'center' },
-  emptyText: { fontWeight: '400', fontSize: rf(14) },
-});
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export const AssignDemoScreen = ({ navigation, route }: any) => {
@@ -145,9 +47,27 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Pickers
-  const [showSchoolPicker, setShowSchoolPicker] = useState(false);
-  const [showUserPicker, setShowUserPicker] = useState(false);
+  // Pickers — inline dropdowns (spec: panel opens below the trigger), never a
+  // modal sheet. Each keeps its own filter text because both lists can be long.
+  const [openDd, setOpenDd] = useState<'school' | 'user' | null>(null);
+  const [schoolQuery, setSchoolQuery] = useState('');
+  const [userQuery, setUserQuery] = useState('');
+
+  const schoolOptions = schools
+    .filter(sc => {
+      const q = schoolQuery.trim().toLowerCase();
+      if (!q) return true;
+      return `${sc.name ?? ''} ${sc.city ?? ''}`.toLowerCase().includes(q);
+    })
+    .map(sc => ({ label: sc.city ? `${sc.name} · ${sc.city}` : String(sc.name), value: String(sc.id) }));
+
+  const userOptions = users
+    .filter(u => {
+      const q = userQuery.trim().toLowerCase();
+      if (!q) return true;
+      return `${u.name ?? ''} ${u.zone ?? ''} ${u.role ?? ''}`.toLowerCase().includes(q);
+    })
+    .map(u => ({ label: u.role ? `${u.name} · ${u.role}` : String(u.name), value: String(u.id) }));
 
   useEffect(() => {
     setLoadingSchools(true);
@@ -243,50 +163,76 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
         showsVerticalScrollIndicator={false}
       >
 
+        {/* Two-column form on a landscape tablet; one column everywhere else. */}
+        <View style={tabletWide ? styles.grid : styles.stackCol}>
+        <View style={styles.col}>
+
         {/* School */}
         <Card>
           <Text style={[styles.cardTitle, { color: T.dim }]}>SCHOOL</Text>
           <Text style={[styles.fieldLabel, { color: T.sub }]}>School *</Text>
-          <TouchableOpacity
-            style={[styles.selector, { backgroundColor: T.fieldBg, borderColor: T.line }]}
-            onPress={() => setShowSchoolPicker(true)}
-            disabled={loadingSchools}
-          >
-            {loadingSchools ? (
-              <ActivityIndicator size="small" color={T.accent} />
-            ) : (
-              <School size={16} color={selectedSchool ? T.accent : T.dim} />
-            )}
-            <Text style={[styles.selectorText, { color: selectedSchool ? T.text : T.dim }]} numberOfLines={1}>
-              {selectedSchool
-                ? `${selectedSchool.name}${selectedSchool.city ? ` (${selectedSchool.city})` : ''}`
-                : 'Select school…'}
-            </Text>
-            <ChevronDown size={16} color={T.dim} />
-          </TouchableOpacity>
+          <Trigger
+            label={
+              loadingSchools
+                ? 'Loading schools…'
+                : selectedSchool
+                  ? `${selectedSchool.name}${selectedSchool.city ? ` · ${selectedSchool.city}` : ''}`
+                  : 'Select school…'
+            }
+            open={openDd === 'school'}
+            icon={<School size={16} color={selectedSchool ? T.accent : T.dim} />}
+            onPress={() => !loadingSchools && setOpenDd(openDd === 'school' ? null : 'school')}
+          />
+          {openDd === 'school' && (
+            <View style={styles.ddWrap}>
+              <SearchBar value={schoolQuery} onChangeText={setSchoolQuery} placeholder="Search schools…" />
+              <Dropdown
+                style={styles.ddFull}
+                maxHeight={240}
+                value={selectedSchool ? String(selectedSchool.id) : undefined}
+                options={schoolOptions}
+                onSelect={v => {
+                  setSelectedSchool(schools.find(sc => String(sc.id) === v) ?? null);
+                  setOpenDd(null);
+                  setSchoolQuery('');
+                }}
+              />
+            </View>
+          )}
         </Card>
 
         {/* Assign To */}
         <Card>
           <Text style={[styles.cardTitle, { color: T.dim }]}>ASSIGNMENT</Text>
           <Text style={[styles.fieldLabel, { color: T.sub }]}>Assign To (Demo Person) *</Text>
-          <TouchableOpacity
-            style={[styles.selector, { backgroundColor: T.fieldBg, borderColor: T.line }]}
-            onPress={() => setShowUserPicker(true)}
-            disabled={loadingUsers}
-          >
-            {loadingUsers ? (
-              <ActivityIndicator size="small" color={T.accent} />
-            ) : (
-              <User size={16} color={selectedUser ? T.accent : T.dim} />
-            )}
-            <Text style={[styles.selectorText, { color: selectedUser ? T.text : T.dim }]} numberOfLines={1}>
-              {selectedUser
-                ? `${selectedUser.name}${selectedUser.role ? ` (${selectedUser.role})` : ''}`
-                : 'Select person…'}
-            </Text>
-            <ChevronDown size={16} color={T.dim} />
-          </TouchableOpacity>
+          <Trigger
+            label={
+              loadingUsers
+                ? 'Loading people…'
+                : selectedUser
+                  ? `${selectedUser.name}${selectedUser.role ? ` · ${selectedUser.role}` : ''}`
+                  : 'Select person…'
+            }
+            open={openDd === 'user'}
+            icon={<User size={16} color={selectedUser ? T.accent : T.dim} />}
+            onPress={() => !loadingUsers && setOpenDd(openDd === 'user' ? null : 'user')}
+          />
+          {openDd === 'user' && (
+            <View style={styles.ddWrap}>
+              <SearchBar value={userQuery} onChangeText={setUserQuery} placeholder="Search people…" />
+              <Dropdown
+                style={styles.ddFull}
+                maxHeight={240}
+                value={selectedUser ? String(selectedUser.id) : undefined}
+                options={userOptions}
+                onSelect={v => {
+                  setSelectedUser(users.find(u => String(u.id) === v) ?? null);
+                  setOpenDd(null);
+                  setUserQuery('');
+                }}
+              />
+            </View>
+          )}
         </Card>
 
         {/* Schedule */}
@@ -332,6 +278,9 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
             </View>
           </View>
         </Card>
+
+        </View>
+        <View style={styles.col}>
 
         {/* Demo Mode */}
         <Card>
@@ -379,36 +328,15 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
           />
         </Card>
 
-        <GradientButton
-          label={submitting ? 'Assigning...' : 'Assign Demo'}
-          onPress={handleSubmit}
-          loading={submitting}
-          disabled={submitting}
-          style={{ marginTop: 4, marginBottom: 16 }}
-        />
+        {/* Cancel (secondary) then primary — the order used on every form. */}
+        <View style={styles.actionRow}>
+          <Btn label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={styles.actionBtn} />
+          <Btn label="Assign Demo" onPress={handleSubmit} loading={submitting} disabled={submitting} style={styles.actionBtn} />
+        </View>
+
+        </View>
+        </View>
       </ScrollView>
-
-      {/* School Picker */}
-      <PickerModal
-        visible={showSchoolPicker}
-        title="Select School"
-        items={schools}
-        labelKey="name"
-        sublabelKey="city"
-        onSelect={item => setSelectedSchool(item)}
-        onClose={() => setShowSchoolPicker(false)}
-      />
-
-      {/* User Picker */}
-      <PickerModal
-        visible={showUserPicker}
-        title="Select Demo Person"
-        items={users}
-        labelKey="name"
-        sublabelKey="zone"
-        onSelect={item => setSelectedUser(item)}
-        onClose={() => setShowUserPicker(false)}
-      />
     </View>
   );
 };
@@ -425,7 +353,14 @@ const styles = StyleSheet.create({
   headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 1 },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14 },
-  contentWide: { maxWidth: 760, width: '100%', alignSelf: 'center' },
+  contentWide: { maxWidth: 1040, width: '100%', alignSelf: 'center', padding: 24 },
+  grid:     { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  stackCol: { gap: 14 },
+  col:      { flex: 1, gap: 14 },
+  ddWrap:   { gap: 8, marginTop: 8 },
+  ddFull:   { width: '100%' },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  actionBtn: { flex: 1 },
   cardTitle: {
     fontWeight: '700', fontSize: rf(11),
     letterSpacing: 0.8, marginBottom: 14,

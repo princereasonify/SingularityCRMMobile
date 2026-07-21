@@ -10,7 +10,6 @@ import {
   School as SchoolIcon, LogIn, Users,
 } from 'lucide-react-native';
 
-import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
 import { targetsApi } from '../../api/targets';
 import { TargetAssignmentDto, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -843,8 +842,24 @@ export const TargetsScreen = (_: any) => {
   };
 
   // ── table (tablet) ──
+  /**
+   * Horizontally scrollable, because this table cannot fit a narrow iPad.
+   * The fixed columns alone take 370pt (Status 108 + Period 92 + Actions 152 +
+   * chevron 18). On a 1080pt landscape iPad the content box is only ~762pt once
+   * the 240pt sidebar, page padding and row padding are removed, leaving ~312pt
+   * for five flexible columns — Timeline collapsed to ~54pt and truncated
+   * "12 Jan – 31 Mar" to "12 Ja…". TABLE_MIN_W keeps every column at a readable
+   * width and lets the user scroll instead of losing data to an ellipsis.
+   *
+   * Same pattern PipelineScreen uses for its five-stage board.
+   */
   const renderTable = (items: TargetAssignmentDto[], context: 'my' | 'assigned') => (
-    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={s.tblScroll}
+    >
+    <View style={[s.tbl, s.tblMin, { backgroundColor: T.card, borderColor: T.line }]}>
       <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
         <Text style={[s.th, { color: T.dim }, s.cTarget]}>Target</Text>
         <Text style={[s.th, { color: T.dim }, s.cStatus]}>Status</Text>
@@ -930,6 +945,7 @@ export const TargetsScreen = (_: any) => {
         );
       })}
     </View>
+    </ScrollView>
   );
 
   // ── list rows (phone) ──
@@ -1113,16 +1129,9 @@ export const TargetsScreen = (_: any) => {
         }
       >
         {ownHeader && (
-          <View style={[s.header, wide && s.headerWide]}>
-            <View style={s.headerLeft}>
-              <DrawerMenuButton color={T.text} />
-              <View style={{ flex: 1 }}>
-                <Text style={[s.title, { color: T.text }]}>Targets</Text>
-                <Text style={[s.subtitle, { color: T.sub }]}>
-                  View your targets and assign to your team
-                </Text>
-              </View>
-            </View>
+          // No in-page title or hamburger — the topbar (native drawer header for
+          // RH/SH/SCA) names the screen and carries the menu. Just the action.
+          <View style={s.actionBar}>
             <Btn
               label="Assign Target"
               small
@@ -1223,6 +1232,7 @@ const s = StyleSheet.create({
   scroll: { padding: 14, gap: 12 },
   scrollWide: { paddingHorizontal: 22 },
 
+  actionBar: { flexDirection: 'row', justifyContent: 'flex-end' },
   header: { gap: 10 },
   headerWide: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
@@ -1263,6 +1273,12 @@ const s = StyleSheet.create({
   whoTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
   cTarget: { flex: 2.4 },
+  /**
+   * 370pt of fixed columns + ~600pt for the five flexible ones. Below this the
+   * flexible columns start truncating real values, so the table scrolls instead.
+   */
+  tblMin: { minWidth: 970 },
+  tblScroll: { flexGrow: 1 },
   cStatus: { width: 108 },  // widest badge is "In Progress"
   cPeriod: { width: 92 },   // widest badge is "Quarterly"
   cAmount: { flex: 1.6 },

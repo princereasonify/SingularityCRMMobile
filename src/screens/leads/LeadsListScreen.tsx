@@ -23,9 +23,14 @@ import { STAGE_COLORS, STAGE_LABELS, getScoreColor } from '../../utils/constants
 import { formatCurrency, formatDate, formatRelativeDate, isOverdue } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha } from '../../theme';
 
-/** Web parity: the list pages 10 at a time and reports the server's real totalCount. */
+/** Web parity: the list pages 10 at a time and reports the server's real totalCount.
+ *  LeadsList.jsx `const pageSize = 10` — both platforms now match the house page size. */
 const PAGE_SIZE = 10;
+
+/** Web's overdue row tint is `bg-red-50/30` — a very light danger wash. */
+const OVERDUE_TINT = 0.07;
 
 const FILTERS = ['All', 'Active', 'Hot', 'Won', 'Unassigned'] as const;
 type LeadFilter = typeof FILTERS[number];
@@ -42,6 +47,30 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const DASH = '—';
+
+/**
+ * Web groups every user picker by role with <optgroup> + role labels
+ * (LeadsList.jsx :169-183 for the filter, :335-354 for the assign modal).
+ * Neither the CRUD Dropdown nor SelectPicker has an optgroup equivalent, so —
+ * following the workaround already established in SchoolsListScreen.tsx :77-87 —
+ * the grouping becomes one role-ordered list with the role label appended.
+ *
+ * Shared by BOTH pickers so they can never drift apart again.
+ */
+function roleOrderedUsers(users: UserDto[], excludeId?: number): UserDto[] {
+  return users
+    .filter(u => u.id !== excludeId)
+    .sort((a, b) => {
+      const d = ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role);
+      return d !== 0 ? d : (a.name || '').localeCompare(b.name || '');
+    });
+}
+
+/** `Name (Zone) · Field Officers` — web's `{name}{(zone)}` under an optgroup label. */
+function userOptionLabel(u: UserDto): string {
+  const scope = (u as any).zone || (u as any).region;
+  return `${u.name}${scope ? ` (${scope})` : ''} · ${ROLE_LABEL[u.role] || u.role}`;
+}
 
 const initialsOf = (name?: string) =>
   (name || '?')
@@ -121,28 +150,36 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
     }
   }, [isManager]);
 
-  // The CRUD kit's Dropdown has no <optgroup>, so web's role grouping becomes a
-  // role-ordered list with the group label appended to each name.
-  const userFilterOptions = useMemo(() => {
-    const rest = fos
-      .filter(u => u.id !== myUserId)
-      .sort((a, b) => {
-        const d = ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role);
-        return d !== 0 ? d : (a.name || '').localeCompare(b.name || '');
-      })
-      .map(u => {
-        const scope = (u as any).zone || (u as any).region;
-        return {
-          label: `${u.name}${scope ? ` (${scope})` : ''} · ${ROLE_LABEL[u.role] || u.role}`,
-          value: String(u.id),
-        };
-      });
-    return [
-      { label: 'All in my scope', value: '' },
-      { label: 'My leads only', value: 'mine' },
-      ...rest,
-    ];
-  }, [fos, myUserId]);
+  // Web parity: the manager filter excludes the caller (they get "My leads only").
+  const userFilterOptions = useMemo(() => [
+    { label: 'All in my scope', value: '' },
+    { label: 'My leads only', value: 'mine' },
+    ...roleOrderedUsers(fos, myUserId).map(u => ({
+      label: userOptionLabel(u),
+      value: String(u.id),
+    })),
+  ], [fos, myUserId]);
+
+  /**
+   * Assign picker, web parity (LeadsList.jsx :335-354): role-grouped, and the
+   * currently-assigned user is `disabled` so a lead can't be "reassigned" to
+   * whoever already owns it. Neither SelectPicker nor Dropdown supports a
+   * disabled row, so the current holder is dropped from the options and shown
+   * as a read-only line in the modal body instead — same outcome (unselectable),
+   * same information on screen.
+   */
+  const assignOptions = useMemo(
+    () => roleOrderedUsers(fos, assignModal?.currentFoId).map(u => ({
+      label: userOptionLabel(u),
+      value: u.id,
+    })),
+    [fos, assignModal?.currentFoId],
+  );
+
+  const currentAssigneeName = useMemo(
+    () => fos.find(u => u.id === assignModal?.currentFoId)?.name,
+    [fos, assignModal?.currentFoId],
+  );
 
   const userFilterLabel =
     userFilter === ''
@@ -160,13 +197,13 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
       if (filter === 'Active') filtered = items.filter(l => !['Won', 'Lost'].includes(l.stage));
       // Legend everywhere reads ">70" but PipelineKanban uses `score >= 70` — keep
       // `>= 70` so the Hot filter and the Kanban's hot border agree. Web's
-      // LeadsList.jsx still uses `> 70`; see the report for the change needed there.
+      // LeadsList.jsx :67 now uses `>= 70` too, so all three agree.
       if (filter === 'Hot') filtered = items.filter(l => l.score >= 70);
       /**
        * "Unassigned" means "no FO assigned". LeadListDto.FoId is a NON-nullable
        * int (0 when unset), AssignedById is `int?` and means "who assigned it"
-       * (null = self-created). Web filters `!lead.assignedById`, which is the
-       * wrong semantic for this label — mobile keeps `!l.foId`.
+       * (null = self-created). Web LeadsList.jsx :70 also filters `!lead.foId`,
+       * so both platforms use the same semantic.
        */
       if (filter === 'Unassigned') filtered = items.filter(l => !l.foId);
       setLeads(filtered);
@@ -275,7 +312,14 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
             key={lead.id}
             activeOpacity={0.7}
             onPress={() => openDetail(lead.id)}
-            style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}
+            style={[
+              s.tr,
+              { borderTopColor: T.line, borderTopWidth: 1 },
+              // Web tints the whole row, not just the date (LeadsList.jsx :243
+              // `bg-red-50/30`). Theme token + withAlpha, so it reads correctly
+              // in dark mode instead of a fixed light-pink hex.
+              overdue && { backgroundColor: withAlpha(T.danger, OVERDUE_TINT) },
+            ]}
           >
             <View style={[s.cName, s.nameCell]}>
               <Avatar initials={initialsOf(lead.school)} />
@@ -283,7 +327,9 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
                 <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>{lead.school}</Text>
                 <View style={s.subRow}>
                   <MapPin size={10} color={T.dim} strokeWidth={ICON_STROKE} />
-                  <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>{lead.city || DASH}</Text>
+                  {/* flexShrink defaults to 0 in RN — a long city name would otherwise
+                      widen the sub-row and bleed past the School Name column. */}
+                  <Text style={[s.tdSub, { color: T.dim }, s.cellTxt]} numberOfLines={1}>{lead.city || DASH}</Text>
                 </View>
               </View>
             </View>
@@ -329,7 +375,11 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
       {leads.map(lead => {
         const overdue = isOverdue(lead.lastActivityDate, 5) && !['Won', 'Lost'].includes(lead.stage);
         return (
-          <ListCard key={lead.id} onPress={() => openDetail(lead.id)} style={s.rowCard}>
+          <ListCard
+            key={lead.id}
+            onPress={() => openDetail(lead.id)}
+            style={[s.rowCard, overdue && { backgroundColor: withAlpha(T.danger, OVERDUE_TINT) }]}
+          >
             <Avatar initials={initialsOf(lead.school)} />
             <View style={{ flex: 1, gap: 5 }}>
               <View style={s.rowTop}>
@@ -518,12 +568,16 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
           <Text style={[s.mSub, { color: T.sub }]}>
             Assign <Text style={[s.mSubBold, { color: T.text }]}>{assignModal?.school}</Text> to a Field Officer:
           </Text>
+          {!!currentAssigneeName && (
+            <Text style={[s.mSub, { color: T.sub }]}>
+              Currently assigned to{' '}
+              <Text style={[s.mSubBold, { color: T.text }]}>{currentAssigneeName}</Text>
+              {' '}— not selectable.
+            </Text>
+          )}
           <SelectPicker
-            label="Select Field Officer"
-            options={fos.map((fo) => ({
-              label: `${fo.name}${(fo as any).zone ? ` (${(fo as any).zone})` : ''}${fo.id === assignModal?.currentFoId ? ' (Current)' : ''}`,
-              value: fo.id,
-            }))}
+            label="Select User"
+            options={assignOptions}
             value={selectedFoId}
             onChange={(v) => setSelectedFoId(v)}
             accentColor={T.accent}
@@ -558,6 +612,8 @@ const s = StyleSheet.create({
   bold: { fontWeight: '700' },
   nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  /** Text inside a row-direction cell must shrink, or it overflows into the next column. */
+  cellTxt: { flexShrink: 1, minWidth: 0 },
 
   cName: { flex: 2.4 },
   cBoard: { flex: 1 },

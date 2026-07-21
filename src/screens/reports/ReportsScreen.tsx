@@ -18,7 +18,7 @@ import { Card } from '../../components/ui';
 import { DateInput } from '../../components/common/DateInput';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, Field, Trigger, Dropdown, StatusBadge, FormModal, Pagination,
+  Btn, Field, Trigger, Dropdown, StatusBadge, FormModal, Pagination, ListCard,
 } from '../../components/crud';
 import { formatDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -422,6 +422,8 @@ export const ReportsScreen = (_: any) => {
   const T = useAppTheme();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  /** iPad always gets the real table — never a card grid. Phones get kit list rows. */
+  const table = isTabletDevice;
   const role = user?.role || 'FO';
   /** Web renders "Generate Report" for EVERY role — no manager gate on the button. */
   const isManager = MANAGER_ROLES.includes(role);
@@ -741,57 +743,127 @@ ${actionItemsHtml}
     [aiReports, page],
   );
 
-  // ─── Report card ───────────────────────────────────────────────────────────
-  const renderAiReportCard = (report: any) => {
-    const rc = ratingTint(T, report.overallRating || '');
-    return (
-      <Card key={report.id} style={s.aiCard} onPress={() => viewAiReport(report)}>
-        <View style={s.aiCardRow}>
-          <ScoreCircle score={report.overallScore} size={52} />
-          <View style={s.aiCardInfo}>
-            <View style={s.aiCardNameRow}>
-              <Text style={[s.aiCardName, { color: T.text }]} numberOfLines={1}>{report.userName}</Text>
-              <StatusBadge label={report.userRole} color={T.sub} />
+  // ─── Row actions (identical on the table and the phone list rows) ──────────
+  const reportActions = (report: any) => (
+    <View style={s.actions}>
+      {report.status === 'Completed' && (
+        <>
+          <TouchableOpacity onPress={() => viewAiReport(report)} hitSlop={8}>
+            <Eye size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => downloadPDF(report)}
+            hitSlop={8}
+            disabled={pdfLoadingId === report.id}
+          >
+            {pdfLoadingId === report.id
+              ? <ActivityIndicator size="small" color={T.sub} />
+              : <Download size={16} color={T.sub} strokeWidth={ICON_STROKE} />}
+          </TouchableOpacity>
+        </>
+      )}
+      {report.status === 'Generating' && <ActivityIndicator size="small" color={T.warning} />}
+      {report.status === 'Failed' && (
+        <Text style={[s.failTxt, { color: T.danger }]}>Failed</Text>
+      )}
+    </View>
+  );
+
+  // ─── Table (tablet) ────────────────────────────────────────────────────────
+  const renderTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cScore]}>Score</Text>
+        <Text style={[s.th, { color: T.dim }, s.cName]}>Name</Text>
+        <Text style={[s.th, { color: T.dim }, s.cType]}>Report Type</Text>
+        <Text style={[s.th, { color: T.dim }, s.cDate]}>Report Date</Text>
+        <Text style={[s.th, { color: T.dim }, s.cRating]}>Rating</Text>
+        <Text style={[s.th, { color: T.dim }, s.cStatus]}>Status</Text>
+        <Text style={[s.th, { color: T.dim }, s.cAct]}>Actions</Text>
+      </View>
+
+      {paged.map(report => {
+        const rc = ratingTint(T, report.overallRating || '');
+        return (
+          <TouchableOpacity
+            key={report.id}
+            activeOpacity={0.7}
+            onPress={() => viewAiReport(report)}
+            style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}
+          >
+            <View style={s.cScore}>
+              <ScoreCircle score={report.overallScore} size={44} />
             </View>
-            <View style={s.aiCardMeta}>
+            <View style={s.cName}>
+              <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>
+                {report.userName || DASH}
+              </Text>
+              <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+                {report.userRole || DASH}
+              </Text>
+            </View>
+            <View style={[s.cType, s.typeCell]}>
               {String(report.reportType || '').startsWith('Fo')
                 ? <Clock size={12} color={T.dim} strokeWidth={ICON_STROKE} />
                 : <Users size={12} color={T.dim} strokeWidth={ICON_STROKE} />}
-              <Text style={[s.aiMetaText, { color: T.sub }]}>{typeShort(report.reportType)}</Text>
-              <Text style={[s.aiMetaText, { color: T.dim }]}>{formatDate(report.reportDate)}</Text>
+              <Text style={[s.td, { color: T.sub, flexShrink: 1 }]} numberOfLines={1}>
+                {typeShort(report.reportType)}
+              </Text>
             </View>
-          </View>
-          <View style={s.aiCardRight}>
-            <View style={[s.aiRatingBadge, { backgroundColor: rc.bg }]}>
-              <Text style={[s.aiRatingText, { color: rc.text }]}>{report.overallRating || 'N/A'}</Text>
+            <Text style={[s.td, { color: T.sub }, s.cDate]} numberOfLines={1}>
+              {formatDate(report.reportDate)}
+            </Text>
+            <View style={s.cRating}>
+              <View style={[s.aiRatingBadge, { backgroundColor: rc.bg }]}>
+                <Text style={[s.aiRatingText, { color: rc.text }]} numberOfLines={1}>
+                  {report.overallRating || 'N/A'}
+                </Text>
+              </View>
             </View>
-            <View style={s.aiCardActions}>
-              {report.status === 'Completed' && (
-                <>
-                  <TouchableOpacity onPress={() => viewAiReport(report)} hitSlop={8}>
-                    <Eye size={16} color={T.accent} strokeWidth={ICON_STROKE} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => downloadPDF(report)}
-                    hitSlop={8}
-                    disabled={pdfLoadingId === report.id}
-                  >
-                    {pdfLoadingId === report.id
-                      ? <ActivityIndicator size="small" color={T.sub} />
-                      : <Download size={16} color={T.sub} strokeWidth={ICON_STROKE} />}
-                  </TouchableOpacity>
-                </>
-              )}
-              {report.status === 'Generating' && <ActivityIndicator size="small" color={T.warning} />}
-              {report.status === 'Failed' && (
-                <Text style={{ fontWeight: '700', fontSize: rf(11), color: T.danger }}>Failed</Text>
-              )}
+            <View style={s.cStatus}>
+              <StatusBadge label={report.status || DASH} color={T.sub} />
             </View>
-          </View>
-        </View>
-      </Card>
-    );
-  };
+            <View style={s.cAct}>{reportActions(report)}</View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  // ─── List rows (phone) ─────────────────────────────────────────────────────
+  const renderRows = () => (
+    <View style={{ gap: 10 }}>
+      {paged.map(report => {
+        const rc = ratingTint(T, report.overallRating || '');
+        return (
+          <ListCard key={report.id} onPress={() => viewAiReport(report)}>
+            <ScoreCircle score={report.overallScore} size={44} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={s.aiCardNameRow}>
+                <Text style={[s.tdName, { color: T.text, flexShrink: 1, minWidth: 0 }]} numberOfLines={1}>
+                  {report.userName || DASH}
+                </Text>
+                <StatusBadge label={report.userRole} color={T.sub} />
+              </View>
+              <View style={s.aiCardMeta}>
+                {String(report.reportType || '').startsWith('Fo')
+                  ? <Clock size={12} color={T.dim} strokeWidth={ICON_STROKE} />
+                  : <Users size={12} color={T.dim} strokeWidth={ICON_STROKE} />}
+                <Text style={[s.aiMetaText, { color: T.sub }]}>{typeShort(report.reportType)}</Text>
+                <Text style={[s.aiMetaText, { color: T.dim }]}>{formatDate(report.reportDate)}</Text>
+              </View>
+              <View style={[s.aiRatingBadge, { backgroundColor: rc.bg, marginTop: 6 }]}>
+                <Text style={[s.aiRatingText, { color: rc.text }]} numberOfLines={1}>
+                  {report.overallRating || 'N/A'}
+                </Text>
+              </View>
+            </View>
+            {reportActions(report)}
+          </ListCard>
+        );
+      })}
+    </View>
+  );
 
   // ─── Detail ────────────────────────────────────────────────────────────────
   const renderAiDetail = () => {
@@ -1301,7 +1373,7 @@ ${actionItemsHtml}
             <Text style={[s.count, { color: T.dim }]}>
               {aiReports.length} report{aiReports.length !== 1 ? 's' : ''} found
             </Text>
-            <View style={{ gap: 10 }}>{paged.map(renderAiReportCard)}</View>
+            {table ? renderTable() : renderRows()}
             {totalPages > 1 && (
               <View style={s.pgRow}>
                 <Text style={[s.count, { color: T.dim }]}>
@@ -1352,17 +1424,35 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: rf(14), fontWeight: '700', textAlign: 'center' },
   emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
 
-  // report card
-  aiCard: { padding: 14 },
-  aiCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  aiCardInfo: { flex: 1 },
+  // ── iPad table ──
+  // Every text column carries flexShrink:1 + minWidth:0 in its SHARED constant, so the
+  // header cell and the body cell always resolve to the same width. RN defaults
+  // flexShrink to 0: without it a long name refuses to shrink and shoves every later
+  // column out of alignment with its header.
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  // Fixed columns keep a width and never shrink — the circle and the icons are
+  // intrinsically sized and must not collapse.
+  cScore: { width: 48 },
+  cName: { flex: 2, flexShrink: 1, minWidth: 0 },
+  cType: { flex: 1.5, flexShrink: 1, minWidth: 0 },
+  cDate: { flex: 1.6, flexShrink: 1, minWidth: 0 },
+  cRating: { flex: 1.2, flexShrink: 1, minWidth: 0 },
+  cStatus: { flex: 1.1, flexShrink: 1, minWidth: 0 },
+  cAct: { width: 64 },
+  typeCell: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  failTxt: { fontWeight: '700', fontSize: rf(11) },
+
+  // report row
   aiCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  aiCardName: { fontWeight: '800', fontSize: rf(14), flex: 1 },
   aiCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   aiMetaText: { fontWeight: '500', fontSize: rf(11.5) },
-  aiCardRight: { alignItems: 'flex-end', gap: 8 },
-  aiCardActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  aiRatingBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
+  aiRatingBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100, alignSelf: 'flex-start' },
   aiRatingText: { fontWeight: '700', fontSize: rf(11) },
 
   // detail

@@ -2,6 +2,40 @@ import { apiClient } from './client';
 import { LoginResponse, UserDto, Region, Zone } from '../types';
 import { DeviceInfoPayload } from '../utils/deviceInfo';
 
+/** Mirrors AuthController.UserTransferEntry { UserId, TargetId, TargetType }. */
+export interface UserTransferEntry {
+  userId: number;
+  targetId: number;
+  /** "zh" → move an FO under another ZH · "rh" → move a ZH/direct-FO under another RH. */
+  targetType: 'zh' | 'rh';
+}
+
+/** Mirrors AuthController.UserDeleteRequest { Transfers }. */
+export interface UserDeleteBody {
+  transfers: UserTransferEntry[];
+}
+
+/**
+ * Shape of the 409 payload from DeleteUser — `Data = new { type, zhSubordinates,
+ * foSubordinates }`. apiClient's response interceptor only unwraps `data` on success,
+ * so on an error this arrives as `err.response.data.data`.
+ */
+export interface DeleteBlockedInfo {
+  type: 'zh' | 'rh';
+  zhSubordinates: SubordinateDto[];
+  foSubordinates: SubordinateDto[];
+}
+
+/** The projection the controller selects: { Id, Name, Email, Role, ZoneId, RegionId }. */
+export interface SubordinateDto {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  zoneId?: number | null;
+  regionId?: number | null;
+}
+
 export const authApi = {
   login: (email: string, password: string, deviceInfo?: DeviceInfoPayload) =>
     apiClient.post<LoginResponse>('/auth/login', { email, password, deviceInfo }),
@@ -33,7 +67,25 @@ export const authApi = {
   updateUser: (id: number, data: any) =>
     apiClient.put<UserDto>(`/auth/update-user/${id}`, data),
 
-  deleteUser: (id: number) => apiClient.delete(`/auth/delete-user/${id}`),
+  /**
+   * AuthController.DeleteUser — `[HttpDelete("delete-user/{id}")]`, bound as
+   * `DeleteUser(int id, [FromBody] UserDeleteRequest? request = null)`.
+   *
+   * Called with no body it *probes*: if the target is a ZH with FOs in its zone, or an
+   * RH with ZHs / direct FOs in its region, it answers 409 with
+   * `Data = new { type, zhSubordinates, foSubordinates }` instead of deleting.
+   * Called with `{ transfers: [{ userId, targetId, targetType }] }` it reassigns each
+   * subordinate first, then deletes.
+   *
+   * `targetType` is matched literally in the controller against "zh" (line 361) and
+   * "rh" (line 371). NOTE: the XML doc on UserTransferEntry.TargetType says "region",
+   * but that string is never compared anywhere — sending it silently transfers nothing
+   * and then deletes the parent. Use "zh" / "rh" only.
+   *
+   * Body goes through axios' `data` config key — DELETE bodies are not a positional arg.
+   */
+  deleteUser: (id: number, body?: UserDeleteBody | null) =>
+    apiClient.delete(`/auth/delete-user/${id}`, body ? { data: body } : undefined),
 
   getZones: () => apiClient.get<Zone[]>('/auth/zones'),
 

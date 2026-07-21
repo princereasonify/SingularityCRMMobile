@@ -330,8 +330,11 @@ export const FODashboard = ({ navigation }: any) => {
   const todayActs = countFor(todayYMD);
   const tomorrowActs = countFor(tomorrowYMD);
 
-  // iPad: 6 KPIs across, then two bounded panel rows. The phone stacks and scrolls.
-  const kpiW = wide ? `${100 / 6}%` : '50%';
+  // iPad: KPIs share one row; phone stacks two-up. Width is DERIVED from the actual
+  // count, not hard-coded — so adding or removing a KPI reflows the row evenly instead
+  // of leaving a gap (was `100 / 6`, which silently assumed exactly six). Matches the
+  // pattern ZHDashboard uses for its decks.
+  const kpiW = wide ? `${100 / Math.max(kpis.length, 1)}%` : '50%';
   const quarter = wide ? '25%' : '100%';
   const half = wide ? '50%' : '100%';
 

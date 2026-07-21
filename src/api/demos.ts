@@ -25,8 +25,20 @@ export interface DemosListResult {
   limit: number;
 }
 
+/**
+ * `role` filters by the *assignee's* role and is honoured only for SH/SCA, who are
+ * the only callers whose GET /demos scope spans every tier. It is bound explicitly
+ * server-side — ASP.NET silently drops query keys with no matching parameter, so an
+ * unbound filter would appear to work while quietly returning unfiltered data:
+ *   [HttpGet]
+ *   public async Task<IActionResult> GetDemos([FromQuery] string? status, [FromQuery] int? assignedToId,
+ *       [FromQuery] string? from, [FromQuery] string? to, [FromQuery] int page = 1, [FromQuery] int limit = 20,
+ *       [FromQuery] string? role = null)
+ */
+export type DemoListFilters = DemoFilters & { role?: string };
+
 export const demosApi = {
-  getAll: (filters?: DemoFilters) =>
+  getAll: (filters?: DemoListFilters) =>
     apiClient.get<DemosListResult>('/demos', { params: filters }),
   getById: (id: number) => apiClient.get<DemoAssignment>(`/demos/${id}`),
   create: (data: CreateDemoRequest) => apiClient.post<DemoAssignment>('/demos', data),

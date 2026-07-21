@@ -12,10 +12,9 @@ import {
 import { leadsApi } from '../../api/leads';
 import { LeadDto, LeadStage, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { SelectPicker } from '../../components/common/SelectPicker';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, IconBtn, Input, StatusBadge, ListCard, Avatar, FormModal,
+  Btn, IconBtn, Input, StatusBadge, ListCard, Avatar, FormModal, Field, Trigger, Dropdown,
 } from '../../components/crud';
 import { ACTIVITY_COLORS, STAGE_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
 import { formatCurrency, formatDate, formatRelativeDate } from '../../utils/formatting';
@@ -67,6 +66,7 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
   const [fos, setFos] = useState<UserDto[]>([]);
   const [showAssign, setShowAssign] = useState(false);
   const [selectedFoId, setSelectedFoId] = useState<string | number>('');
+  const [assignDdOpen, setAssignDdOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
   useEffect(() => {
@@ -129,6 +129,14 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
     );
   }
   if (!lead) return null;
+
+  // Reassign options — every FO except the one already on this lead.
+  const foOptions = fos
+    .filter(fo => fo.id !== lead.foId)
+    .map(fo => ({
+      label: `${fo.name}${(fo as any).zone ? ` (${(fo as any).zone})` : ''}`,
+      value: String(fo.id),
+    }));
 
   const stages: LeadStage[] = lead.stage === 'ImplementationStarted'
     ? [...STAGE_ORDER, 'ImplementationStarted']
@@ -424,18 +432,24 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
           <Text style={[s.mSub, { color: T.sub }]}>
             Currently assigned to: <Text style={[s.mSubBold, { color: T.text }]}>{lead.foName || DASH}</Text>
           </Text>
-          <SelectPicker
-            label="Select a new Field Officer"
-            options={fos
-              .filter(fo => fo.id !== lead.foId)
-              .map(fo => ({
-                label: `${fo.name}${(fo as any).zone ? ` (${(fo as any).zone})` : ''}`,
-                value: fo.id,
-              }))}
-            value={selectedFoId}
-            onChange={(v) => setSelectedFoId(v)}
-            accentColor={T.accent}
-          />
+          {/* Trigger + inline Dropdown. This was a SelectPicker, i.e. a second
+              Modal stacked on top of this FormModal. */}
+          <Field label="Select a new Field Officer">
+            <Trigger
+              label={foOptions.find(o => o.value === String(selectedFoId))?.label ?? 'Select a field officer'}
+              open={assignDdOpen}
+              onPress={() => setAssignDdOpen(o => !o)}
+            />
+            {assignDdOpen && (
+              <Dropdown
+                style={s.ddFull}
+                maxHeight={200}
+                value={String(selectedFoId)}
+                options={foOptions}
+                onSelect={(v) => { setSelectedFoId(v); setAssignDdOpen(false); }}
+              />
+            )}
+          </Field>
         </View>
       </FormModal>
     </View>
@@ -482,7 +496,10 @@ const s = StyleSheet.create({
   infoList: { borderTopWidth: 1, paddingTop: 10, gap: 8 },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   infoLabel: { fontSize: rf(12.5), fontWeight: '500' },
-  infoValue: { fontSize: rf(12.5), fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  // minWidth:0 alongside flexShrink:1 — without it a long value still refuses to
+  // shrink and paints over the label to its left.
+  infoValue: { fontSize: rf(12.5), fontWeight: '700', flexShrink: 1, minWidth: 0, textAlign: 'right' },
+  ddFull: { width: '100%' },
 
   note: { borderRadius: 13, padding: 12, gap: 3 },
   noteHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },

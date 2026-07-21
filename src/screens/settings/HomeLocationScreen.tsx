@@ -449,20 +449,13 @@ export const HomeLocationScreen = () => {
     );
   };
 
-  const titleBlock = (
-    <View style={s.titleBlock}>
-      <Text style={[s.h1, { color: T.text }]}>Home Location</Text>
-      <Text style={[s.h2, { color: T.sub }]}>
-        Set your home address for geofence tracking ({GEOFENCE_RADIUS_M}m radius)
-      </Text>
-    </View>
-  );
-
   if (loading) {
     return (
       <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
         <View style={s.pad}>
-          {titleBlock}
+          {/* No in-page title — the topbar (native drawer header for RH/SH/SCA)
+              already names the screen; the form card carries its own "Set Home
+              Location" heading. */}
           <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
             <View style={[s.skel, { backgroundColor: T.cardAlt, height: 44 }]} />
             <View style={[s.skel, { backgroundColor: T.cardAlt, height: 46 }]} />
@@ -491,7 +484,6 @@ export const HomeLocationScreen = () => {
            flex:1 row, so they fill the real content box exactly — no window maths (the
            permanent sidebar + topbar make the window the wrong ruler), no dead space. */
         <View style={s.wideRoot}>
-          <View style={s.widePad}>{titleBlock}</View>
           <View style={s.panes}>
             <ScrollView
               style={s.leftPane}
@@ -513,7 +505,6 @@ export const HomeLocationScreen = () => {
           onScrollBeginDrag={dismissSuggestions}
           showsVerticalScrollIndicator={false}
         >
-          {titleBlock}
           {renderForm()}
           {renderMap(false)}
           {saveBtn}

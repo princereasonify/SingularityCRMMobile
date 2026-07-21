@@ -32,6 +32,21 @@ const INSTALLMENT_MAP: Record<string, number> = {
   Monthly: 12, Quarterly: 4, 'Half-Yearly': 2, Annually: 1,
 };
 
+/**
+ * Discount bounds — the ONE rule both platforms and both deal screens now use.
+ *
+ * The backend enforces nothing: there is no [Range] attribute anywhere in
+ * SalesCRM.Core or SalesCRM.API, and CreateDealRequest.Discount is a bare
+ * `decimal`. The only discount logic server-side is DealService.CreateDealAsync's
+ * approval ladder (`<= 10 => SelfApproved, <= 20 => PendingZH, <= 30 => PendingRH,
+ * _ => PendingSH`) — whose open-ended last arm means a discount above 30 is a
+ * normal Sales-Head-approved deal, not an error. So web's `max="50"` was an
+ * arbitrary cap that contradicted web's own 0–100 submit check. 100 is the real
+ * ceiling: beyond it `subtotal * (1 - discount / 100)` turns negative.
+ */
+const DISCOUNT_MIN = 0;
+const DISCOUNT_MAX = 100;
+
 // Escalation ladder, coloured from the theme. Four tiers, four distinct hues:
 // `accent` sits between warning and danger because two adjacent escalation tiers
 // sharing a colour makes the banner unreadable. DealEstimateScreen uses this same
@@ -122,6 +137,19 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   const approval = getApprovalLevel(disc, T);
   const hasValues = bp > 0 && tl > 0;
 
+  const discErr =
+    form.discount.trim() !== '' && (Number.isNaN(parseFloat(form.discount)) || disc < DISCOUNT_MIN || disc > DISCOUNT_MAX)
+      ? `Discount must be between ${DISCOUNT_MIN} and ${DISCOUNT_MAX}%.`
+      : undefined;
+
+  // Dates arrive from DateInput as YYYY-MM-DD, which Date() parses as UTC midnight
+  // — comparing two of them is offset-free, so a plain `>` is safe here.
+  const datesErr =
+    form.contractStartDate && form.contractEndDate &&
+    new Date(form.contractStartDate) > new Date(form.contractEndDate)
+      ? 'Contract start date must be before end date.'
+      : undefined;
+
   const leadOptions = leads.map((l) => ({ label: `${l.school} — ${l.city}`, value: String(l.id) }));
   const selectedLead = leadOptions.find((o) => o.value === String(form.leadId));
 
@@ -129,6 +157,9 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
     if (!form.leadId) { Alert.alert('Error', 'Please select a lead'); return; }
     if (tl <= 0) { Alert.alert('Error', 'Total Logins is required'); return; }
     if (bp <= 0) { Alert.alert('Error', 'Base Price is required'); return; }
+    // Web parity: CreateDeal.jsx rejects discount < 0 || > 100 and start > end.
+    if (discErr) { Alert.alert('Error', discErr); return; }
+    if (datesErr) { Alert.alert('Error', datesErr); return; }
 
     setLoading(true);
     try {
@@ -227,6 +258,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
             keyboardType="numeric"
             placeholder="0"
             containerStyle={s.half}
+            error={discErr}
           />
           <Field label="Billing Frequency" style={s.half}>
             <Trigger
@@ -266,7 +298,10 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
           </View>
         </View>
 
-        <DateInput label="End Date" value={form.contractEndDate} onChange={(v) => set('contractEndDate', v)} accentColor={T.accent} />
+        <View>
+          <DateInput label="End Date" value={form.contractEndDate} onChange={(v) => set('contractEndDate', v)} accentColor={T.accent} />
+          {!!datesErr && <Text style={[s.hint, { color: T.danger }]}>{datesErr}</Text>}
+        </View>
 
         {/* The kit's Input is a fixed 46px row, so a 3-row textarea uses the kit's
             Field + the kit's input face at a taller height. */}

@@ -246,28 +246,64 @@ function FODrawer() {
 
 // ─── ZH Drawer Navigator ──────────────────────────────────────────────────────
 function ZHDrawer() {
-  const C = ROLE_COLORS.ZH;
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={ZHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
-      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
-      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
-      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
-      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
-      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => (
+        <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />
+      )}
+      screenOptions={({ navigation, route }) => ({
+        headerShown: true,
+        header: () => (
+          <AppTopbar
+            title={route.name}
+            onMenu={() => navigation.openDrawer()}
+            onNotifications={() => navigation.navigate('Notifications' as never)}
+            onProfile={() => navigation.navigate('Profile' as never)}
+            onSettings={() => navigation.navigate('Settings' as never)}
+          />
+        ),
+        drawerType: permanent ? 'permanent' : 'front',
+        drawerStyle: {
+          width: permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : SIDEBAR_PHONE_W,
+          borderRightWidth: 0,
+        },
+        overlayColor: 'rgba(0,0,0,0.4)',
+        sceneContainerStyle: { backgroundColor: T.bg },
+        swipeEnabled: !permanent,
+      })}
+    >
+      {/* Order and membership mirror web's Sidebar.jsx ZH array exactly (20 items).
+          Record Demo and Payment Integration are new here — both screens already
+          existed but had no ZH drawer entry, so ZH could not reach them at all. */}
+      <Drawer.Screen name="Dashboard" component={ZHDashboard} />
+      <Drawer.Screen name="Team" component={TeamManagementScreen} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} />
+      <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} />
+      <Drawer.Screen name="Payment Integration" component={PaymentsScreen} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
+
+      {/* Reached from the topbar profile menu, not the sidebar — same as FO. */}
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
   );
 }

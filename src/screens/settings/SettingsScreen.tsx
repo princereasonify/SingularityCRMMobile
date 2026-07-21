@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Globe, Bell, Wifi, WifiOff, Database,
-  RefreshCw, LayoutDashboard, LogOut, ChevronRight, Settings, ArrowLeft,
+  RefreshCw, LifeBuoy, LogOut, ChevronRight, Settings, ArrowLeft,
+  BookOpen, Wallet, ClipboardList, Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -15,11 +16,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requestFCMPermission, unregisterFcm } from '../../services/pushNotificationService';
 import { OfflineCache } from '../../services/OfflineCache';
 import { ICON_STROKE } from '../../components/common/Icon';
-import { IconBtn } from '../../components/crud';
+import { IconBtn, Btn, Toggle, Segmented, ConfirmModal, StatusBadge } from '../../components/crud';
+import { LogoutModal } from '../../components/common/LogoutModal';
 import { Card } from '../../components/ui';
 
 import { useAppTheme } from '../../theme/useAppTheme';
-import { withAlpha } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { Language } from '../../i18n';
 
@@ -49,6 +50,11 @@ export const SettingsScreen = ({ navigation }: any) => {
    */
   const [push, setPush] = useState(true);
 
+  // Destructive confirms are ConfirmModal (danger), not Alert.alert — the OS alert
+  // has none of the design system on it and read as a different app.
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
+
   const loadSettings = useCallback(async () => {
     try {
       const saved = await AsyncStorage.getItem(PUSH_PREF_KEY);
@@ -71,21 +77,10 @@ export const SettingsScreen = ({ navigation }: any) => {
     }
   };
 
-  const handleClearCache = () => {
-    Alert.alert(
-      t('settings.clearCache'),
-      'This will delete locally cached schools, contacts, and calendar. Data will reload from server.',
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          onPress: async () => {
-            await OfflineCache.clearAll();
-            Alert.alert(t('common.success'), 'Cache cleared successfully.');
-          },
-        },
-      ],
-    );
+  const handleClearCache = async () => {
+    setConfirmClear(false);
+    await OfflineCache.clearAll();
+    Alert.alert(t('common.success'), 'Cache cleared successfully.');
   };
 
   const handleSync = async () => {
@@ -99,11 +94,11 @@ export const SettingsScreen = ({ navigation }: any) => {
     );
   };
 
+  // Same 350ms defer the sidebar/topbar use: let the modal finish dismissing before
+  // logout() tears down the authed tree, or the unmount races the dismiss animation.
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('settings.logout'), style: 'destructive', onPress: logout },
-    ]);
+    setShowLogout(false);
+    setTimeout(() => logout(), 350);
   };
 
   return (
@@ -129,36 +124,31 @@ export const SettingsScreen = ({ navigation }: any) => {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 12 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={twoWide ? styles.centeredWide : undefined}>
+        {/* gap lives here, not on the ScrollView's contentContainer: that container has
+            exactly one child (this wrapper), so its gap:12 spaced nothing and in
+            portrait — where no style was applied at all — the cards stacked flush. */}
+        <View style={[styles.stack, twoWide && styles.centeredWide]}>
 
           {/* Offline status banner */}
           {!isOnline && (
             <View style={[styles.offlineBanner, { backgroundColor: T.danger }]}>
-              <WifiOff size={16} color="#FFF" />
-              <Text style={styles.offlineBannerText}>{t('offline.banner')}</Text>
+              <WifiOff size={16} color={T.onAccent} />
+              <Text style={[styles.offlineBannerText, { color: T.onAccent }]}>{t('offline.banner')}</Text>
             </View>
           )}
 
-          {/* Language */}
+          {/* Language — the kit's Segmented, not two hand-rolled pill TouchableOpacities.
+              Two mutually-exclusive options is exactly what Segmented is for. */}
           <Card style={styles.section}>
             <SectionTitle icon={<Globe size={16} color={T.accent} />} title={t('settings.language')} />
-            <View style={styles.langRow}>
-              {(['en', 'hi'] as Language[]).map(lang => (
-                <TouchableOpacity
-                  key={lang}
-                  style={[
-                    styles.langChip,
-                    { backgroundColor: T.cardAlt, borderColor: T.line },
-                    language === lang && { backgroundColor: T.accent, borderColor: T.accent },
-                  ]}
-                  onPress={() => setLang(lang)}
-                >
-                  <Text style={[styles.langChipText, { color: language === lang ? '#FFF' : T.sub }]}>
-                    {lang === 'en' ? t('settings.english') : t('settings.hindi')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Segmented<Language>
+              value={language as Language}
+              onChange={setLang}
+              options={[
+                { label: t('settings.english'), value: 'en' },
+                { label: t('settings.hindi'), value: 'hi' },
+              ]}
+            />
           </Card>
 
           {/* Notifications */}
@@ -168,8 +158,7 @@ export const SettingsScreen = ({ navigation }: any) => {
               icon={<Bell size={16} color={T.info} />}
               label={t('settings.pushNotifications')}
               value={push}
-              onValueChange={togglePush}
-              trackColor={T.accent}
+              onToggle={() => togglePush(!push)}
               last
             />
           </Card>
@@ -184,29 +173,37 @@ export const SettingsScreen = ({ navigation }: any) => {
             />
             <View style={styles.offlineRow}>
               <View style={[styles.statusDot, { backgroundColor: isOnline ? T.success : T.danger }]} />
-              <Text style={[styles.offlineStatus, { color: T.text }]}>{isOnline ? 'Online' : 'Offline'}</Text>
+              {/* flexShrink:1 + minWidth:0 — without it the status text and the pending
+                  count paint over each other once the count string gets long in Hindi. */}
+              <Text style={[styles.offlineStatus, { color: T.text }]} numberOfLines={1}>
+                {isOnline ? 'Online' : 'Offline'}
+              </Text>
               {pendingCount > 0 && (
-                <Text style={[styles.pendingBadge, { color: T.warning }]}>{pendingCount} {t('settings.pendingSync')}</Text>
+                <View style={styles.pendingWrap}>
+                  <StatusBadge label={`${pendingCount} ${t('settings.pendingSync')}`} color={T.warning} />
+                </View>
               )}
             </View>
+            {/* Kit Btn, not two bespoke bordered rows. `soft` and `secondary` are the
+                spec's two non-primary faces; the old ones invented their own. */}
             <View style={styles.cacheButtons}>
-              <TouchableOpacity
-                style={[styles.cacheBtn, { borderColor: T.accent }]}
+              <Btn
+                label={isSyncing ? t('offline.syncing') : t('settings.syncNow')}
+                variant="soft"
+                small
                 onPress={handleSync}
                 disabled={isSyncing || !isOnline}
-              >
-                <RefreshCw size={14} color={T.accent} />
-                <Text style={[styles.cacheBtnText, { color: T.accent }]}>
-                  {isSyncing ? t('offline.syncing') : t('settings.syncNow')}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.cacheBtn, { borderColor: T.line }]}
-                onPress={handleClearCache}
-              >
-                <Database size={14} color={T.dim} />
-                <Text style={[styles.cacheBtnText, { color: T.dim }]}>{t('settings.clearCache')}</Text>
-              </TouchableOpacity>
+                icon={<RefreshCw size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+                style={styles.cacheBtn}
+              />
+              <Btn
+                label={t('settings.clearCache')}
+                variant="secondary"
+                small
+                onPress={() => setConfirmClear(true)}
+                icon={<Database size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+                style={styles.cacheBtn}
+              />
             </View>
           </Card>
 
@@ -214,36 +211,39 @@ export const SettingsScreen = ({ navigation }: any) => {
               it reads/writes GET+PUT /dashboard/config, which DashboardController
               does not serve, so arranging widgets and tapping save persisted
               nothing. The screen itself is left in place for when the endpoint
-              exists — only the dead entry point is gone. */}
+              exists — only the dead entry point is gone.
+
+              Retitled "Help" from t('settings.dashboard') to match: the only row left
+              in this card is the User Manual, so a "Dashboard" heading described the
+              entry that went away rather than the one that stayed. The emoji glyphs on
+              this and the Admin card are now lucide icons — they were the only
+              pictograms in the app not drawn from the icon set, and they rendered at a
+              different size, weight and colour on each platform. */}
           <Card style={styles.section}>
-            <SectionTitle icon={<LayoutDashboard size={16} color={T.accent} />} title={t('settings.dashboard')} />
-            <TouchableOpacity
-              style={[styles.navRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.line, marginTop: 2 }]}
+            <SectionTitle icon={<LifeBuoy size={16} color={T.accent} />} title="Help" />
+            <NavRow
+              icon={<BookOpen size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
+              label="User Manual"
               onPress={() => navigation.navigate('UserManual')}
-            >
-              <Text style={[styles.navRowText, { color: T.text }]}>📖 User Manual</Text>
-              <ChevronRight size={16} color={T.dim} />
-            </TouchableOpacity>
+              last
+            />
           </Card>
 
           {/* SH Admin Config */}
           {(user?.role === 'SH' || user?.role === 'SCA') && (
             <Card style={styles.section}>
               <SectionTitle icon={<Settings size={16} color={T.accent} />} title="Admin Configuration" />
-              <TouchableOpacity
-                style={styles.navRow}
+              <NavRow
+                icon={<Wallet size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
+                label="Allowance Config"
                 onPress={() => navigation.navigate('AllowanceConfig')}
-              >
-                <Text style={[styles.navRowText, { color: T.text }]}>💰 Allowance Config</Text>
-                <ChevronRight size={16} color={T.dim} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.navRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.line, marginTop: 2 }]}
+              />
+              <NavRow
+                icon={<ClipboardList size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
+                label="Visit Field Config"
                 onPress={() => navigation.navigate('VisitFieldConfig')}
-              >
-                <Text style={[styles.navRowText, { color: T.text }]}>📝 Visit Field Config</Text>
-                <ChevronRight size={16} color={T.dim} />
-              </TouchableOpacity>
+                last
+              />
             </Card>
           )}
 
@@ -258,24 +258,42 @@ export const SettingsScreen = ({ navigation }: any) => {
                   </Text>
                 </View>
                 <View style={styles.userInfo}>
-                  <Text style={[styles.userName, { color: T.text }]}>{user.name}</Text>
-                  <Text style={[styles.userEmail, { color: T.sub }]}>{user.email}</Text>
-                  <Text style={[styles.userRole, { color: T.accent }]}>{user.role}</Text>
+                  <Text style={[styles.userName, { color: T.text }]} numberOfLines={1}>{user.name}</Text>
+                  <Text style={[styles.userEmail, { color: T.sub }]} numberOfLines={1}>{user.email}</Text>
+                  <Text style={[styles.userRole, { color: T.accent }]} numberOfLines={1}>{user.role}</Text>
                 </View>
               </View>
             )}
-            <TouchableOpacity
-              style={[styles.logoutBtn, { borderColor: withAlpha(T.danger, 0.20), backgroundColor: withAlpha(T.danger, 0.08) }]}
-              onPress={handleLogout}
-            >
-              <LogOut size={16} color={T.danger} />
-              <Text style={[styles.logoutText, { color: T.danger }]}>{t('settings.logout')}</Text>
-            </TouchableOpacity>
+            {/* Kit Btn (dangerGhost) — the bespoke bordered row it replaces mixed its own
+                alpha values and its own radius. */}
+            <Btn
+              label={t('settings.logout')}
+              variant="dangerGhost"
+              onPress={() => setShowLogout(true)}
+              icon={<LogOut size={16} color={T.danger} strokeWidth={ICON_STROKE} />}
+            />
           </Card>
 
           <Text style={[styles.version, { color: T.dim }]}>{t('settings.version')} 1.0.0</Text>
         </View>
       </ScrollView>
+
+      <ConfirmModal
+        visible={confirmClear}
+        tone="danger"
+        title={t('settings.clearCache')}
+        message="Locally cached schools, contacts and calendar will be deleted from this device and reloaded from the server next time you open them."
+        icon={<Trash2 size={24} color={T.danger} strokeWidth={ICON_STROKE} />}
+        confirmLabel="Clear cache"
+        onConfirm={handleClearCache}
+        onCancel={() => setConfirmClear(false)}
+      />
+
+      <LogoutModal
+        visible={showLogout}
+        onCancel={() => setShowLogout(false)}
+        onConfirm={handleLogout}
+      />
     </View>
   );
 };
@@ -290,16 +308,38 @@ const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string })
   );
 };
 
-const ToggleRow = ({ icon, label, value, onValueChange, trackColor, last }: any) => {
+/** Kit Toggle, not RN's <Switch> — <Switch> renders the raw platform control and
+ *  ignored the theme everywhere except its track tint. */
+const ToggleRow = ({ icon, label, value, onToggle, last }: {
+  icon: React.ReactNode; label: string; value: boolean; onToggle: () => void; last?: boolean;
+}) => {
   const T = useAppTheme();
   return (
     <View style={[styles.toggleRow, { borderBottomColor: T.line }, last && styles.toggleRowLast]}>
       <View style={styles.toggleLeft}>
         {icon}
-        <Text style={[styles.toggleLabel, { color: T.text }]}>{label}</Text>
+        <Text style={[styles.toggleLabel, { color: T.text }]} numberOfLines={2}>{label}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} trackColor={{ true: trackColor }} />
+      <Toggle on={value} onToggle={onToggle} />
     </View>
+  );
+};
+
+/** Icon + label + chevron navigation row, shared by the Help and Admin cards. */
+const NavRow = ({ icon, label, onPress, last }: {
+  icon: React.ReactNode; label: string; onPress: () => void; last?: boolean;
+}) => {
+  const T = useAppTheme();
+  return (
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onPress={onPress}
+      style={[styles.navRow, { borderBottomColor: T.line }, last && styles.navRowLast]}
+    >
+      <View style={[styles.navRowIcon, { backgroundColor: T.accentSoft }]}>{icon}</View>
+      <Text style={[styles.navRowText, { color: T.text }]} numberOfLines={1}>{label}</Text>
+      <ChevronRight size={16} color={T.dim} strokeWidth={ICON_STROKE} />
+    </TouchableOpacity>
   );
 };
 
@@ -314,67 +354,53 @@ const styles = StyleSheet.create({
   headerSub: { fontWeight: '500', fontSize: rf(12.5), marginTop: 2 },
 
   scroll: { flex: 1 },
-  centeredWide: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 12 },
+  stack: { gap: 12 },
+  centeredWide: { width: '100%', maxWidth: 720, alignSelf: 'center' },
 
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderRadius: 12, padding: 12,
   },
-  offlineBannerText: { color: '#FFF', fontSize: rf(13), fontWeight: '600', flex: 1 },
+  offlineBannerText: { fontSize: rf(13), fontWeight: '600', flex: 1, flexShrink: 1, minWidth: 0 },
   section: { gap: 0 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700' },
-  langRow: { flexDirection: 'row', gap: 10 },
-  langChip: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, borderWidth: 1,
-  },
-  langChipText: { fontSize: rf(13), fontWeight: '600' },
+  sectionTitle: { fontSize: rf(14), fontWeight: '700', flexShrink: 1, minWidth: 0 },
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
   },
   toggleRowLast: { borderBottomWidth: 0 },
-  toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  toggleLabel: { fontSize: rf(14), fontWeight: '600' },
+  toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
+  toggleLabel: { fontSize: rf(14), fontWeight: '600', flexShrink: 1, minWidth: 0 },
   offlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  offlineStatus: { fontSize: rf(14), fontWeight: '600' },
-  pendingBadge: {
-    marginLeft: 'auto',
-    fontSize: rf(12), fontWeight: '600',
-  },
+  statusDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  offlineStatus: { fontSize: rf(14), fontWeight: '600', flexShrink: 1, minWidth: 0 },
+  pendingWrap: { marginLeft: 'auto', flexShrink: 0 },
   cacheButtons: { flexDirection: 'row', gap: 10 },
-  cacheBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
-  },
-  cacheBtnText: { fontSize: rf(13), fontWeight: '600' },
-  quotaRow: { marginBottom: 12 },
-  quotaInfo: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  quotaLabel: { fontSize: rf(13), fontWeight: '600' },
-  quotaCount: { fontSize: rf(13), fontWeight: '700' },
-  quotaBarBg: { height: 6, borderRadius: 3 },
-  quotaBarFill: { height: 6, borderRadius: 3 },
+  cacheBtn: { flex: 1 },
+
   navRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  navRowText: { fontSize: rf(14), fontWeight: '600' },
+  navRowLast: { borderBottomWidth: 0 },
+  navRowIcon: {
+    width: 32, height: 32, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  // flex:1 so the chevron stays pinned right and the label ellipsises instead of
+  // pushing it off the card.
+  navRowText: { fontSize: rf(14), fontWeight: '600', flex: 1, flexShrink: 1, minWidth: 0 },
+
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   userAvatar: {
     width: 48, height: 48, borderRadius: 24,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   userAvatarText: { fontSize: rf(20), fontWeight: '700' },
-  userInfo: { flex: 1 },
+  userInfo: { flex: 1, minWidth: 0 },
   userName: { fontSize: rf(16), fontWeight: '700' },
   userEmail: { fontSize: rf(13), fontWeight: '400' },
   userRole: { fontSize: rf(12), fontWeight: '600', marginTop: 2 },
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 12, justifyContent: 'center',
-    borderWidth: 1, borderRadius: 12,
-  },
-  logoutText: { fontSize: rf(14), fontWeight: '700' },
   version: { textAlign: 'center', fontSize: rf(12), fontWeight: '400', paddingTop: 8 },
 });

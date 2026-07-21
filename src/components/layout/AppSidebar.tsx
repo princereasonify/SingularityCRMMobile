@@ -57,11 +57,14 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
     setTimeout(() => logout(), 350);
   };
 
-  const navIdle = T.isDark ? 'rgba(244,238,226,0.62)' : 'rgba(33,27,18,0.60)';
+  // Idle nav colour: T.sub, not the hand-mixed rgba(...,0.62)/rgba(...,0.60) that used
+  // to sit here. Those were the secondary-text colour to within 0.02 alpha but tracked
+  // nothing, so a palette change would have left the nav behind.
+  const navIdle = T.sub;
 
   const renderItem = (route: string, label: string, icon: IconName | 'Leaves') => {
     const active = route === activeRoute;
-    const color = active ? '#FFF' : navIdle;
+    const color = active ? T.onAccent : navIdle;
     const glyph =
       icon === 'Leaves' ? (
         <CalendarOff size={19} color={color} strokeWidth={ICON_STROKE} />
@@ -75,7 +78,11 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
         accessibilityLabel={label}
         onPress={() => go(route)}
         activeOpacity={0.8}
-        style={[styles.navItem, rail && styles.navItemRail, active && styles.navItemActive]}
+        style={[
+          styles.navItem,
+          rail && styles.navItemRail,
+          active && [styles.navItemActive, { shadowColor: T.accent }],
+        ]}
       >
         {active && <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />}
         {glyph}
@@ -93,8 +100,9 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
       style={[
         styles.root,
         {
-          // T.card, not the invented #171310/#FCFAF6 that used to sit here: those
-          // matched no spec and drifted from the palette. The sidebar reads as a
+          // T.card, not the two invented near-black/near-white literals that used to
+          // sit here: they matched no spec and drifted from the palette. The sidebar
+          // reads as a
           // raised surface against the content area's T.bg, which is exactly what
           // the `card` token is for, and it now follows any palette change.
           backgroundColor: T.card,
@@ -136,8 +144,23 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
         </TouchableOpacity>
       )}
 
-      {/* ── Scrollable nav ── */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+      {/*
+        ── Scrollable nav ──
+        `flex: 1` is load-bearing, not decoration. A bare <ScrollView> in a column
+        flex parent is laid out at its CONTENT height (RN/Yoga defaults flexShrink
+        to 0), so it grows past the viewport instead of scrolling: ZH's 20 items +
+        7 group headers ≈ 1010pt of content, which on an 834pt iPad in landscape
+        pushed the divider and "Sign out" clean off the bottom and clipped the last
+        rows with no way to reach them. With flex:1 the ScrollView is bounded by the
+        space left between the brand header and the sign-out footer, so the overflow
+        becomes scroll. FO (18 items + 6 headers) was clipping the same way, just
+        less visibly.
+      */}
+      <ScrollView
+        style={styles.nav}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 8 }}
+      >
         {groups.map(group => {
           const open = rail || !closed[group.label];
           return (
@@ -194,6 +217,9 @@ const styles = StyleSheet.create({
   wordmark: { fontFamily: Wordmark.bold, fontSize: 15, letterSpacing: -0.3 },
   divider: { height: 1, marginBottom: 4 },
 
+  // See the comment at the <ScrollView>: without flex:1 the nav does not scroll.
+  nav: { flex: 1 },
+
   // Collapse chip 26 · radius 8 · sits on the divider (margin-top -13)
   chip: {
     width: 26, height: 26, borderRadius: 8, borderWidth: 1,
@@ -221,11 +247,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   navItemRail: { justifyContent: 'center', paddingHorizontal: 0, marginHorizontal: 8, gap: 0 },
+  // shadowColor comes from T.accent inline — a token, not a baked hex.
   navItemActive: {
-    shadowColor: '#8C5A2E', shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35, shadowRadius: 16, elevation: 5,
   },
-  navLabel: { fontSize: 13, flex: 1 },
+  // flexShrink:1 + minWidth:0 — RN defaults flexShrink to 0, so a long label
+  // ("Payment Integration") would push past the 240 rail instead of ellipsising.
+  navLabel: { fontSize: 13, flex: 1, flexShrink: 1, minWidth: 0 },
 
   // Sign out — top border · pad 11 · icon 19 · danger · 600
   signOut: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 11, paddingHorizontal: 12 },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Alert, RefreshControl, useWindowDimensions,
+  Alert, RefreshControl, useWindowDimensions, StyleProp, ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -18,7 +18,7 @@ import { WeeklyPlan, DayPlan, WeeklyActivity } from '../../types';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, IconBtn, Field, Input, Segmented, Trigger, Dropdown,
-  StatusBadge, Avatar, FormModal,
+  StatusBadge, Avatar, FormModal, Pagination, ListCard,
 } from '../../components/crud';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -30,6 +30,20 @@ import { rf, isTabletDevice } from '../../utils/responsive';
 const ACTIVITY_TYPES = ['Visit', 'Demo', 'Call', 'Meeting', 'FollowUp'] as const;
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * House page size. The Team tab is paged CLIENT-SIDE: WeeklyPlanController.GetTeamPlans
+ * is declared `[HttpGet("team")] … GetTeamPlans([FromQuery] DateTime weekStart)` — the ONLY
+ * bound query parameter is `weekStart`. There is no `page`/`limit`/`pageSize` binding and
+ * the payload is a bare `ApiResponse<List<WeeklyPlanDto>>`, not a PaginatedResult, so the
+ * server hands back the whole team in one response and the slicing has to happen here.
+ *
+ * The "My Plan" tab is deliberately NOT paginated: it is a fixed Monday→Sunday skeleton of
+ * exactly seven day cards, which is not a growable list of records.
+ */
+const PAGE_SIZE = 10;
+
+const DASH = '—';
 
 /**
  * The full status set is the `WeeklyPlanStatus` C# enum
@@ -284,7 +298,7 @@ const ro = StyleSheet.create({
 // ─── Day card ─────────────────────────────────────────────────────────────────
 /** Web renders all seven days open — there is no per-day collapse. */
 const DayCard = ({
-  day, schools, leads, onChange, editable, wide, addOnly, approvedCount,
+  day, schools, leads, onChange, editable, wide, addOnly, approvedCount, style,
 }: {
   day: DayPlan;
   schools: any[];
@@ -296,6 +310,8 @@ const DayCard = ({
   addOnly: boolean;
   /** Activities below this index came from the approved snapshot and are locked. */
   approvedCount: number;
+  /** Lets the caller make the card a flex item of a wrapping, equal-height row. */
+  style?: StyleProp<ViewStyle>;
 }) => {
   const T = useAppTheme();
   const acts = Array.isArray(day.activities) ? day.activities : [];
@@ -314,7 +330,7 @@ const DayCard = ({
   };
 
   return (
-    <View style={[dc.card, { backgroundColor: T.card, borderColor: T.line }]}>
+    <View style={[dc.card, { backgroundColor: T.card, borderColor: T.line }, style]}>
       <View style={dc.head}>
         <View style={dc.headLeft}>
           <CalendarDays size={14} color={T.accent} strokeWidth={ICON_STROKE} />
@@ -370,9 +386,13 @@ const dc = StyleSheet.create({
   none: { fontSize: rf(12), fontWeight: '500', fontStyle: 'italic', paddingVertical: 4 },
 });
 
-// ─── Team member card ─────────────────────────────────────────────────────────
-const TeamMemberCard = ({
-  plan, schools, leads, weekMonday, onApprove, onReject, onEdited, wide,
+// ─── Team plan row ────────────────────────────────────────────────────────────
+/**
+ * A team plan is a RECORD, so it renders as a list: a real table row on iPad and a
+ * ListCard row on phone — never a card grid. Tapping the row expands the week beneath it.
+ */
+const TeamPlanRow = ({
+  plan, schools, leads, weekMonday, onApprove, onReject, onEdited, wide, table,
 }: {
   plan: WeeklyPlan;
   schools: any[];
@@ -382,6 +402,8 @@ const TeamMemberCard = ({
   onReject: () => void;
   onEdited: () => void;
   wide: boolean;
+  /** iPad → table row; phone → ListCard row. */
+  table: boolean;
 }) => {
   const T = useAppTheme();
   const STATUS_COLORS = statusColors(T);
@@ -426,96 +448,145 @@ const TeamMemberCard = ({
 
   const canReview = (st === 'Submitted' || st === 'PendingReApproval') && !editing;
 
-  return (
-    <View style={[tm.card, { backgroundColor: T.card, borderColor: T.line }]}>
+  const toggle = () => { if (!editing) setExpanded(e => !e); };
+
+  /**
+   * Icon actions keep the row's Actions column a FIXED width, so the flexible text
+   * columns to its left stay in step between the header and every body row.
+   */
+  const actions = (
+    <View style={tm.rowActions}>
+      {canReview && (
+        <>
+          <IconBtn kind="view" label="Approve" onPress={onApprove}>
+            <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+          <IconBtn kind="edit" label="Edit" onPress={startEdit}>
+            <Pencil size={14} color={T.sub} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+          <IconBtn kind="del" label="Reject" onPress={onReject}>
+            <CircleX size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+        </>
+      )}
       <TouchableOpacity
-        style={tm.head}
-        activeOpacity={0.8}
-        onPress={() => { if (!editing) setExpanded(e => !e); }}
+        onPress={toggle}
+        hitSlop={8}
+        accessibilityLabel={expanded ? 'Collapse plan' : 'Expand plan'}
       >
-        <Avatar initials={initialsOf(plan.userName)} />
-        <View style={{ flex: 1 }}>
-          <Text style={[tm.name, { color: T.text }]} numberOfLines={1}>{plan.userName || 'Unknown'}</Text>
-          <Text style={[tm.meta, { color: T.dim }]} numberOfLines={1}>
-            {plan.userRole} | {totalActivities} activities planned
-          </Text>
-        </View>
-        <StatusBadge label={statusLabel(st)} color={STATUS_COLORS[st] || T.sub} />
         {expanded
           ? <ChevronUp size={16} color={T.dim} strokeWidth={ICON_STROKE} />
           : <ChevronDown size={16} color={T.dim} strokeWidth={ICON_STROKE} />}
       </TouchableOpacity>
+    </View>
+  );
 
-      {canReview && (
-        <View style={tm.actions}>
-          <Btn
-            label="Approve" variant="success" small onPress={onApprove}
-            icon={<Check size={13} color="#FFF" strokeWidth={ICON_STROKE} />}
-          />
-          <Btn
-            label="Edit" variant="soft" small onPress={startEdit}
-            icon={<Pencil size={13} color={T.accent} strokeWidth={ICON_STROKE} />}
-          />
-          <Btn
-            label="Reject" variant="dangerGhost" small onPress={onReject}
-            icon={<CircleX size={13} color={T.danger} strokeWidth={ICON_STROKE} />}
-          />
-        </View>
-      )}
+  const detail = (
+    <View
+      style={[
+        table
+          ? [tm.expandTbl, { borderTopColor: T.line, backgroundColor: T.cardAlt }]
+          : [tm.expandCard, { borderColor: T.line, backgroundColor: T.cardAlt }],
+      ]}
+    >
+      {displayDays.map((day, i) => (
+        <DayCard
+          key={day.date}
+          day={day}
+          schools={schools}
+          leads={leads}
+          editable={editing}
+          wide={wide}
+          addOnly={false}
+          approvedCount={0}
+          onChange={editing ? (d) => {
+            const next = [...editDays];
+            next[i] = d;
+            setEditDays(next);
+          } : undefined}
+        />
+      ))}
 
-      {expanded && (
-        <View style={[tm.body, { borderTopColor: T.line }]}>
-          {displayDays.map((day, i) => (
-            <DayCard
-              key={day.date}
-              day={day}
-              schools={schools}
-              leads={leads}
-              editable={editing}
-              wide={wide}
-              addOnly={false}
-              approvedCount={0}
-              onChange={editing ? (d) => {
-                const next = [...editDays];
-                next[i] = d;
-                setEditDays(next);
-              } : undefined}
+      {editing && (
+        <View style={{ gap: 10 }}>
+          {/* Kit Input hard-codes height 46 — multiline needs Field + themed TextInput. */}
+          <Field label="Review notes">
+            <TextInput
+              style={[tm.textarea, { borderColor: T.line, color: T.text, backgroundColor: T.card }]}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              placeholder="Optional — shown to the plan's owner"
+              placeholderTextColor={T.dim}
+              multiline
+              textAlignVertical="top"
             />
-          ))}
-
-          {editing && (
-            <View style={{ gap: 10 }}>
-              {/* Kit Input hard-codes height 46 — multiline needs Field + themed TextInput. */}
-              <Field label="Review notes">
-                <TextInput
-                  style={[tm.textarea, { borderColor: T.line, color: T.text, backgroundColor: T.card }]}
-                  value={editNotes}
-                  onChangeText={setEditNotes}
-                  placeholder="Optional — shown to the plan's owner"
-                  placeholderTextColor={T.dim}
-                  multiline
-                  textAlignVertical="top"
-                />
-              </Field>
-              <View style={tm.editBtns}>
-                <Btn label="Cancel" variant="secondary" small onPress={() => setEditing(false)} />
-                <Btn label="Save Edits" small onPress={saveEdit} loading={saving} />
-              </View>
-            </View>
-          )}
+          </Field>
+          <View style={tm.editBtns}>
+            <Btn label="Cancel" variant="secondary" small onPress={() => setEditing(false)} />
+            <Btn label="Save Edits" small onPress={saveEdit} loading={saving} />
+          </View>
         </View>
       )}
+    </View>
+  );
+
+  if (table) {
+    return (
+      <>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={toggle}
+          style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}
+        >
+          <View style={[s.cMember, s.nameCell]}>
+            <Avatar initials={initialsOf(plan.userName)} />
+            <Text style={[s.tdName, s.flex1, { color: T.text }]} numberOfLines={1}>
+              {plan.userName || 'Unknown'}
+            </Text>
+          </View>
+          <Text style={[s.td, { color: T.sub }, s.cRole]} numberOfLines={1}>
+            {plan.userRole || DASH}
+          </Text>
+          <Text style={[s.td, { color: T.sub }, s.cCount]} numberOfLines={1}>
+            {totalActivities}
+          </Text>
+          <View style={s.cStatus}>
+            <StatusBadge label={statusLabel(st)} color={STATUS_COLORS[st] || T.sub} />
+          </View>
+          <View style={s.cActions}>{actions}</View>
+        </TouchableOpacity>
+        {expanded && detail}
+      </>
+    );
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      <ListCard onPress={toggle}>
+        <Avatar initials={initialsOf(plan.userName)} />
+        <View style={s.flex1}>
+          <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>
+            {plan.userName || 'Unknown'}
+          </Text>
+          <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>
+            {plan.userRole || DASH} • {totalActivities} activities planned
+          </Text>
+          <View style={tm.badgeRow}>
+            <StatusBadge label={statusLabel(st)} color={STATUS_COLORS[st] || T.sub} />
+          </View>
+        </View>
+        {actions}
+      </ListCard>
+      {expanded && detail}
     </View>
   );
 };
 
 const tm = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  meta: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
-  actions: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 12, flexWrap: 'wrap' },
-  body: { borderTopWidth: StyleSheet.hairlineWidth, padding: 14, gap: 10 },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
+  expandTbl: { borderTopWidth: 1, padding: 14, gap: 10 },
+  expandCard: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   editBtns: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
   textarea: {
     minHeight: 62, borderRadius: 13, borderWidth: 1.5,
@@ -532,6 +603,8 @@ export const WeeklyPlanScreen = (_: any) => {
   const { isOnline } = useOffline();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  /** iPad always gets the real table — never a card grid. Phones get list rows. */
+  const table = isTabletDevice;
 
   const STATUS_COLORS = statusColors(T);
   // Web parity: WeeklyPlanner.jsx gates on `user?.role !== 'FO'` — no invented role list.
@@ -551,6 +624,7 @@ export const WeeklyPlanScreen = (_: any) => {
   const [teamPlans, setTeamPlans] = useState<WeeklyPlan[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [teamPage, setTeamPage] = useState(1);
 
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -803,7 +877,19 @@ export const WeeklyPlanScreen = (_: any) => {
     </View>
   );
 
-  const filteredTeam = teamPlans.filter(p => roleFilter === 'ALL' || p.userRole === roleFilter);
+  const filteredTeam = useMemo(
+    () => teamPlans.filter(p => roleFilter === 'ALL' || p.userRole === roleFilter),
+    [teamPlans, roleFilter],
+  );
+
+  // Client-side paging (see PAGE_SIZE): the role filter or a fresh fetch resets to page 1,
+  // otherwise a page-3 view of the old list would render empty against the new one.
+  useEffect(() => { setTeamPage(1); }, [roleFilter, teamPlans]);
+
+  const teamPageCount = Math.max(1, Math.ceil(filteredTeam.length / PAGE_SIZE));
+  const pagedTeam = filteredTeam.slice((teamPage - 1) * PAGE_SIZE, teamPage * PAGE_SIZE);
+  const teamFrom = filteredTeam.length === 0 ? 0 : (teamPage - 1) * PAGE_SIZE + 1;
+  const teamTo = Math.min(teamPage * PAGE_SIZE, filteredTeam.length);
 
   // ── My Plan tab ────────────────────────────────────────────────────────────
   const renderMyPlan = () => {
@@ -842,23 +928,32 @@ export const WeeklyPlanScreen = (_: any) => {
           banner(T.success, <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />,
             'This plan is approved. You can add more activities and submit for re-approval.', 'app')}
 
-        {planDays.map((day, i) => (
-          <DayCard
-            key={day.date}
-            day={day}
-            schools={schools}
-            leads={leads}
-            editable={canEdit}
-            wide={wide}
-            addOnly={isApprovedAddOnly}
-            approvedCount={isApprovedAddOnly ? (approvedCounts[day.date] || 0) : 0}
-            onChange={canEdit ? (d) => {
-              const next = [...planDays];
-              next[i] = d;
-              setPlanDays(next);
-            } : undefined}
-          />
-        ))}
+        {/* iPad landscape lays the seven days out two-across so the horizontal room the
+            sidebar leaves is used instead of running one narrow column down the page.
+            alignItems:'stretch' makes both cards on a line share the taller one's height,
+            so a busy Monday next to an empty Tuesday leaves no dead space. In two-column
+            mode ActivityRow's fields stack (wide={false}) — three across a half-width
+            column would truncate every Trigger label. */}
+        <View style={wide ? s.dayGrid : { gap: 10 }}>
+          {planDays.map((day, i) => (
+            <DayCard
+              key={day.date}
+              day={day}
+              schools={schools}
+              leads={leads}
+              editable={canEdit}
+              wide={isTabletDevice && !wide}
+              addOnly={isApprovedAddOnly}
+              approvedCount={isApprovedAddOnly ? (approvedCounts[day.date] || 0) : 0}
+              style={wide ? s.dayCol : undefined}
+              onChange={canEdit ? (d) => {
+                const next = [...planDays];
+                next[i] = d;
+                setPlanDays(next);
+              } : undefined}
+            />
+          ))}
+        </View>
 
         {canEdit ? (
           <View style={s.btnRow}>
@@ -923,19 +1018,59 @@ export const WeeklyPlanScreen = (_: any) => {
             </Text>
           </View>
         ) : (
-          filteredTeam.map(p => (
-            <TeamMemberCard
-              key={p.id}
-              plan={p}
-              schools={schools}
-              leads={leads}
-              weekMonday={weekMonday}
-              wide={wide}
-              onApprove={() => handleApprove(p)}
-              onReject={() => { setRejectTarget(p); setRejectNotes(''); }}
-              onEdited={() => { flash('Plan edits saved'); loadTeamPlans(); }}
-            />
-          ))
+          <>
+            {table ? (
+              <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+                <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+                  <Text style={[s.th, { color: T.dim }, s.cMember]}>Team Member</Text>
+                  <Text style={[s.th, { color: T.dim }, s.cRole]}>Role</Text>
+                  <Text style={[s.th, { color: T.dim }, s.cCount]}>Activities</Text>
+                  <Text style={[s.th, { color: T.dim }, s.cStatus]}>Status</Text>
+                  <Text style={[s.th, { color: T.dim }, s.cActions]}>Actions</Text>
+                </View>
+                {pagedTeam.map(p => (
+                  <TeamPlanRow
+                    key={p.id}
+                    plan={p}
+                    schools={schools}
+                    leads={leads}
+                    weekMonday={weekMonday}
+                    wide={wide}
+                    table
+                    onApprove={() => handleApprove(p)}
+                    onReject={() => { setRejectTarget(p); setRejectNotes(''); }}
+                    onEdited={() => { flash('Plan edits saved'); loadTeamPlans(); }}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                {pagedTeam.map(p => (
+                  <TeamPlanRow
+                    key={p.id}
+                    plan={p}
+                    schools={schools}
+                    leads={leads}
+                    weekMonday={weekMonday}
+                    wide={wide}
+                    table={false}
+                    onApprove={() => handleApprove(p)}
+                    onReject={() => { setRejectTarget(p); setRejectNotes(''); }}
+                    onEdited={() => { flash('Plan edits saved'); loadTeamPlans(); }}
+                  />
+                ))}
+              </View>
+            )}
+
+            {teamPageCount > 1 && (
+              <View style={s.pgRow}>
+                <Text style={[s.count, { color: T.dim }]}>
+                  Showing {teamFrom}{DASH}{teamTo} of {filteredTeam.length}
+                </Text>
+                <Pagination page={teamPage} pageCount={teamPageCount} onChange={setTeamPage} />
+              </View>
+            )}
+          </>
         )}
       </View>
     );
@@ -956,12 +1091,8 @@ export const WeeklyPlanScreen = (_: any) => {
           />
         }
       >
-        {/* House pattern: plain themed title block on T.bg — no gradient hero. */}
-        <View style={s.titleBlock}>
-          <Text style={[s.h1, { color: T.text }]}>Weekly Plan</Text>
-          <Text style={[s.h2, { color: T.dim }]}>Plan your week and submit for review</Text>
-        </View>
-
+        {/* No in-page title — the topbar (native drawer header for RH/SH/SCA)
+            already names the screen. The week nav + tabs lead the content. */}
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }, wide && s.controlsWide]}>
           <View style={s.weekNav}>
             <IconBtn kind="view" label="Previous week" onPress={prevWeek}>
@@ -1059,6 +1190,36 @@ const s = StyleSheet.create({
   statusNote: { flex: 1, fontSize: rf(11.5), fontWeight: '500', fontStyle: 'italic' },
 
   roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  // ── My Plan: equal-height two-column day grid (iPad landscape) ──
+  // flexBasis is a PERCENTAGE of the parent, never a slice of useWindowDimensions() —
+  // the window overstates the content box by the width of the permanent sidebar.
+  dayGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 10 },
+  dayCol: { flexBasis: '48%', flexGrow: 1, flexShrink: 1, minWidth: 0 },
+
+  // ── Team table — .tbl r16 · .th cardAlt 11/700/.4 upper · .tr borderTop line ──
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  flex1: { flex: 1, minWidth: 0 },
+
+  /* Column constants are SHARED by the header cell and the body cell, so the two can
+     never drift apart. flexShrink defaults to 0 in RN: without it here a long member
+     name refuses to shrink and shoves Role/Activities/Status out of their columns.
+     minWidth:0 lets the shrink actually take effect on a text node. cActions is a fixed
+     width and deliberately takes NEITHER. */
+  cMember: { flex: 2.2, flexShrink: 1, minWidth: 0 },
+  cRole: { flex: 0.9, flexShrink: 1, minWidth: 0 },
+  cCount: { flex: 0.9, flexShrink: 1, minWidth: 0 },
+  cStatus: { flex: 1.4, flexShrink: 1, minWidth: 0 },
+  cActions: { width: 140 },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  count: { fontSize: rf(11.5), fontWeight: '600' },
 
   skel: { height: 92, borderRadius: 16, borderWidth: 1 },
 

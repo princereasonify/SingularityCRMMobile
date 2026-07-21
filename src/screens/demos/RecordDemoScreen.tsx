@@ -45,7 +45,7 @@ import { useAuth } from '../../context/AuthContext';
 import { DateInput } from '../../components/common/DateInput';
 import {
   Btn, Field, Input, SearchBar, Segmented, Trigger, Dropdown,
-  StatusBadge, FilterChip, ListCard, FormModal, ConfirmModal,
+  StatusBadge, FilterChip, Pagination, ListCard, FormModal, ConfirmModal,
 } from '../../components/crud';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -127,10 +127,36 @@ const Meter = ({ pct, color }: { pct: number; color: string }) => {
   );
 };
 
+/**
+ * House page size — 10 on every list screen (SchoolsListScreen, LeadsListScreen,
+ * TargetsScreen, AllowancesScreen, PaymentsScreen, DemoListScreen).
+ *
+ * CLIENT-side, because the recordings endpoint has filters but no paging.
+ * DemosController:
+ *   [HttpGet("recordings")]
+ *   public async Task<IActionResult> GetVisibleRecordings(
+ *       [FromQuery] string? mediaType,
+ *       [FromQuery] DateTime? from,
+ *       [FromQuery] DateTime? to,
+ *       [FromQuery] int? userId,
+ *       [FromQuery] string? search)
+ *   { ... return Ok(ApiResponse<List<DemoRecordingDto>>.Ok(rows)); }
+ * No page/limit parameters and a bare List<DemoRecordingDto> — nothing to defer to,
+ * so the filtered set arrives whole and we slice it here.
+ *
+ * (The separate attach picker, GET /demos, *is* paged — `[FromQuery] int page = 1,
+ * [FromQuery] int limit = 20` → `Ok(ApiResponse<object>.Ok(new { demos, total, page,
+ * limit }))` — but it is a one-shot modal picker, not a browsable list, so its
+ * existing `{ page: 1, limit: 100 }` fetch and the ownership filter stay untouched.)
+ */
+const PAGE_SIZE = 10;
+
 export const RecordDemoScreen = (_props: any) => {
   const T = useAppTheme();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  /** House split: iPad gets a real table, phone gets .lcard rows (SchoolsListScreen). */
+  const table = isTabletDevice;
   const { user } = useAuth();
 
   // Gate copied from web RecordingStudio: SCA is view-only (backend 403s SCA writes),
@@ -203,6 +229,23 @@ export const RecordDemoScreen = (_props: any) => {
   }, [mediaType, from, to, userId, search]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  // ── Pagination (client-side; see PAGE_SIZE) ────────────────────────────────
+  const [page, setPage] = useState(1);
+  /** Any filter change re-queries the server, so the old page number is meaningless. */
+  useEffect(() => { setPage(1); }, [mediaType, from, to, userId, search]);
+
+  const totalCount = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  /** Clamp: deleting the last row on the final page must not strand us past the end. */
+  useEffect(() => { setPage(p => Math.min(p, totalPages)); }, [totalPages]);
+
+  const pagedRows = useMemo(
+    () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [rows, page],
+  );
+  const shownFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const shownTo = Math.min(page * PAGE_SIZE, totalCount);
 
   // Debounce the search box so we don't hit the API on every keystroke.
   useEffect(() => {
@@ -460,7 +503,14 @@ export const RecordDemoScreen = (_props: any) => {
       // Controller: GetDemos([FromQuery] ... int page = 1, int limit = 20)
       //   → Ok(ApiResponse<object>.Ok(new { demos, total, page, limit }))
       const res = await demosApi.getAll({ page: 1, limit: 100 });
-      setDemos(res.data?.demos ?? []);
+
+      // Show only demos this user can actually attach to. The server rule is
+      // "assignee or requester only" (DemoRecordingService.AttachRecordingToDemoAsync),
+      // so listing anything else produces a row that 403s the moment it is tapped.
+      // This matters most for a ZH, whose list now spans their whole zone: without
+      // the filter, nearly every row in the picker would be a dead end.
+      const rows = res.data?.demos ?? [];
+      setDemos(rows.filter(d => d.assignedToId === myUserId || d.requestedById === myUserId));
     } catch {
       setDemos([]);
     } finally {
@@ -687,6 +737,130 @@ export const RecordDemoScreen = (_props: any) => {
     </View>
   );
 
+  // ─── Library row parts (shared by the iPad table and the phone rows) ───────
+  const mediaTile = (r: DemoRecordingDto) => {
+    const c = mediaColor(r.mediaType, T);
+    return (
+      <View style={[s.tile, { backgroundColor: withAlpha(c, SOFT_TINT) }]}>
+        {r.mediaType === 'audio'
+          ? <Mic size={16} color={c} strokeWidth={1.9} />
+          : r.mediaType === 'screen'
+            ? <Monitor size={16} color={c} strokeWidth={1.9} />
+            : <VideoIcon size={16} color={c} strokeWidth={1.9} />}
+      </View>
+    );
+  };
+
+  /** Web parity: write actions only on rows you posted, never for SCA. Unchanged. */
+  const recActions = (r: DemoRecordingDto) => {
+    const canWrite = !isSca && r.userId === myUserId;
+    return (
+      <>
+        <TouchableOpacity style={s.act} onPress={() => openUrl(r.url)}>
+          <Play size={14} color={T.sub} strokeWidth={1.9} />
+          <Text style={[s.actTxt, { color: T.sub }]}>Open</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.act} onPress={() => shareUrl(r)}>
+          <Link2 size={14} color={T.sub} strokeWidth={1.9} />
+          <Text style={[s.actTxt, { color: T.sub }]}>Share</Text>
+        </TouchableOpacity>
+        {canWrite && (
+          <>
+            <TouchableOpacity style={s.act} onPress={() => { setEditing(r); setEditTitle(r.title); }}>
+              <Edit2 size={14} color={T.sub} strokeWidth={1.9} />
+              <Text style={[s.actTxt, { color: T.sub }]}>Rename</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.act} onPress={() => openAttach(r)}>
+              <Upload size={14} color={T.accent} strokeWidth={1.9} />
+              <Text style={[s.actTxt, { color: T.accent }]}>{r.attachedDemoId ? 'Re-attach' : 'Attach'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="Delete recording"
+              style={s.act}
+              onPress={() => setDeleting(r)}
+            >
+              <Trash2 size={14} color={T.danger} strokeWidth={1.9} />
+            </TouchableOpacity>
+          </>
+        )}
+      </>
+    );
+  };
+
+  /**
+   * iPad table. Every header <Text> carries the SAME column style object as the body
+   * cell beneath it (s.cRec / s.cPoster / s.cDate / s.cLen / s.cSize / s.cRecActions),
+   * so a column can never drift out from under its heading.
+   */
+  const renderRecTable = () => (
+    <View style={[s.tbl, { borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        <Text style={[s.th, { color: T.dim }, s.cRec]}>Recording</Text>
+        <Text style={[s.th, { color: T.dim }, s.cPoster]}>Poster</Text>
+        <Text style={[s.th, { color: T.dim }, s.cDate]}>Recorded</Text>
+        <Text style={[s.th, { color: T.dim }, s.cLen]}>Length</Text>
+        <Text style={[s.th, { color: T.dim }, s.cSize]}>Size</Text>
+        <Text style={[s.th, { color: T.dim }, s.cRecActions]}>Actions</Text>
+      </View>
+
+      {pagedRows.map(r => (
+        <View key={r.id} style={[s.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}>
+          <View style={[s.cRec, s.recNameCell]}>
+            {mediaTile(r)}
+            <View style={s.flexMin}>
+              <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{r.title}</Text>
+              {!!r.attachedDemoId && (
+                <Text numberOfLines={1} style={[s.attached, { color: T.success }]}>
+                  Attached to demo #{r.attachedDemoId}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={[s.cPoster, s.posterCell]}>
+            <Text numberOfLines={1} style={[s.meta, s.flexMin, { color: T.sub }]}>
+              {r.userName || '—'}
+            </Text>
+            {!!r.userRole && <StatusBadge label={r.userRole} color={roleColor(r.userRole, T)} />}
+          </View>
+
+          <Text numberOfLines={1} style={[s.meta, { color: T.sub }, s.cDate]}>{fmtDate(r.createdAt)}</Text>
+          <Text numberOfLines={1} style={[s.meta, { color: T.sub }, s.cLen]}>{fmtDuration(r.durationSec)}</Text>
+          <Text numberOfLines={1} style={[s.meta, { color: T.sub }, s.cSize]}>{fmtBytes(r.fileSizeBytes)}</Text>
+
+          <View style={[s.cRecActions, s.tblActions]}>{recActions(r)}</View>
+        </View>
+      ))}
+    </View>
+  );
+
+  /** Phone: .lcard rows, one recording per row. */
+  const renderRecRows = () => (
+    <View style={s.gap8}>
+      {pagedRows.map(r => (
+        <ListCard key={r.id} style={s.rowCard}>
+          <View style={s.rowTop}>
+            {mediaTile(r)}
+            <View style={s.flexMin}>
+              <View style={s.titleRow}>
+                <Text numberOfLines={1} style={[s.rowTitle, s.flexMin, { color: T.text }]}>{r.title}</Text>
+                {!!r.userRole && <StatusBadge label={r.userRole} color={roleColor(r.userRole, T)} />}
+              </View>
+              <Text numberOfLines={2} style={[s.meta, { color: T.sub }]}>
+                {r.userName ? `${r.userName} · ` : ''}{fmtDate(r.createdAt)} · {fmtDuration(r.durationSec)} · {fmtBytes(r.fileSizeBytes)}
+              </Text>
+              {!!r.attachedDemoId && (
+                <Text style={[s.attached, { color: T.success }]}>Attached to demo #{r.attachedDemoId}</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={[s.rowActions, { borderTopColor: T.line }]}>{recActions(r)}</View>
+        </ListCard>
+      ))}
+    </View>
+  );
+
   // ─── Library ───────────────────────────────────────────────────────────────
   const library = (
     <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
@@ -766,66 +940,17 @@ export const RecordDemoScreen = (_props: any) => {
           </Text>
         </View>
       ) : (
-        <View style={s.gap8}>
-          {rows.map(r => {
-            const c = mediaColor(r.mediaType, T);
-            const rc = roleColor(r.userRole, T);
-            // Web parity: write actions only on rows you posted, never for SCA.
-            const canWrite = !isSca && r.userId === myUserId;
-            return (
-              <ListCard key={r.id} style={s.rowCard}>
-                <View style={s.rowTop}>
-                  <View style={[s.tile, { backgroundColor: withAlpha(c, SOFT_TINT) }]}>
-                    {r.mediaType === 'audio'
-                      ? <Mic size={16} color={c} strokeWidth={1.9} />
-                      : r.mediaType === 'screen'
-                        ? <Monitor size={16} color={c} strokeWidth={1.9} />
-                        : <VideoIcon size={16} color={c} strokeWidth={1.9} />}
-                  </View>
-                  <View style={s.flex}>
-                    <View style={s.titleRow}>
-                      <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{r.title}</Text>
-                      {!!r.userRole && <StatusBadge label={r.userRole} color={rc} />}
-                    </View>
-                    <Text numberOfLines={2} style={[s.meta, { color: T.sub }]}>
-                      {r.userName ? `${r.userName} · ` : ''}{fmtDate(r.createdAt)} · {fmtDuration(r.durationSec)} · {fmtBytes(r.fileSizeBytes)}
-                    </Text>
-                    {!!r.attachedDemoId && (
-                      <Text style={[s.attached, { color: T.success }]}>Attached to demo #{r.attachedDemoId}</Text>
-                    )}
-                  </View>
-                </View>
-
-                <View style={[s.rowActions, { borderTopColor: T.line }]}>
-                  <TouchableOpacity style={s.act} onPress={() => openUrl(r.url)}>
-                    <Play size={14} color={T.sub} strokeWidth={1.9} />
-                    <Text style={[s.actTxt, { color: T.sub }]}>Open</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.act} onPress={() => shareUrl(r)}>
-                    <Link2 size={14} color={T.sub} strokeWidth={1.9} />
-                    <Text style={[s.actTxt, { color: T.sub }]}>Share</Text>
-                  </TouchableOpacity>
-                  <View style={s.flex} />
-                  {canWrite && (
-                    <>
-                      <TouchableOpacity style={s.act} onPress={() => { setEditing(r); setEditTitle(r.title); }}>
-                        <Edit2 size={14} color={T.sub} strokeWidth={1.9} />
-                        <Text style={[s.actTxt, { color: T.sub }]}>Rename</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={s.act} onPress={() => openAttach(r)}>
-                        <Upload size={14} color={T.accent} strokeWidth={1.9} />
-                        <Text style={[s.actTxt, { color: T.accent }]}>{r.attachedDemoId ? 'Re-attach' : 'Attach'}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={s.act} onPress={() => setDeleting(r)}>
-                        <Trash2 size={14} color={T.danger} strokeWidth={1.9} />
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </ListCard>
-            );
-          })}
-        </View>
+        <>
+          {table ? renderRecTable() : renderRecRows()}
+          {totalPages > 1 && (
+            <View style={s.pgRow}>
+              <Text style={[s.meta, { color: T.dim }]}>
+                Showing {shownFrom}–{shownTo} of {totalCount}
+              </Text>
+              <Pagination page={page} pageCount={totalPages} onChange={setPage} />
+            </View>
+          )}
+        </>
       )}
     </View>
   );
@@ -910,7 +1035,10 @@ export const RecordDemoScreen = (_props: any) => {
         {loadingDemos ? (
           <ActivityIndicator color={T.accent} style={s.spin} />
         ) : demos.length === 0 ? (
-          <Text style={[s.emptyTxt, s.attachEmpty, { color: T.sub }]}>No demos available.</Text>
+          <Text style={[s.emptyTxt, s.attachEmpty, { color: T.sub }]}>
+            No demos you can attach to. You can attach a recording only to a demo
+            assigned to you or one you requested.
+          </Text>
         ) : (
           <ScrollView style={s.attachList} nestedScrollEnabled>
             <View style={s.gap8}>
@@ -995,9 +1123,38 @@ const s = StyleSheet.create({
   rowTitle: { fontSize: rf(13), fontWeight: '700', flexShrink: 1 },
   attached: { fontSize: rf(11), fontWeight: '600', marginTop: 2 },
 
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 14, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9 },
+  /** flexWrap: five actions (Open/Share/Rename/Attach/Delete) must never clip on a
+   *  narrow iPhone — they wrap to a second line instead. */
+  rowActions: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 14,
+    borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9,
+  },
   act: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actTxt: { fontSize: rf(11.5), fontWeight: '600' },
+
+  // ── iPad table — .tbl r16 · .th cardAlt 11/700/.4 upper · .tr borderTop line ──
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  /**
+   * Column widths. Each of these is applied to BOTH the header <Text> and the body
+   * cell, so headings and data always share a basis — the one thing that keeps a
+   * column's values under its own label.
+   */
+  cRec: { flex: 2.8 },
+  cPoster: { flex: 1.4 },
+  cDate: { flex: 1.2 },
+  cLen: { flex: 0.8 },
+  cSize: { flex: 0.8 },
+  cRecActions: { width: 250 }, // a header <Text> ignores alignItems, so both stay left
+  recNameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  posterCell: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tblActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 },
+  /** RN defaults flexShrink to 0 — a <Text> sharing a row needs this or it pushes
+   *  its neighbours out of their columns. */
+  flexMin: { flex: 1, flexShrink: 1, minWidth: 0 },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
 
   empty: { alignItems: 'center', gap: 9, paddingVertical: 30 },
   emptyTxt: { fontSize: rf(12.5), textAlign: 'center' },

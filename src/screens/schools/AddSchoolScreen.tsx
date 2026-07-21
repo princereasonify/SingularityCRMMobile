@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, ActivityIndicator, Platform, FlatList, Alert,
+  Modal, ActivityIndicator, Platform, FlatList, Alert, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { AlertTriangle, ExternalLink, X, MapPin, Search, CheckCircle, Upload } from 'lucide-react-native';
 import { pick, types } from '@react-native-documents/picker';
@@ -12,10 +12,9 @@ import { leadsApi } from '../../api/leads';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { School, DuplicateMatch, UserDto, BulkSchoolRow } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { Button } from '../../components/common/Button';
-import { GradientButton } from '../../components/common/GradientButton';
-import { rf } from '../../utils/responsive';
+import { AppHeader } from '../../components/ui';
+import { Btn, Field, Trigger, Dropdown, Segmented } from '../../components/crud';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha } from '../../theme';
@@ -139,6 +138,16 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const isEdit = !!existing;
   const isFO = user?.role === 'FO';
 
+  // ── Responsive: iPad in landscape gets the two-column form the migrated
+  // screens use (CreateDealScreen). Phones — and a tablet held in portrait —
+  // stay a single scrolling column.
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+  const insets = useSafeAreaInsets();
+
+  // One open-dropdown key at a time, so opening Board closes Type.
+  const [openDd, setOpenDd] = useState<string | null>(null);
+
   const mapRef = useRef<MapView>(null);
 
   // ── Form fields ──────────────────────────────────────────────────────────
@@ -256,7 +265,6 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const [assignToSelf, setAssignToSelf] = useState(true);
   const [zoneFOs, setZoneFOs] = useState<UserDto[]>([]);
   const [selectedFO, setSelectedFO] = useState<UserDto | null>(null);
-  const [showFOPicker, setShowFOPicker] = useState(false);
 
   // ── Load zone FOs for FO role ─────────────────────────────────────────────
   useEffect(() => {
@@ -462,7 +470,11 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <ScreenHeader title="Bulk Upload" color={T.accent} onBack={() => setBulkRows(null)} />
+        <AppHeader
+          title="Bulk Upload"
+          subtitle={`${bulkRows.length} row${bulkRows.length === 1 ? '' : 's'} read from your file`}
+          onBack={() => setBulkRows(null)}
+        />
 
         {/* Summary chips */}
         <View style={styles.bulkSummary}>
@@ -508,8 +520,10 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </View>
         )}
 
-        {/* Map of located schools */}
-        <View style={styles.bulkMapWrap}>
+        {/* Map + reviewable list. Landscape tablet puts them side by side so the
+            map is a usable square rather than a squat band across the full width. */}
+        <View style={wide ? styles.bulkSplit : styles.bulkStack}>
+        <View style={[styles.bulkMapWrap, wide && styles.bulkMapWide]}>
           <MapView
             ref={bulkMapRef}
             style={styles.map}
@@ -536,11 +550,12 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </MapView>
         </View>
 
-        {/* Reviewable list */}
         <FlatList
           data={bulkRows}
           keyExtractor={(_, i) => String(i)}
-          style={styles.bulkList}
+          style={[styles.bulkList, wide && styles.bulkListWide]}
+          contentContainerStyle={styles.bulkListContent}
+          showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <View style={styles.bulkRow}>
               <View style={{ flex: 1 }}>
@@ -560,19 +575,24 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             </View>
           )}
         />
+        </View>
 
-        {/* Actions */}
-        <View style={styles.bulkActions}>
+        {/* Actions — Cancel then primary, the same order as every other form. */}
+        <View style={[styles.bulkActions, { paddingBottom: 16 + insets.bottom }]}>
           <Text style={styles.bulkHint}>
             {savable.length} new school{savable.length === 1 ? '' : 's'} will be saved
             {dupes.length > 0 ? ` · ${dupes.length} already exist` : ''}.
           </Text>
-          <GradientButton
-            label={bulkSaving ? 'Saving…' : `Save All (${savable.length})`}
-            onPress={handleBulkSave}
-            loading={bulkSaving}
-            disabled={bulkSaving || savable.length === 0}
-          />
+          <View style={styles.actionRow}>
+            <Btn label="Cancel" variant="secondary" onPress={() => setBulkRows(null)} style={styles.actionBtn} />
+            <Btn
+              label={`Save All (${savable.length})`}
+              onPress={handleBulkSave}
+              loading={bulkSaving}
+              disabled={bulkSaving || savable.length === 0}
+              style={styles.actionBtn}
+            />
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -580,15 +600,22 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
+      <AppHeader
         title={isEdit ? 'Edit School' : 'Add School'}
-        color={T.accent}
+        subtitle={isEdit ? 'Update this school’s record' : 'Pin the location, then fill in the details'}
         onBack={() => navigation.goBack()}
       />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          { padding: wide ? 24 : 16, gap: 16, paddingBottom: insets.bottom + 40 },
+          wide && styles.contentWide,
+        ]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        // Keeps the focused input above the keyboard on iOS instead of letting
+        // the keyboard cover the field the user is typing into.
+        automaticallyAdjustKeyboardInsets
         nestedScrollEnabled
       >
         {/* ── Duplicate warning ──────────────────────────────────────── */}
@@ -620,7 +647,12 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </TouchableOpacity>
         )}
 
-        {/* ── School Name & Location ────────────────────────────────── */}
+        {/* Landscape tablet: map/location on the left, the data entry on the
+            right. Phones and portrait tablets fall through as one column. */}
+        <View style={wide ? styles.grid : styles.stackCol}>
+
+        {/* ── Column 1 · School Name & Location ─────────────────────── */}
+        <View style={styles.col}>
         <SectionCard label="School Name & Location">
           <FormField label="School Name *" value={name} onChange={setName} placeholder="e.g. St Kabir School" />
 
@@ -647,8 +679,8 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
                 disabled={findingOnMap || (!name.trim() && !searchText.trim())}
               >
                 {findingOnMap
-                  ? <ActivityIndicator size="small" color="#FFF" />
-                  : <><MapPin size={13} color="#FFF" /><Text style={styles.findBtnText}>Find</Text></>}
+                  ? <ActivityIndicator size="small" color={T.onAccent} />
+                  : <><MapPin size={13} color={T.onAccent} /><Text style={styles.findBtnText}>Find</Text></>}
               </TouchableOpacity>
             </View>
             <Text style={styles.searchHint}>
@@ -673,7 +705,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </View>
 
           {/* Map */}
-          <View style={styles.mapContainer}>
+          <View style={[styles.mapContainer, wide && styles.mapWide]}>
             <MapView
               ref={mapRef}
               style={styles.map}
@@ -732,24 +764,57 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             )}
           </View>
 
-          {/* City / State / Pincode — auto-filled from search */}
-          <View style={styles.triRow}>
+          {/* City / State / Pincode — auto-filled from search. Three inputs
+              abreast is unreadable at iPhone width, so pincode gets its own row. */}
+          <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
               <FormField label="City" value={city} onChange={setCity} placeholder="Auto-filled" />
             </View>
             <View style={{ flex: 1 }}>
               <FormField label="State" value={state} onChange={setState} placeholder="Auto-filled" />
             </View>
-            <View style={{ flex: 1 }}>
-              <FormField label="Pincode" value={pincode} onChange={setPincode} placeholder="Auto-filled" keyboardType="numeric" />
-            </View>
           </View>
+          <FormField label="Pincode" value={pincode} onChange={setPincode} placeholder="Auto-filled" keyboardType="numeric" />
         </SectionCard>
+        </View>
+
+        {/* ── Column 2 · Details, contact, plan, actions ─────────────── */}
+        <View style={styles.col}>
 
         {/* ── School Details ────────────────────────────────────────── */}
         <SectionCard label="School Details">
-          <PickerRow label="Board" options={BOARDS} value={board} onChange={setBoard} color={T.accent} />
-          <PickerRow label="Type"  options={TYPES}  value={type}  onChange={setType}  color={T.accent} />
+          <View style={styles.dualRow}>
+            <Field label="Board" style={styles.flex1}>
+              <Trigger
+                label={board || 'Select board'}
+                open={openDd === 'board'}
+                onPress={() => setOpenDd(openDd === 'board' ? null : 'board')}
+              />
+              {openDd === 'board' && (
+                <Dropdown
+                  style={styles.ddFull}
+                  value={board}
+                  options={BOARDS.map(b => ({ label: b, value: b }))}
+                  onSelect={v => { setBoard(board === v ? '' : v); setOpenDd(null); }}
+                />
+              )}
+            </Field>
+            <Field label="Type" style={styles.flex1}>
+              <Trigger
+                label={type || 'Select type'}
+                open={openDd === 'type'}
+                onPress={() => setOpenDd(openDd === 'type' ? null : 'type')}
+              />
+              {openDd === 'type' && (
+                <Dropdown
+                  style={styles.ddFull}
+                  value={type}
+                  options={TYPES.map(t => ({ label: t, value: t }))}
+                  onSelect={v => { setType(type === v ? '' : v); setOpenDd(null); }}
+                />
+              )}
+            </Field>
+          </View>
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
               <FormField label="Student Count" value={studentCount} onChange={setStudentCount} placeholder="0" keyboardType="numeric" />
@@ -788,39 +853,46 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             </Text>
 
             {/* Assign toggle */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Assign To</Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity
-                  style={[styles.chip, assignToSelf && { backgroundColor: T.accent, borderColor: T.accent }]}
-                  onPress={() => { setAssignToSelf(true); setSelectedFO(null); }}
-                >
-                  <Text style={[styles.chipText, assignToSelf && { color: '#FFF' }]}>Myself</Text>
-                </TouchableOpacity>
-                {zoneFOs.length > 0 && (
-                  <TouchableOpacity
-                    style={[styles.chip, !assignToSelf && { backgroundColor: T.accent, borderColor: T.accent }]}
-                    onPress={() => setAssignToSelf(false)}
-                  >
-                    <Text style={[styles.chipText, !assignToSelf && { color: '#FFF' }]}>Another FO</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+            {zoneFOs.length > 0 && (
+              <Field label="Assign To">
+                <Segmented
+                  value={assignToSelf ? 'self' : 'other'}
+                  options={[{ label: 'Myself', value: 'self' }, { label: 'Another FO', value: 'other' }]}
+                  onChange={v => {
+                    const self = v === 'self';
+                    setAssignToSelf(self);
+                    if (self) setSelectedFO(null);
+                    setOpenDd(null);
+                  }}
+                />
+              </Field>
+            )}
 
-            {/* FO Picker */}
-            {!assignToSelf && (
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Select FO *</Text>
-                <TouchableOpacity
-                  style={[styles.input, { justifyContent: 'center' }]}
-                  onPress={() => setShowFOPicker(true)}
-                >
-                  <Text style={{ fontWeight: '400', fontSize: rf(14), color: selectedFO ? T.text : T.dim }}>
-                    {selectedFO ? selectedFO.name : 'Tap to select FO…'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            {/* FO picker — inline dropdown, per spec. This was a slide-up modal
+                sheet, which is not a control this design system has. */}
+            {!assignToSelf && zoneFOs.length > 0 && (
+              <Field label="Select FO *">
+                <Trigger
+                  label={selectedFO ? selectedFO.name : 'Select an FO in your zone'}
+                  open={openDd === 'fo'}
+                  onPress={() => setOpenDd(openDd === 'fo' ? null : 'fo')}
+                />
+                {openDd === 'fo' && (
+                  <Dropdown
+                    style={styles.ddFull}
+                    maxHeight={220}
+                    value={selectedFO ? String(selectedFO.id) : undefined}
+                    options={zoneFOs.map(fo => ({
+                      label: fo.zone ? `${fo.name} · ${fo.zone}` : fo.name,
+                      value: String(fo.id),
+                    }))}
+                    onSelect={v => {
+                      setSelectedFO(zoneFOs.find(fo => String(fo.id) === v) ?? null);
+                      setOpenDd(null);
+                    }}
+                  />
+                )}
+              </Field>
             )}
 
             <FormField
@@ -832,39 +904,25 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </SectionCard>
         )}
 
-        {/* FO Picker Modal */}
-        {isFO && !isEdit && !assignToSelf && (
-          <Modal visible={showFOPicker} transparent animationType="slide" onRequestClose={() => setShowFOPicker(false)}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalSheet}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Select FO in Zone</Text>
-                  <TouchableOpacity onPress={() => setShowFOPicker(false)}>
-                    <X size={20} color={T.sub} />
-                  </TouchableOpacity>
-                </View>
-                {zoneFOs.map(fo => (
-                  <TouchableOpacity
-                    key={fo.id}
-                    style={styles.dupCard}
-                    onPress={() => { setSelectedFO(fo); setShowFOPicker(false); }}
-                  >
-                    <Text style={styles.dupName}>{fo.name}</Text>
-                    {fo.zone && <Text style={styles.dupReason}>{fo.zone}</Text>}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </Modal>
-        )}
+        {/* ── Actions — Cancel (secondary) then Save (primary), everywhere ── */}
+        <View style={styles.actionRow}>
+          <Btn
+            label="Cancel"
+            variant="secondary"
+            onPress={() => navigation.goBack()}
+            style={styles.actionBtn}
+          />
+          <Btn
+            label={isEdit ? 'Update School' : 'Create School'}
+            onPress={handleSubmit}
+            loading={submitting}
+            disabled={submitting || !locationSet || !name.trim()}
+            style={styles.actionBtn}
+          />
+        </View>
 
-        <GradientButton
-          label={submitting ? 'Saving…' : isEdit ? 'Update School' : 'Create School'}
-          onPress={handleSubmit}
-          loading={submitting}
-          disabled={submitting || !locationSet || !name.trim()}
-          style={{ marginTop: 8 }}
-        />
+        </View>
+        </View>
       </ScrollView>
 
       {/* ── Duplicate warning modal ────────────────────────────────── */}
@@ -899,8 +957,8 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               </View>
             ))}
             <View style={styles.modalActions}>
-              <Button title="Create Anyway" onPress={doSave} disabled={submitting} variant="secondary" color={T.accent} style={{ flex: 1 }} />
-              <Button title="Cancel" onPress={() => setShowDupModal(false)} variant="primary" color={T.accent} style={{ flex: 1 }} />
+              <Btn label="Cancel" variant="secondary" onPress={() => setShowDupModal(false)} style={styles.actionBtn} />
+              <Btn label="Create Anyway" onPress={doSave} loading={submitting} disabled={submitting} style={styles.actionBtn} />
             </View>
           </View>
         </View>
@@ -932,27 +990,6 @@ const FormField = ({ label, value, onChange, placeholder, keyboardType, multilin
   );
 };
 
-const PickerRow = ({ label, options, value, onChange, color }: any) => {
-  const T = useAppTheme();
-  const styles = makeStyles(T);
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.chipRow}>
-        {options.map((opt: string) => (
-          <TouchableOpacity
-            key={opt}
-            style={[styles.chip, value === opt && { backgroundColor: color, borderColor: color }]}
-            onPress={() => onChange(value === opt ? '' : opt)}
-          >
-            <Text style={[styles.chipText, value === opt && { color: '#FFF' }]}>{opt}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-};
-
 const SectionCard = ({ label, children }: { label: string; children: React.ReactNode }) => {
   const T = useAppTheme();
   const styles = makeStyles(T);
@@ -968,7 +1005,18 @@ const SectionCard = ({ label, children }: { label: string; children: React.React
 const makeStyles = (T: AppTheme) => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: T.bg },
   scroll:  { flex: 1 },
-  content: { padding: 16, gap: 16, paddingBottom: 40 },
+
+  // ── Responsive layout ──
+  // Bounded so the form never stretches edge-to-edge on a 12.9" iPad.
+  contentWide: { maxWidth: 1040, alignSelf: 'center', width: '100%' },
+  grid:      { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  stackCol:  { gap: 16 },
+  col:       { flex: 1, gap: 16 },
+  flex1:     { flex: 1 },
+  ddFull:    { width: '100%' },
+
+  actionRow: { flexDirection: 'row', gap: 10 },
+  actionBtn: { flex: 1 },
 
   // Bulk upload
   bulkUploadBtn: {
@@ -980,8 +1028,13 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
   bulkSummary: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, flexWrap: 'wrap' },
   bulkChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   bulkChipText: { fontWeight: '700', fontSize: rf(12) },
+  bulkSplit: { flex: 1, flexDirection: 'row', alignItems: 'stretch' },
+  bulkStack: { flex: 1 },
   bulkMapWrap: { height: 240, margin: 16, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.line },
+  bulkMapWide: { flex: 1, height: undefined, marginRight: 0 },
   bulkList: { flex: 1, marginHorizontal: 16 },
+  bulkListWide: { flex: 1, marginLeft: 16 },
+  bulkListContent: { paddingBottom: 8 },
   bulkRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: T.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8,
@@ -1056,7 +1109,7 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
   },
   findBtnDisabled: { opacity: 0.4 },
-  findBtnText: { fontWeight: '600', fontSize: rf(13), color: '#FFF' },
+  findBtnText: { fontWeight: '600', fontSize: rf(13), color: T.onAccent },
 
   suggestionsBox: {
     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
@@ -1078,6 +1131,7 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
     position: 'relative',
   },
   map: { flex: 1 },
+  mapWide: { height: 400 },
   mapBadge: {
     position: 'absolute', top: 10, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 5,

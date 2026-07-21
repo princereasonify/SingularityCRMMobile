@@ -25,6 +25,24 @@ const INSTALLMENT_MAP: Record<string, number> = {
 };
 
 /**
+ * Numeric bounds — web parity with DealEstimate.jsx's `min`/`max` input attributes,
+ * which RN's TextInput has no equivalent for.
+ *
+ * DISCOUNT_MAX is 100, not web's stale `max="50"`. The backend applies no bound at
+ * all (no [Range] attribute exists anywhere in SalesCRM.Core / SalesCRM.API, and
+ * DealService.CreateDealAsync only reads the value into an approval ladder whose
+ * last arm is `_ => ApprovalStatus.PendingSH`), so any discount above 30 is a
+ * legitimate Sales-Head-approved deal. 100 is the only real ceiling: past it
+ * `subtotal * (1 - disc / 100)` goes negative. CreateDealScreen agrees.
+ */
+const BASE_PRICE_MIN = 0;
+const LOGINS_MIN = 1;
+const DISCOUNT_MIN = 0;
+const DISCOUNT_MAX = 100;
+
+const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+
+/**
  * Escalation ladder, coloured from the theme. Four tiers, four distinct hues —
  * `accent` sits between warning and danger so no two adjacent tiers share a colour
  * (the same ramp CreateDealScreen uses; the two screens must agree).
@@ -58,9 +76,25 @@ export const DealEstimateScreen = ({ navigation }: any) => {
   const [billingFrequency, setBillingFrequency] = useState('Annually');
   const [billingOpen, setBillingOpen] = useState(false);
 
-  const bp = parseFloat(basePrice) || 0;
-  const tl = parseInt(totalLogins) || 0;
-  const disc = parseFloat(discount) || 0;
+  // Raw typed values. Kept unclamped so the field still shows exactly what the user
+  // typed — the spec is "clamp and show a validation message, do not silently coerce",
+  // so the clamp lands on the MATHS below, never on the text in the box.
+  const rawBp = parseFloat(basePrice);
+  const rawTl = parseInt(totalLogins, 10);
+  const rawDisc = parseFloat(discount);
+
+  const bpErr = basePrice.trim() !== '' && (Number.isNaN(rawBp) || rawBp < BASE_PRICE_MIN)
+    ? `Base Price cannot be below ₹${BASE_PRICE_MIN}.` : undefined;
+  const tlErr = totalLogins.trim() !== '' && (Number.isNaN(rawTl) || rawTl < LOGINS_MIN)
+    ? `Total Logins must be at least ${LOGINS_MIN}.` : undefined;
+  const discErr = discount.trim() !== '' && (Number.isNaN(rawDisc) || rawDisc < DISCOUNT_MIN || rawDisc > DISCOUNT_MAX)
+    ? `Discount must be between ${DISCOUNT_MIN} and ${DISCOUNT_MAX}%.` : undefined;
+
+  // Clamped values feed the breakdown, so an out-of-range entry can never render a
+  // negative total while the message above tells the user what was wrong.
+  const bp = clamp(Number.isNaN(rawBp) ? 0 : rawBp, BASE_PRICE_MIN, Number.MAX_SAFE_INTEGER);
+  const tl = Number.isNaN(rawTl) ? 0 : Math.max(rawTl, 0);
+  const disc = clamp(Number.isNaN(rawDisc) ? 0 : rawDisc, DISCOUNT_MIN, DISCOUNT_MAX);
 
   const subtotal = bp * tl;
   const amountWithoutGst = Math.round(subtotal * (1 - disc / 100));
@@ -95,6 +129,7 @@ export const DealEstimateScreen = ({ navigation }: any) => {
           onChangeText={setBasePrice}
           placeholder="e.g. 1000"
           keyboardType="numeric"
+          error={bpErr}
         />
         <Input
           label="Total Logins (Teachers) *"
@@ -102,13 +137,15 @@ export const DealEstimateScreen = ({ navigation }: any) => {
           onChangeText={setTotalLogins}
           placeholder="e.g. 50"
           keyboardType="numeric"
+          error={tlErr}
         />
         <Input
           label="Discount %"
           value={discount}
           onChangeText={setDiscount}
-          placeholder="e.g. 10"
+          placeholder={`0 – ${DISCOUNT_MAX}`}
           keyboardType="numeric"
+          error={discErr}
         />
         <Field label="Billing Frequency">
           <Trigger
@@ -239,15 +276,17 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  infoLabel: { fontWeight: '400', fontSize: rf(13), flex: 1 },
-  infoValue: { fontWeight: '600', fontSize: rf(13) },
+  infoLabel: { fontWeight: '400', fontSize: rf(13), flex: 1, minWidth: 0 },
+  // RN defaults flexShrink to 0: without this a long value (a full school name,
+  // a large figure) paints straight over the label sharing its row.
+  infoValue: { fontWeight: '600', fontSize: rf(13), flexShrink: 1, minWidth: 0, textAlign: 'right' },
 
   totalBanner: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 12,
   },
-  totalLabel: { fontWeight: '700', fontSize: rf(13) },
-  totalValue: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4 },
+  totalLabel: { fontWeight: '700', fontSize: rf(13), flexShrink: 1, minWidth: 0 },
+  totalValue: { fontWeight: '800', fontSize: rf(19), letterSpacing: -0.4, flexShrink: 0, textAlign: 'right' },
 
   approvalCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,

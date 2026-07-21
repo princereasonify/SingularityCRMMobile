@@ -41,7 +41,7 @@ const ROLE_LABEL: Record<string, string> = {
 export const ProfileScreen = ({ navigation }: any) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
 
@@ -55,7 +55,18 @@ export const ProfileScreen = ({ navigation }: any) => {
   // `User.Avatar` was always a column with nothing writing to it; POST /auth/avatar
   // now fills it. Optimistic local preview so the picture appears immediately —
   // reverted if the upload fails, so we never show a picture the server didn't take.
-  const [avatar, setAvatar] = useState<string | null>(user?.avatar || null);
+  //
+  // The column predates the endpoint and DbSeeder still writes INITIALS into it
+  // ("PP", "SK", "MG", "BN"), which login maps straight onto UserDto.Avatar. Feeding
+  // that to <Image source={{uri:'PP'}}> is a silently-failing load, so seeded accounts
+  // showed an empty circle instead of falling back to their initials. Only treat the
+  // value as a picture if it is actually fetchable.
+  const isImageSrc = (v?: string | null) =>
+    !!v && (/^https?:\/\//i.test(v) || v.startsWith('file:') || v.startsWith('content:') || v.startsWith('data:'));
+
+  const [avatar, setAvatar] = useState<string | null>(
+    isImageSrc(user?.avatar) ? (user?.avatar as string) : null,
+  );
   const [uploading, setUploading] = useState(false);
 
   const pickAvatar = async () => {
@@ -68,7 +79,12 @@ export const ProfileScreen = ({ navigation }: any) => {
     setUploading(true);
     try {
       const up = await authApi.uploadAvatar(uri);
-      setAvatar(up.data?.avatar || uri);
+      const url = up.data?.avatar || uri;
+      setAvatar(url);
+      // Persist to the auth context AND to AsyncStorage. Without this the new
+      // picture lived only in this screen's state: navigating away and back
+      // re-read the stale `auth_user` row and the old avatar came straight back.
+      await updateUser({ avatar: url });
     } catch (err: any) {
       setAvatar(previous);
       Alert.alert('Upload failed', err?.response?.data?.message || 'Could not update your picture.');
@@ -77,13 +93,15 @@ export const ProfileScreen = ({ navigation }: any) => {
     }
   };
 
+  // `last` drops the divider on the final row of a section — otherwise every card
+  // ended with a hairline floating in its bottom padding, separating nothing.
   const Row = ({
-    icon, label, value, onPress,
+    icon, label, value, onPress, last,
   }: {
-    icon: React.ReactNode; label: string; value?: string | null; onPress?: () => void;
+    icon: React.ReactNode; label: string; value?: string | null; onPress?: () => void; last?: boolean;
   }) => {
     const body = (
-      <View style={[styles.row, { borderBottomColor: T.line }]}>
+      <View style={[styles.row, { borderBottomColor: T.line }, last && styles.rowLast]}>
         <View style={[styles.rowIcon, { backgroundColor: T.accentSoft }]}>{icon}</View>
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: T.dim }]} numberOfLines={1}>{label}</Text>
@@ -121,19 +139,28 @@ export const ProfileScreen = ({ navigation }: any) => {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 12 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={wide ? styles.centeredWide : undefined}>
+        {/*
+          `gap` must live on THIS view, not on the ScrollView's contentContainer.
+          The container's gap:12 only ever applied between its own children, and it
+          has exactly one child — this wrapper — so in portrait (where `wide` is
+          false and no style was applied at all) every card stacked flush against
+          the next with zero spacing. Only the max-width centring is conditional.
+        */}
+        <View style={[styles.stack, wide && styles.centeredWide]}>
           <Card style={styles.identity}>
             <TouchableOpacity activeOpacity={0.8} onPress={pickAvatar} disabled={uploading}>
               <View style={[styles.avatar, { backgroundColor: T.accentSoft }]}>
                 {avatar ? (
-                  <Image source={{ uri: avatar }} style={styles.avatarImg} />
+                  // onError → drop back to initials rather than leaving a blank circle
+                  // if the stored URL 404s (bucket object deleted, stale seed value).
+                  <Image source={{ uri: avatar }} style={styles.avatarImg} onError={() => setAvatar(null)} />
                 ) : (
                   <Text style={[styles.avatarTxt, { color: T.accent }]}>{initials}</Text>
                 )}
                 <View style={[styles.avatarEdit, { backgroundColor: T.accent, borderColor: T.card }]}>
                   {uploading
-                    ? <ActivityIndicator size="small" color="#FFF" />
-                    : <Camera size={13} color="#FFF" strokeWidth={2} />}
+                    ? <ActivityIndicator size="small" color={T.onAccent} />
+                    : <Camera size={13} color={T.onAccent} strokeWidth={2} />}
                 </View>
               </View>
             </TouchableOpacity>
@@ -153,6 +180,7 @@ export const ProfileScreen = ({ navigation }: any) => {
               icon={<ShieldCheck size={15} color={T.accent} strokeWidth={ICON_STROKE} />}
               label="Role"
               value={ROLE_LABEL[user?.role || ''] || user?.role}
+              last
             />
           </Card>
 
@@ -161,7 +189,7 @@ export const ProfileScreen = ({ navigation }: any) => {
             <Row icon={<MapPin size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zone" value={user?.zone} />
             <Row icon={<Building2 size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Region" value={user?.region} />
             <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zonal Head" value={user?.zonalHead} />
-            <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Regional Head" value={user?.regionalHead} />
+            <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Regional Head" value={user?.regionalHead} last />
           </Card>
 
           <Card style={styles.section}>
@@ -171,6 +199,7 @@ export const ProfileScreen = ({ navigation }: any) => {
               label="Home location"
               value="Set your travel-allowance start point"
               onPress={() => navigation.navigate('Home Location')}
+              last
             />
             <Text style={[styles.hint, { color: T.dim }]}>
               Travel allowance is measured from here, so keep it accurate.
@@ -196,7 +225,8 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: rf(12.5), fontWeight: '400', marginTop: 1 },
 
   scroll: { flex: 1 },
-  centeredWide: { maxWidth: 720, alignSelf: 'center', width: '100%', gap: 12 },
+  stack: { gap: 12 },
+  centeredWide: { maxWidth: 720, alignSelf: 'center', width: '100%' },
 
   identity: { alignItems: 'center', paddingVertical: 20, gap: 6 },
   avatar: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
@@ -214,6 +244,7 @@ const styles = StyleSheet.create({
   section: { gap: 0 },
   sectionTitle: { fontSize: rf(14), fontWeight: '700', marginBottom: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  rowLast: { borderBottomWidth: 0 },
   rowIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   rowText: { flex: 1, minWidth: 0 },
   rowLabel: { fontSize: rf(11), fontWeight: '600' },

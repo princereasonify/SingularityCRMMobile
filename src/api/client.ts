@@ -2,6 +2,16 @@ import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } fro
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../utils/constants';
 
+// Dev-only: print the URL that got INLINED into this bundle at build time.
+// react-native-dotenv bakes .env at build, so if this line prints the live host
+// after you switched .env to a local IP, the bundle is stale — restart Metro with
+// --reset-cache and rebuild. This is the single fastest way to confirm which
+// backend the app on the device is actually talking to.
+if (__DEV__) {
+  // eslint-disable-next-line no-console
+  console.log('[API] baseURL =', API_BASE_URL);
+}
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,

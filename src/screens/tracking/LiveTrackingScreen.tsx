@@ -7,15 +7,13 @@ import {
   StyleSheet,
   RefreshControl,
   TouchableOpacity,
-  TextInput,
   Alert,
   AppState,
   Platform,
   PermissionsAndroid,
   Linking,
   Image,
-  Modal,
-  FlatList,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -33,10 +31,15 @@ import {
   Radio,
   Check,
   AlertTriangle,
-  Wifi,
-  WifiOff,
   DollarSign,
   Calendar,
+  RefreshCw,
+  Trash2,
+  Layers,
+  FileText,
+  Route as RouteIcon,
+  School as SchoolIcon,
+  Sparkles,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
@@ -46,13 +49,24 @@ import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, 
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { DateInput } from '../../components/common/DateInput';
 import { trackingApi } from '../../api/tracking';
-import { LiveLocationDto, RoutePointDto, SessionResponseDto, TrackingSessionDto } from '../../types';
+import type { VehicleType } from '../../api/tracking';
+import { schoolAssignmentsApi } from '../../api/schoolAssignments';
+import { leadsApi } from '../../api/leads';
+import {
+  LiveLocationDto, RoutePointDto, SessionResponseDto, TrackingSessionDto,
+  SchoolAssignment, SchoolGeofence, UserDto,
+} from '../../types';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+import type { AppTheme } from '../../theme';
+import {
+  Btn, SearchBar, Checkbox, FilterChip, FormModal, ConfirmModal, StatusBadge, Segmented,
+  Pagination,
+} from '../../components/crud';
 import { useAuth } from '../../context/AuthContext';
-import { RoleBadge } from '../../components/common/Badge';
-import { Button } from '../../components/common/Button';
-import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { ROLE_COLORS } from '../../utils/constants';
+import { GOOGLE_MAPS_API_KEY } from '../../utils/constants';
 import {
   formatCurrency,
   formatDate,
@@ -60,15 +74,48 @@ import {
   formatTime,
   toISODate,
 } from '../../utils/formatting';
-import { rf } from '../../utils/responsive';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 const PING_INTERVAL_MS = 30000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabKey = 'myDay' | 'map' | 'team';
+type TabKey = 'myDay' | 'map' | 'team' | 'assignments';
 type StatusFilter = 'all' | 'active' | 'ended';
+
+/** react-native-maps MapView `mapType` values web offers on its map-type selector. */
+type MapKind = 'standard' | 'satellite' | 'terrain' | 'hybrid';
+const MAP_KINDS: { key: MapKind; label: string }[] = [
+  { key: 'standard', label: 'Default' },
+  { key: 'satellite', label: 'Satellite' },
+  { key: 'terrain', label: 'Terrain' },
+  { key: 'hybrid', label: 'Hybrid' },
+];
+
+/**
+ * Mirrors web's Start-Day vehicle modal (LiveTracking.jsx:1324-1353).
+ * Values are the literal `SalesCRM.Core.Enums.VehicleType` members — the service
+ * does `Enum.TryParse<VehicleType>(vehicleType, true, out var vt)` so anything
+ * outside this set silently falls back to the "applies to all vehicles" config.
+ */
+const VEHICLE_OPTIONS: { value: VehicleType; label: string; icon: string }[] = [
+  { value: 'TwoWheeler', label: 'Two Wheeler (Activa / Bike)', icon: '🏍️' },
+  { value: 'FourWheeler', label: 'Four Wheeler (Car)', icon: '🚗' },
+  { value: 'PublicTransport', label: 'Public Transport', icon: '🚌' },
+  { value: 'Other', label: 'Other', icon: '🚶' },
+];
+
+/** Result of the Google Directions optimisation for the FO's day plan. */
+interface RouteStats { distanceKm: string; durationMin: number }
+
+/**
+ * Why the optimisation did not run, in a form we can put on screen. `status` is the
+ * literal Directions API `status` field (REQUEST_DENIED / ZERO_RESULTS / OVER_QUERY_LIMIT
+ * / …) and `detail` the API's own `error_message` when it sends one — without those two
+ * a misconfigured key is indistinguishable from "optimisation just does nothing".
+ */
+interface RouteOptFailure { status: string; detail?: string }
 
 interface ZoneGroup {
   zoneName: string;
@@ -93,10 +140,39 @@ const INDIA_REGION: MapRegion = {
 
 const LIVE_REFRESH_MS = 30000;
 
+/**
+ * House page size (SchoolsListScreen, LeadsListScreen, … all use 10).
+ *
+ * Both lists on this screen page CLIENT-SIDE, because neither endpoint accepts a
+ * page/limit:
+ *   TrackingController.cs:68-69
+ *     [HttpGet("live-locations")]
+ *     public async Task<IActionResult> GetLiveLocations([FromQuery] string? role = null)
+ *   SchoolAssignmentsController.cs:58-59
+ *     [HttpGet("team")]
+ *     public async Task<IActionResult> GetTeamAssignments([FromQuery] string date)
+ * `role` and `date` are the only bound query parameters — a `page`/`limit` we sent
+ * would be silently dropped, so the full list is fetched and sliced on device.
+ */
+const PAGE_SIZE = 10;
+
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
-const roleColor = (role: string): string =>
-  ({ FO: ROLE_COLORS.FO.primary, ZH: ROLE_COLORS.ZH.primary, RH: ROLE_COLORS.RH.primary, SH: ROLE_COLORS.SH.primary } as Record<string, string>)[role] ?? '#6B7280';
+/** lucide stroke weight used across the design system. */
+const ICON_STROKE = 1.9;
+
+/**
+ * Role identity, expressed in design-system tokens instead of the legacy role palette
+ * (teal / purple / orange / blue / rose). Each role keeps a distinct hue so a map full
+ * of markers is still readable, but every hue is a theme token so light/dark both work.
+ * `T` is passed in — a theme token can never live in a default parameter.
+ */
+const roleTint = (role: string, T: AppTheme): string =>
+  role === 'ZH' ? T.info
+    : role === 'RH' ? T.warning
+      : role === 'SH' ? T.success
+        : role === 'SCA' ? T.danger
+          : T.accent; // FO and anything unrecognised
 
 const initials = (name: string) =>
   name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -141,17 +217,41 @@ const buildRegionGroups = (users: LiveLocationDto[]): RegionGroup[] => {
   })).filter(g => g.rh || g.zones.length > 0);
 };
 
+// ─── Shared themed pieces ─────────────────────────────────────────────────────
+
+/**
+ * Themed replacement for the un-themed common/EmptyState (it paints fixed light-mode
+ * greys from the legacy CS stylesheet, which is unreadable on the dark surfaces).
+ */
+const Empty = ({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle?: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[nStyles.stateCard, { backgroundColor: T.card, borderColor: T.line }]}>
+      {icon}
+      <Text style={[nStyles.stateTitle, { color: T.text }]}>{title}</Text>
+      {!!subtitle && <Text style={[nStyles.stateTxt, { color: T.dim }]}>{subtitle}</Text>}
+    </View>
+  );
+};
+
+/** Role pill — the kit's StatusBadge tinted by role, replacing the legacy RoleBadge. */
+const RolePill = ({ role }: { role: string }) => {
+  const T = useAppTheme();
+  return <StatusBadge label={role} color={roleTint(role, T)} />;
+};
+
 // ─── Map marker components ────────────────────────────────────────────────────
 
 const AllUsersMarker = React.memo(({ user }: { user: LiveLocationDto }) => {
-  const c = roleColor(user.role);
+  const T = useAppTheme();
+  const c = roleTint(user.role, T);
   const active = user.status === 'active';
   return (
     <View style={amStyles.wrap}>
       {active && <View style={[amStyles.pulse, { borderColor: c }]} />}
-      <View style={[amStyles.bubble, { backgroundColor: c, opacity: active ? 1 : 0.6 }]}>
-        <Text style={amStyles.ini}>{initials(user.name)}</Text>
-        <Text style={amStyles.role}>{user.role}</Text>
+      <View style={[amStyles.bubble, { backgroundColor: c, borderColor: T.card, opacity: active ? 1 : 0.6 }]}>
+        <Text style={[amStyles.ini, { color: T.onAccent }]}>{initials(user.name)}</Text>
+        <Text style={[amStyles.role, { color: withAlpha(T.onAccent, 0.85) }]}>{user.role}</Text>
       </View>
       <View style={[amStyles.pin, { borderTopColor: c, opacity: active ? 1 : 0.6 }]} />
     </View>
@@ -163,11 +263,11 @@ const amStyles = StyleSheet.create({
   pulse: { position: 'absolute', width: 52, height: 52, borderRadius: 26, borderWidth: 2, top: -8, opacity: 0.3 },
   bubble: {
     minWidth: 40, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 9,
-    alignItems: 'center', borderWidth: 2.5, borderColor: '#FFF',
+    alignItems: 'center', borderWidth: 2.5,
     shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 4, elevation: 6,
   },
-  ini: { fontSize: rf(11), fontWeight: '800', color: '#FFF' },
-  role: { fontSize: rf(7), fontWeight: '700', color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  ini: { fontSize: rf(11), fontWeight: '800' },
+  role: { fontSize: rf(7), fontWeight: '700', marginTop: 1 },
   pin: {
     width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 9,
     borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: -1,
@@ -176,13 +276,14 @@ const amStyles = StyleSheet.create({
 
 // Live marker — larger, pulsing ring for individual tracking
 const LiveUserMarker = ({ user }: { user: LiveLocationDto }) => {
-  const c = roleColor(user.role);
+  const T = useAppTheme();
+  const c = roleTint(user.role, T);
   return (
     <View style={lvStyles.wrap}>
       <View style={[lvStyles.outerRing, { borderColor: c }]} />
       <View style={[lvStyles.innerRing, { borderColor: c }]} />
-      <View style={[lvStyles.dot, { backgroundColor: c }]}>
-        <Text style={lvStyles.ini}>{initials(user.name)}</Text>
+      <View style={[lvStyles.dot, { backgroundColor: c, borderColor: T.card }]}>
+        <Text style={[lvStyles.ini, { color: T.onAccent }]}>{initials(user.name)}</Text>
       </View>
     </View>
   );
@@ -200,11 +301,10 @@ const lvStyles = StyleSheet.create({
   },
   dot: {
     width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: '#FFF',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 3,
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, elevation: 8,
   },
-  ini: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
+  ini: { fontSize: rf(12), fontWeight: '800' },
 });
 
 // ─── Individual Tracking View ─────────────────────────────────────────────────
@@ -212,11 +312,11 @@ const lvStyles = StyleSheet.create({
 
 interface IndividualTrackingProps {
   person: LiveLocationDto;         // initial live data
-  managerRoleColor: { primary: string; light: string };
   onBack: () => void;
 }
 
 const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => {
+  const T = useAppTheme();
   const mapRef = useRef<MapView>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const days = useMemo(() => getLast7Days(), []);
@@ -228,7 +328,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const isToday = selectedDate === today;
-  const personColor = roleColor(person.role);
+  const personColor = roleTint(person.role, T);
 
   // ── Load route for selected date ──────────────────────────────────────────
   const loadRoute = useCallback(async (date: string) => {
@@ -304,28 +404,30 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
   const hasLiveLocation = isToday && liveData.latitude && liveData.longitude;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#111827' }} edges={['bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }} edges={['bottom']}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <View style={ivStyles.header}>
+      <View style={[ivStyles.header, { backgroundColor: T.card, borderBottomColor: T.line }]}>
         <TouchableOpacity
           onPress={onBack}
           style={ivStyles.backBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ChevronLeft size={22} color="#FFF" />
+          <ChevronLeft size={22} color={T.text} strokeWidth={ICON_STROKE} />
         </TouchableOpacity>
 
         <View style={ivStyles.headerCenter}>
           <View style={[ivStyles.headerAvatar, { backgroundColor: personColor }]}>
-            <Text style={ivStyles.headerAvatarText}>{initials(person.name)}</Text>
+            <Text style={[ivStyles.headerAvatarText, { color: T.onAccent }]}>{initials(person.name)}</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={ivStyles.headerName} numberOfLines={1}>{person.name}</Text>
+          <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+            <Text style={[ivStyles.headerName, { color: T.text }]} numberOfLines={1}>{person.name}</Text>
             <View style={ivStyles.headerMeta}>
-              <RoleBadge role={person.role} />
-              {person.zoneName && <Text style={ivStyles.headerZone}>{person.zoneName}</Text>}
+              <RolePill role={person.role} />
+              {person.zoneName && (
+                <Text style={[ivStyles.headerZone, { color: T.dim }]} numberOfLines={1}>{person.zoneName}</Text>
+              )}
               {person.regionName && !person.zoneName && (
-                <Text style={ivStyles.headerZone}>{person.regionName}</Text>
+                <Text style={[ivStyles.headerZone, { color: T.dim }]} numberOfLines={1}>{person.regionName}</Text>
               )}
             </View>
           </View>
@@ -333,29 +435,30 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
         {/* Live indicator */}
         {liveData.status === 'active' && isToday ? (
-          <View style={ivStyles.liveChip}>
-            <View style={ivStyles.livePulse} />
-            <Text style={ivStyles.liveText}>LIVE</Text>
+          <View style={[ivStyles.liveChip, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
+            <View style={[ivStyles.livePulse, { backgroundColor: T.success }]} />
+            <Text style={[ivStyles.liveText, { color: T.success }]}>LIVE</Text>
           </View>
         ) : (
-          <View style={ivStyles.endedChip}>
-            <Text style={ivStyles.endedText}>Ended</Text>
-          </View>
+          <StatusBadge label="Ended" color={T.dim} />
         )}
       </View>
 
       {/* ── Date picker ────────────────────────────────────────────────── */}
-      <View style={ivStyles.dateBar}>
+      <View style={[ivStyles.dateBar, { backgroundColor: T.cardAlt, borderBottomColor: T.line }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ivStyles.dateScroll}>
           {days.map((d, i) => {
             const active = selectedDate === d;
             return (
               <TouchableOpacity
                 key={d}
-                style={[ivStyles.dateChip, active && { backgroundColor: personColor }]}
+                style={[
+                  ivStyles.dateChip,
+                  { backgroundColor: active ? T.accentSoft : T.card, borderColor: active ? T.accent : T.line },
+                ]}
                 onPress={() => setSelectedDate(d)}
               >
-                <Text style={[ivStyles.dateChipText, active && { color: '#FFF' }]}>
+                <Text style={[ivStyles.dateChipText, { color: active ? T.accent : T.sub }]}>
                   {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
                 </Text>
               </TouchableOpacity>
@@ -365,8 +468,8 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
         {isToday && (
           <View style={ivStyles.refreshBadge}>
-            <Radio size={11} color="#22C55E" />
-            <Text style={ivStyles.refreshText}>
+            <Radio size={11} color={T.success} strokeWidth={ICON_STROKE} />
+            <Text style={[ivStyles.refreshText, { color: T.success }]}>
               {fmtTime(lastRefreshed.toISOString())}
             </Text>
           </View>
@@ -390,7 +493,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
           {routeCoords.length > 0 && (
             <Marker
               coordinate={routeCoords[0]}
-              pinColor="#16A34A"
+              pinColor={T.success}
               title="Start"
               description={startTime}
             />
@@ -400,7 +503,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
           {routeCoords.length > 1 && !isToday && (
             <Marker
               coordinate={routeCoords[routeCoords.length - 1]}
-              pinColor="#DC2626"
+              pinColor={T.danger}
               title="End"
               description={endTime}
             />
@@ -421,18 +524,18 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
         {/* Loading overlay */}
         {loading && (
-          <View style={ivStyles.overlay}>
-            <LoadingSpinner color={personColor} message="Loading tracking data..." />
+          <View style={[ivStyles.overlay, { backgroundColor: withAlpha(T.bg, 0.9) }]}>
+            <LoadingSpinner color={T.accent} message="Loading tracking data..." />
           </View>
         )}
 
         {/* No data overlay */}
         {!loading && routePoints.length === 0 && !hasLiveLocation && (
-          <View style={ivStyles.overlay}>
-            <EmptyState
+          <View style={[ivStyles.overlay, { backgroundColor: withAlpha(T.bg, 0.9) }]}>
+            <Empty
+              icon={<Radio size={30} color={T.dim} strokeWidth={ICON_STROKE} />}
               title="No tracking data"
               subtitle={isToday ? "This person hasn't started tracking today." : `No data for ${formatDate(selectedDate)}`}
-              icon={isToday ? '📡' : '🗺️'}
             />
           </View>
         )}
@@ -440,65 +543,69 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
         {/* No route yet but person is live */}
         {!loading && routePoints.length === 0 && hasLiveLocation && (
           <View style={ivStyles.noRouteHint} pointerEvents="none">
-            <Text style={ivStyles.noRouteText}>Route building… location updated</Text>
+            <Text
+              style={[ivStyles.noRouteText, { backgroundColor: T.card, color: T.sub, borderColor: T.line }]}
+            >
+              Route building… location updated
+            </Text>
           </View>
         )}
 
         {/* ── Stats Panel ──────────────────────────────────────────────── */}
-        <View style={ivStyles.statsPanel}>
-          {/* Top row: quick stats */}
+        <View style={[ivStyles.statsPanel, { backgroundColor: T.card, borderTopColor: T.line }]}>
+          {/* Top row: quick stats — equal-height cells, no dead space */}
           <View style={ivStyles.statsRow}>
             <View style={ivStyles.statBox}>
-              <Navigation size={16} color={personColor} />
-              <Text style={ivStyles.statVal}>{totalKm.toFixed(1)} km</Text>
-              <Text style={ivStyles.statLbl}>Distance</Text>
+              <Navigation size={16} color={personColor} strokeWidth={ICON_STROKE} />
+              <Text style={[ivStyles.statVal, { color: T.text }]} numberOfLines={1}>{totalKm.toFixed(1)} km</Text>
+              <Text style={[ivStyles.statLbl, { color: T.dim }]}>Distance</Text>
             </View>
-            <View style={ivStyles.statDivider} />
+            <View style={[ivStyles.statDivider, { backgroundColor: T.line }]} />
             <View style={ivStyles.statBox}>
-              <Activity size={16} color={personColor} />
-              <Text style={ivStyles.statVal}>{liveData.speedKmh?.toFixed(0) ?? '--'} km/h</Text>
-              <Text style={ivStyles.statLbl}>Speed</Text>
+              <Activity size={16} color={personColor} strokeWidth={ICON_STROKE} />
+              <Text style={[ivStyles.statVal, { color: T.text }]} numberOfLines={1}>{liveData.speedKmh?.toFixed(0) ?? '--'} km/h</Text>
+              <Text style={[ivStyles.statLbl, { color: T.dim }]}>Speed</Text>
             </View>
-            <View style={ivStyles.statDivider} />
+            <View style={[ivStyles.statDivider, { backgroundColor: T.line }]} />
             <View style={ivStyles.statBox}>
-              <MapPin size={16} color={personColor} />
-              <Text style={ivStyles.statVal}>{routePoints.length}</Text>
-              <Text style={ivStyles.statLbl}>Pings</Text>
+              <MapPin size={16} color={personColor} strokeWidth={ICON_STROKE} />
+              <Text style={[ivStyles.statVal, { color: T.text }]} numberOfLines={1}>{routePoints.length}</Text>
+              <Text style={[ivStyles.statLbl, { color: T.dim }]}>Pings</Text>
             </View>
-            <View style={ivStyles.statDivider} />
+            <View style={[ivStyles.statDivider, { backgroundColor: T.line }]} />
             <View style={ivStyles.statBox}>
-              <Clock size={16} color={personColor} />
-              <Text style={ivStyles.statVal}>{formatRelativeDate(liveData.lastSeen)}</Text>
-              <Text style={ivStyles.statLbl}>Last Seen</Text>
+              <Clock size={16} color={personColor} strokeWidth={ICON_STROKE} />
+              <Text style={[ivStyles.statVal, { color: T.text }]} numberOfLines={1}>{formatRelativeDate(liveData.lastSeen)}</Text>
+              <Text style={[ivStyles.statLbl, { color: T.dim }]}>Last Seen</Text>
             </View>
           </View>
 
           {/* Bottom row: time + battery */}
           <View style={ivStyles.statsRowSecondary}>
-            <View style={ivStyles.statPill}>
-              <Text style={[ivStyles.statPillLabel, { color: '#16A34A' }]}>▶ {startTime}</Text>
-              <Text style={ivStyles.statPillSub}>Start</Text>
+            <View style={[ivStyles.statPill, { backgroundColor: T.cardAlt }]}>
+              <Text style={[ivStyles.statPillLabel, { color: T.success }]}>▶ {startTime}</Text>
+              <Text style={[ivStyles.statPillSub, { color: T.dim }]}>Start</Text>
             </View>
             {(isToday ? liveData.status === 'ended' : true) && routePoints.length > 1 && (
-              <View style={ivStyles.statPill}>
-                <Text style={[ivStyles.statPillLabel, { color: '#DC2626' }]}>■ {endTime}</Text>
-                <Text style={ivStyles.statPillSub}>End</Text>
+              <View style={[ivStyles.statPill, { backgroundColor: T.cardAlt }]}>
+                <Text style={[ivStyles.statPillLabel, { color: T.danger }]}>■ {endTime}</Text>
+                <Text style={[ivStyles.statPillSub, { color: T.dim }]}>End</Text>
               </View>
             )}
             {liveData.batteryLevel != null && (
-              <View style={ivStyles.statPill}>
-                <Text style={[ivStyles.statPillLabel, { color: liveData.batteryLevel < 0.2 ? '#DC2626' : '#6B7280' }]}>
+              <View style={[ivStyles.statPill, { backgroundColor: T.cardAlt }]}>
+                <Text style={[ivStyles.statPillLabel, { color: liveData.batteryLevel < 0.2 ? T.danger : T.sub }]}>
                   🔋 {Math.round(liveData.batteryLevel * 100)}%
                 </Text>
-                <Text style={ivStyles.statPillSub}>Battery</Text>
+                <Text style={[ivStyles.statPillSub, { color: T.dim }]}>Battery</Text>
               </View>
             )}
             {liveData.isSuspicious && (
-              <View style={[ivStyles.statPill, { backgroundColor: '#FEF2F2' }]}>
-                <Text style={[ivStyles.statPillLabel, { color: '#DC2626' }]}>
+              <View style={[ivStyles.statPill, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+                <Text style={[ivStyles.statPillLabel, { color: T.danger }]}>
                   ⚠ {liveData.fraudScore}
                 </Text>
-                <Text style={ivStyles.statPillSub}>Fraud</Text>
+                <Text style={[ivStyles.statPillSub, { color: T.dim }]}>Fraud</Text>
               </View>
             )}
           </View>
@@ -509,89 +616,75 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 };
 
 const ivStyles = StyleSheet.create({
-  // Header (dark bg)
+  // Header
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12,
-    paddingVertical: 10, backgroundColor: '#111827', gap: 8,
+    paddingVertical: 10, gap: 8, borderBottomWidth: 1,
   },
   backBtn: { padding: 4 },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerCenter: { flexShrink: 1, minWidth: 0, flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerAvatarText: { fontSize: rf(13), fontWeight: '800', color: '#FFF' },
-  headerName: { fontSize: rf(14), fontWeight: '700', color: '#FFF' },
-  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  headerZone: { fontSize: rf(11), color: 'rgba(255,255,255,0.6)' },
+  headerAvatarText: { fontSize: rf(13), fontWeight: '800' },
+  headerName: { fontSize: rf(14), fontWeight: '700' },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  headerZone: { fontSize: rf(11), fontWeight: '500', flexShrink: 1, minWidth: 0 },
   liveChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#14532D', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
+    paddingHorizontal: 10, height: 22, borderRadius: 11,
   },
-  livePulse: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#22C55E' },
-  liveText: { fontSize: rf(10), fontWeight: '800', color: '#22C55E' },
-  endedChip: {
-    backgroundColor: '#1F2937', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
-  },
-  endedText: { fontSize: rf(10), fontWeight: '700', color: '#9CA3AF' },
+  liveText: { fontSize: rf(10), fontWeight: '800' },
+  livePulse: { width: 7, height: 7, borderRadius: 3.5 },
 
   // Date bar
-  dateBar: {
-    backgroundColor: '#1F2937',
-    flexDirection: 'row', alignItems: 'center',
-  },
-  dateScroll: { paddingHorizontal: 14, paddingVertical: 10, gap: 8, flex: 1 },
+  dateBar: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
+  dateScroll: { paddingHorizontal: 14, paddingVertical: 10, gap: 8, flexGrow: 1 },
   dateChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18,
-    backgroundColor: '#374151',
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, borderWidth: 1,
   },
-  dateChipText: { fontSize: rf(12), fontWeight: '600', color: '#D1D5DB' },
+  dateChipText: { fontSize: rf(12), fontWeight: '600' },
   refreshBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingRight: 14,
   },
-  refreshText: { fontSize: rf(10), color: '#22C55E', fontWeight: '600' },
+  refreshText: { fontSize: rf(10), fontWeight: '600' },
 
   // Map overlays
   overlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(249,250,251,0.9)',
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
   },
   noRouteHint: {
     position: 'absolute', top: 16, left: 0, right: 0,
     alignItems: 'center', zIndex: 5,
   },
   noRouteText: {
-    backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFF',
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-    fontSize: rf(12), fontWeight: '600',
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, borderWidth: 1,
+    fontSize: rf(12), fontWeight: '600', overflow: 'hidden',
   },
 
   // Stats panel
   statsPanel: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#FFF',
-    borderTopWidth: 1, borderTopColor: '#E5E7EB',
-    paddingTop: 14, paddingBottom: 12,
+    borderTopWidth: 1, paddingTop: 14, paddingBottom: 12,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, elevation: 12,
   },
-  statsRow: {
-    flexDirection: 'row', paddingHorizontal: 16, marginBottom: 10,
-  },
-  statBox: { flex: 1, alignItems: 'center', gap: 4 },
-  statDivider: { width: 1, backgroundColor: '#E5E7EB', marginVertical: 4 },
-  statVal: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  statLbl: { fontSize: rf(10), color: '#9CA3AF', fontWeight: '500' },
+  // alignItems:'stretch' so every cell is the full row height — no clipped tiles.
+  statsRow: { flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: 16, marginBottom: 10 },
+  statBox: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 4, minWidth: 0 },
+  statDivider: { width: 1, marginVertical: 4 },
+  statVal: { fontSize: rf(14), fontWeight: '700', textAlign: 'center' },
+  statLbl: { fontSize: rf(10), fontWeight: '500', textAlign: 'center' },
   statsRowSecondary: {
-    flexDirection: 'row', paddingHorizontal: 12, gap: 8, flexWrap: 'wrap',
+    flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: 12, gap: 8, flexWrap: 'wrap',
   },
   statPill: {
-    backgroundColor: '#F9FAFB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6,
-    alignItems: 'center',
+    borderRadius: 11, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center',
   },
-  statPillLabel: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  statPillSub: { fontSize: rf(9), color: '#9CA3AF', marginTop: 1 },
+  statPillLabel: { fontSize: rf(12), fontWeight: '700', textAlign: 'center' },
+  statPillSub: { fontSize: rf(9), marginTop: 1, textAlign: 'center' },
 });
 
 // ─── Compact person row (used inside ZoneGroup / RegionGroup) ─────────────────
@@ -603,11 +696,16 @@ interface PersonRowProps {
 }
 
 const PersonRow = ({ user, indent = false, onPress }: PersonRowProps) => {
-  const c = roleColor(user.role);
+  const T = useAppTheme();
+  const c = roleTint(user.role, T);
   const active = user.status === 'active';
   return (
     <TouchableOpacity
-      style={[prStyles.row, indent && prStyles.indented]}
+      style={[
+        prStyles.row,
+        { backgroundColor: indent ? T.cardAlt : T.card, borderBottomColor: T.line },
+        indent && prStyles.indented,
+      ]}
       onPress={() => onPress(user)}
       activeOpacity={0.7}
     >
@@ -616,36 +714,38 @@ const PersonRow = ({ user, indent = false, onPress }: PersonRowProps) => {
           <Image source={{ uri: user.avatar }} style={prStyles.avatar} />
         ) : (
           <View style={[prStyles.avatar, { backgroundColor: c }]}>
-            <Text style={prStyles.avatarText}>{initials(user.name)}</Text>
+            <Text style={[prStyles.avatarText, { color: T.onAccent }]}>{initials(user.name)}</Text>
           </View>
         )}
-        <View style={[prStyles.dot, { backgroundColor: active ? '#22C55E' : '#9CA3AF' }]} />
+        <View
+          style={[prStyles.dot, { backgroundColor: active ? T.success : T.dim, borderColor: T.card }]}
+        />
       </View>
 
       <View style={prStyles.info}>
-        <Text style={prStyles.name}>{user.name}</Text>
+        <Text style={[prStyles.name, { color: T.text }]} numberOfLines={1}>{user.name}</Text>
         <View style={prStyles.meta}>
-          <RoleBadge role={user.role} />
-          {user.zoneName && !indent && <Text style={prStyles.sub}>{user.zoneName}</Text>}
-          {user.regionName && !user.zoneName && <Text style={prStyles.sub}>{user.regionName}</Text>}
+          <RolePill role={user.role} />
+          {user.zoneName && !indent && (
+            <Text style={[prStyles.sub, { color: T.dim }]} numberOfLines={1}>{user.zoneName}</Text>
+          )}
+          {user.regionName && !user.zoneName && (
+            <Text style={[prStyles.sub, { color: T.dim }]} numberOfLines={1}>{user.regionName}</Text>
+          )}
         </View>
       </View>
 
       <View style={prStyles.right}>
         <View style={prStyles.statsInline}>
-          <Navigation size={11} color="#9CA3AF" />
-          <Text style={prStyles.statText}>{user.totalDistanceKm.toFixed(1)}km</Text>
-          <Clock size={11} color="#9CA3AF" />
-          <Text style={prStyles.statText}>{formatRelativeDate(user.lastSeen)}</Text>
+          <Navigation size={11} color={T.dim} strokeWidth={ICON_STROKE} />
+          <Text style={[prStyles.statText, { color: T.sub }]}>{user.totalDistanceKm.toFixed(1)}km</Text>
+          <Clock size={11} color={T.dim} strokeWidth={ICON_STROKE} />
+          <Text style={[prStyles.statText, { color: T.sub }]}>{formatRelativeDate(user.lastSeen)}</Text>
         </View>
-        <View style={[prStyles.statusBadge, { backgroundColor: active ? '#DCFCE7' : '#F3F4F6' }]}>
-          <Text style={[prStyles.statusText, { color: active ? '#16A34A' : '#9CA3AF' }]}>
-            {active ? 'Active' : 'Ended'}
-          </Text>
-        </View>
+        <StatusBadge label={active ? 'Active' : 'Ended'} color={active ? T.success : T.dim} />
       </View>
 
-      <ChevronRight size={16} color="#D1D5DB" style={{ marginLeft: 4 }} />
+      <ChevronRight size={16} color={T.dim} strokeWidth={ICON_STROKE} style={{ marginLeft: 4 }} />
     </TouchableOpacity>
   );
 };
@@ -653,26 +753,24 @@ const PersonRow = ({ user, indent = false, onPress }: PersonRowProps) => {
 const prStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFF', paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1,
   },
-  indented: { paddingLeft: 30, backgroundColor: '#FAFAFA' },
+  indented: { paddingLeft: 30 },
   avatarWrap: { position: 'relative' },
-  avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
+  avatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: rf(12), fontWeight: '800' },
   dot: {
-    width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#FFF',
+    width: 10, height: 10, borderRadius: 5, borderWidth: 2,
     position: 'absolute', bottom: 0, right: -1,
   },
-  info: { flex: 1 },
-  name: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  sub: { fontSize: rf(11), color: '#9CA3AF' },
+  // flexShrink:1 + minWidth:0 — a long name would otherwise paint over the stats column.
+  info: { flexShrink: 1, minWidth: 0, flexGrow: 1 },
+  name: { fontSize: rf(13), fontWeight: '700' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  sub: { fontSize: rf(11), fontWeight: '500', flexShrink: 1, minWidth: 0 },
   right: { alignItems: 'flex-end', gap: 4 },
   statsInline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statText: { fontSize: rf(10), color: '#6B7280', fontWeight: '500' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statusText: { fontSize: rf(10), fontWeight: '700' },
+  statText: { fontSize: rf(10), fontWeight: '500' },
 });
 
 // ─── Zone Group (collapsible) ─────────────────────────────────────────────────
@@ -684,28 +782,31 @@ interface ZoneGroupProps {
 }
 
 const ZoneGroupSection = ({ group, onPersonPress, defaultExpanded = true }: ZoneGroupProps) => {
+  const T = useAppTheme();
+  const tint = roleTint('ZH', T);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const total = (group.zh ? 1 : 0) + group.fos.length;
   const active = [group.zh, ...group.fos].filter(u => u?.status === 'active').length;
 
   return (
-    <View style={zgStyles.container}>
-      <TouchableOpacity style={zgStyles.header} onPress={() => setExpanded(e => !e)}>
-        <View style={zgStyles.iconWrap}>
-          <MapPin size={13} color={ROLE_COLORS.ZH.primary} />
+    <View style={[zgStyles.container, { borderColor: T.line }]}>
+      <TouchableOpacity
+        style={[zgStyles.header, { backgroundColor: T.cardAlt }]}
+        onPress={() => setExpanded(e => !e)}
+      >
+        <View style={[zgStyles.iconWrap, { backgroundColor: withAlpha(tint, SOFT_TINT) }]}>
+          <MapPin size={13} color={tint} strokeWidth={ICON_STROKE} />
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={zgStyles.title}>{group.zoneName}</Text>
-          <Text style={zgStyles.sub}>
+        <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+          <Text style={[zgStyles.title, { color: T.text }]} numberOfLines={1}>{group.zoneName}</Text>
+          <Text style={[zgStyles.sub, { color: T.dim }]} numberOfLines={1}>
             {active > 0 ? `${active} active · ` : ''}{total} member{total !== 1 ? 's' : ''}
           </Text>
         </View>
-        {active > 0 && (
-          <View style={[zgStyles.badge, { backgroundColor: ROLE_COLORS.ZH.primary }]}>
-            <Text style={zgStyles.badgeText}>{active}</Text>
-          </View>
-        )}
-        {expanded ? <ChevronDown size={15} color="#9CA3AF" /> : <ChevronRight size={15} color="#9CA3AF" />}
+        {active > 0 && <StatusBadge label={String(active)} color={tint} />}
+        {expanded
+          ? <ChevronDown size={15} color={T.dim} strokeWidth={ICON_STROKE} />
+          : <ChevronRight size={15} color={T.dim} strokeWidth={ICON_STROKE} />}
       </TouchableOpacity>
 
       {expanded && (
@@ -715,7 +816,9 @@ const ZoneGroupSection = ({ group, onPersonPress, defaultExpanded = true }: Zone
             <PersonRow key={fo.userId} user={fo} indent onPress={onPersonPress} />
           ))}
           {total === 0 && (
-            <Text style={zgStyles.empty}>No tracking data for this zone today.</Text>
+            <Text style={[zgStyles.empty, { color: T.dim, backgroundColor: T.card }]}>
+              No tracking data for this zone today.
+            </Text>
           )}
         </View>
       )}
@@ -724,23 +827,14 @@ const ZoneGroupSection = ({ group, onPersonPress, defaultExpanded = true }: Zone
 };
 
 const zgStyles = StyleSheet.create({
-  container: { borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden', marginBottom: 2 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10,
-    backgroundColor: '#F8FAFF',
-  },
+  container: { borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 2 },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
   iconWrap: {
-    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: ROLE_COLORS.ZH.primary + '22',
+    width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: rf(13), fontWeight: '700', color: '#1E293B' },
-  sub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 1 },
-  badge: {
-    minWidth: 20, height: 20, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
-  },
-  badgeText: { fontSize: rf(10), fontWeight: '700', color: '#FFF' },
-  empty: { fontSize: rf(12), color: '#9CA3AF', textAlign: 'center', padding: 14 },
+  title: { fontSize: rf(13), fontWeight: '700' },
+  sub: { fontSize: rf(11), fontWeight: '500', marginTop: 1 },
+  empty: { fontSize: rf(12), fontWeight: '500', textAlign: 'center', padding: 14 },
 });
 
 // ─── Region Group (collapsible) ───────────────────────────────────────────────
@@ -751,30 +845,33 @@ interface RegionGroupProps {
 }
 
 const RegionGroupSection = ({ group, onPersonPress }: RegionGroupProps) => {
+  const T = useAppTheme();
+  const tint = roleTint('RH', T);
   const [expanded, setExpanded] = useState(true);
   const totalUsers = (group.rh ? 1 : 0) + group.zones.reduce((s, z) => s + (z.zh ? 1 : 0) + z.fos.length, 0);
   const activeUsers = [group.rh, ...group.zones.flatMap(z => [z.zh, ...z.fos])]
     .filter(u => u?.status === 'active').length;
 
   return (
-    <View style={rgStyles.container}>
-      <TouchableOpacity style={rgStyles.header} onPress={() => setExpanded(e => !e)}>
-        <View style={rgStyles.iconWrap}>
-          <Users size={13} color={ROLE_COLORS.RH.primary} />
+    <View style={[rgStyles.container, { borderColor: T.lineStrong, backgroundColor: T.card }]}>
+      <TouchableOpacity
+        style={[rgStyles.header, { backgroundColor: T.cardAlt }]}
+        onPress={() => setExpanded(e => !e)}
+      >
+        <View style={[rgStyles.iconWrap, { backgroundColor: withAlpha(tint, SOFT_TINT) }]}>
+          <Users size={13} color={tint} strokeWidth={ICON_STROKE} />
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={rgStyles.title}>{group.regionName}</Text>
-          <Text style={rgStyles.sub}>
+        <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+          <Text style={[rgStyles.title, { color: T.text }]} numberOfLines={1}>{group.regionName}</Text>
+          <Text style={[rgStyles.sub, { color: T.dim }]} numberOfLines={1}>
             {activeUsers > 0 ? `${activeUsers} active · ` : ''}
             {totalUsers} member{totalUsers !== 1 ? 's' : ''} · {group.zones.length} zone{group.zones.length !== 1 ? 's' : ''}
           </Text>
         </View>
-        {activeUsers > 0 && (
-          <View style={[rgStyles.badge, { backgroundColor: ROLE_COLORS.RH.primary }]}>
-            <Text style={rgStyles.badgeText}>{activeUsers}</Text>
-          </View>
-        )}
-        {expanded ? <ChevronDown size={15} color="#9CA3AF" /> : <ChevronRight size={15} color="#9CA3AF" />}
+        {activeUsers > 0 && <StatusBadge label={String(activeUsers)} color={tint} />}
+        {expanded
+          ? <ChevronDown size={15} color={T.dim} strokeWidth={ICON_STROKE} />
+          : <ChevronRight size={15} color={T.dim} strokeWidth={ICON_STROKE} />}
       </TouchableOpacity>
 
       {expanded && (
@@ -790,32 +887,39 @@ const RegionGroupSection = ({ group, onPersonPress }: RegionGroupProps) => {
 };
 
 const rgStyles = StyleSheet.create({
-  container: { borderRadius: 14, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12,
-    backgroundColor: '#FFF5F0',
-  },
+  container: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
   iconWrap: {
-    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: ROLE_COLORS.RH.primary + '22',
+    width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: rf(14), fontWeight: '800', color: '#1E293B' },
-  sub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
-  badge: {
-    minWidth: 22, height: 22, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7,
-  },
-  badgeText: { fontSize: rf(10), fontWeight: '700', color: '#FFF' },
+  title: { fontSize: rf(14), fontWeight: '800' },
+  sub: { fontSize: rf(11), fontWeight: '500', marginTop: 2 },
   body: { gap: 8, padding: 10 },
 });
 
 // ─── Main LiveTrackingScreen ──────────────────────────────────────────────────
 
 export const LiveTrackingScreen = () => {
-  const nav = useNavigation();
+  const nav = useNavigation<any>();
   const { user } = useAuth();
-  const rc = user?.role ? ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] : ROLE_COLORS.ZH;
+  const T = useAppTheme();
   const isSCA = user?.role === 'SCA';
+  // Web gates ManagerSection on the same set (LiveTracking.jsx:2261-2278).
+  const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(user?.role ?? '');
+
+  /**
+   * `wide` = iPad held in landscape. It drives the two-pane tab bodies, the wider
+   * gutters and the map's side panel.
+   *
+   * NOTE on sizing: the app keeps a permanent 240pt sidebar on screen, so `width`
+   * here OVERSTATES the usable content width. Nothing below is sized as a fraction
+   * of `width` — every wide layout is expressed with flex, `alignItems:'stretch'`
+   * and maxWidth so it measures against the real parent instead.
+   */
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
+  /** iPad (either orientation) gets real tables; phones get stacked rows. */
+  const table = isTabletDevice;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -836,8 +940,43 @@ export const LiveTrackingScreen = () => {
   const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Start-Day vehicle picker (drives the allowance rate — see VEHICLE_OPTIONS)
+  const [showVehiclePicker, setShowVehiclePicker] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<VehicleType>('TwoWheeler');
+
+  // My Day: the FO's own assigned schools for today (route list + Report button)
+  const [myAssignments, setMyAssignments] = useState<SchoolAssignment[]>([]);
+  const [myAssignLoading, setMyAssignLoading] = useState(false);
+
+  // My Day: distance-optimised stop order (web's AssignedSchoolsMap, LiveTracking.jsx:426-763)
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [routeStats, setRouteStats] = useState<RouteStats | null>(null);
+  const [optimizedStops, setOptimizedStops] = useState<SchoolAssignment[] | null>(null);
+  const [routeOptLoading, setRouteOptLoading] = useState(false);
+  const [routeOptFailure, setRouteOptFailure] = useState<RouteOptFailure | null>(null);
+  /** Bumped by the "Retry" affordance on the failure notice to re-run the request. */
+  const [routeOptAttempt, setRouteOptAttempt] = useState(0);
+
   // Individual tracking — when set, shows IndividualTrackingView full-screen
   const [trackingPerson, setTrackingPerson] = useState<LiveLocationDto | null>(null);
+
+  // Assignments tab (manager only)
+  const [assignFOs, setAssignFOs] = useState<UserDto[]>([]);
+  const [assignFOId, setAssignFOId] = useState<number | null>(null);
+  const [showFOPicker, setShowFOPicker] = useState(false);
+  const [assignDate, setAssignDate] = useState(toISODate(new Date()));
+  const [allSchools, setAllSchools] = useState<SchoolGeofence[]>([]);
+  const [selectedSchoolIds, setSelectedSchoolIds] = useState<number[]>([]);
+  const [schoolPickerOpen, setSchoolPickerOpen] = useState(false);
+  const [schoolSearch, setSchoolSearch] = useState('');
+  const [assignPage, setAssignPage] = useState(1);
+  const [teamAssignments, setTeamAssignments] = useState<SchoolAssignment[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+
+  // Map tab: map-type selector (web offers Default/Satellite/Terrain/Hybrid)
+  const [mapKind, setMapKind] = useState<MapKind>('standard');
 
   // Map state
   const [liveUsers, setLiveUsers] = useState<LiveLocationDto[]>([]);
@@ -848,6 +987,7 @@ export const LiveTrackingScreen = () => {
   const mapRef = useRef<MapView>(null);
 
   // Team tab: user picker + date filter
+  const [teamPage, setTeamPage] = useState(1);
   const [selectedTeamUser, setSelectedTeamUser] = useState<LiveLocationDto | null>(null);
   const [teamDate, setTeamDate] = useState(toISODate(new Date()));
   const [showTeamUserPicker, setShowTeamUserPicker] = useState(false);
@@ -929,6 +1069,324 @@ export const LiveTrackingScreen = () => {
       fetchSHTeam(shId);
     }
   }, [fetchSHTeam]);
+
+  // ── School assignments ────────────────────────────────────────────────────
+  //
+  //   SchoolAssignmentsController.cs:58  [HttpGet("team")]
+  //   SchoolAssignmentsController.cs:59  GetTeamAssignments([FromQuery] string date)
+  //   SchoolAssignmentsController.cs:62  return Ok(ApiResponse<List<SchoolAssignmentDto>>.Ok(result));
+  //
+  // `date` is a non-nullable bound parameter, so it must always be sent.
+  const fetchTeamAssignments = useCallback(async () => {
+    setAssignLoading(true);
+    try {
+      const res = await schoolAssignmentsApi.getTeamAssignments(assignDate);
+      const data = res.data as SchoolAssignment[];
+      setTeamAssignments(Array.isArray(data) ? data : []);
+    } catch {
+      setTeamAssignments([]);
+    } finally {
+      setAssignLoading(false);
+    }
+  }, [assignDate]);
+
+  const fetchSchoolsForAssign = useCallback(async () => {
+    try {
+      const res = await schoolAssignmentsApi.getSchoolsForMap();
+      const data = res.data as SchoolGeofence[];
+      setAllSchools(Array.isArray(data) ? data : []);
+    } catch {
+      setAllSchools([]);
+    }
+  }, []);
+
+  //   LeadsController.cs:131  [HttpGet("assignable-fos")]
+  //   LeadsController.cs:135  return Ok(ApiResponse<List<UserDto>>.Ok(fos));
+  useEffect(() => {
+    if (!isManager) return;
+    leadsApi.getAssignableFOs()
+      .then(res => setAssignFOs(Array.isArray(res.data) ? (res.data as UserDto[]) : []))
+      .catch(() => setAssignFOs([]));
+  }, [isManager]);
+
+  useEffect(() => {
+    if (activeTab !== 'assignments') return;
+    fetchTeamAssignments();
+    if (allSchools.length === 0) fetchSchoolsForAssign();
+  }, [activeTab, fetchTeamAssignments, fetchSchoolsForAssign, allSchools.length]);
+
+  const toggleSchoolSelection = useCallback((schoolId: number) => {
+    setSelectedSchoolIds(prev =>
+      prev.includes(schoolId) ? prev.filter(id => id !== schoolId) : [...prev, schoolId],
+    );
+  }, []);
+
+  /**
+   * MERGE BEFORE ASSIGNING.
+   *
+   * `SchoolAssignmentService.BulkAssignAsync` deletes every existing assignment for
+   * (userId, date) before inserting — its own comment says "Wholesale-replace the
+   * target user's plan for this date". Web posts only the newly-ticked schools
+   * (LiveTracking.jsx:1483-1487), so assigning one extra school there silently wipes
+   * the rest of that FO's day plan. We read the FO's current plan first and post the
+   * union, existing schools first so their visit order is preserved.
+   *
+   *   SchoolAssignmentsController.cs:42  [HttpGet("user/{userId}")]
+   *   SchoolAssignmentsController.cs:43  GetByUser(int userId, [FromQuery] string date)
+   *   SchoolAssignmentsController.cs:19  [HttpPost("bulk")]
+   *   SchoolAssignmentsController.cs:23  return Ok(ApiResponse<List<SchoolAssignmentDto>>.Ok(result));
+   */
+  const handleBulkAssign = useCallback(async () => {
+    if (!assignFOId || selectedSchoolIds.length === 0) {
+      Alert.alert('Validation', 'Select a Field Officer and at least one school.');
+      return;
+    }
+    setAssignSaving(true);
+    try {
+      let existingIds: number[] = [];
+      try {
+        const cur = await schoolAssignmentsApi.getUserAssignments(assignFOId, assignDate);
+        const curData = cur.data as SchoolAssignment[];
+        const rows = (Array.isArray(curData) ? curData : [])
+          .slice()
+          .sort((a, b) => a.visitOrder - b.visitOrder);
+
+        existingIds = rows
+          .map(a => a.schoolId)
+          .filter((id): id is number => typeof id === 'number');
+
+        // Because the server replaces the whole plan, an id we failed to read is an
+        // assignment we would DELETE. Dropping it silently is exactly how the day plan
+        // got wiped before, so a short read aborts instead of posting a partial list.
+        if (existingIds.length !== rows.length) {
+          Alert.alert(
+            'Error',
+            'The current plan could not be read completely, so nothing was assigned. ' +
+            'Assigning now would have removed the schools that failed to load. Please retry.',
+          );
+          setAssignSaving(false);
+          return;
+        }
+      } catch {
+        // If the read fails we cannot prove what the FO already has. Assigning now
+        // would replace an unknown plan, so stop rather than risk wiping it.
+        Alert.alert('Error', 'Could not read the current plan, so nothing was assigned. Try again.');
+        setAssignSaving(false);
+        return;
+      }
+
+      const merged = [...existingIds];
+      for (const id of selectedSchoolIds) if (!merged.includes(id)) merged.push(id);
+
+      await schoolAssignmentsApi.bulkAssign({
+        userId: assignFOId,
+        assignmentDate: assignDate,
+        schoolIds: merged,
+      });
+      const added = merged.length - existingIds.length;
+      Alert.alert('Assigned', `${added} school(s) added. ${merged.length} total for this date.`);
+      setSelectedSchoolIds([]);
+      fetchTeamAssignments();
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to assign schools.');
+    } finally {
+      setAssignSaving(false);
+    }
+  }, [assignFOId, assignDate, selectedSchoolIds, fetchTeamAssignments]);
+
+  //   SchoolAssignmentsController.cs:66  [HttpDelete("{id}")]
+  //   SchoolAssignmentsController.cs:71  return Ok(ApiResponse<object>.Ok(null));
+  const handleDeleteAssignment = useCallback(async (id: number) => {
+    setPendingDeleteId(null);
+    try {
+      await schoolAssignmentsApi.deleteAssignment(id);
+      fetchTeamAssignments();
+    } catch {
+      Alert.alert('Error', 'Failed to remove assignment.');
+    }
+  }, [fetchTeamAssignments]);
+
+  //   SchoolAssignmentsController.cs:50  [HttpGet("my")]
+  //   SchoolAssignmentsController.cs:54  return Ok(ApiResponse<List<SchoolAssignmentDto>>.Ok(result));
+  const fetchMyAssignments = useCallback(async () => {
+    if (isSCA) return;
+    setMyAssignLoading(true);
+    try {
+      const res = await schoolAssignmentsApi.getMyAssignments(toISODate(new Date()));
+      const data = res.data as SchoolAssignment[];
+      setMyAssignments(
+        (Array.isArray(data) ? data : []).slice().sort((a, b) => a.visitOrder - b.visitOrder),
+      );
+    } catch {
+      setMyAssignments([]);
+    } finally {
+      setMyAssignLoading(false);
+    }
+  }, [isSCA]);
+
+  useEffect(() => { fetchMyAssignments(); }, [fetchMyAssignments]);
+
+  // ── My Day: distance-optimised route ────────────────────────────────────────
+
+  /**
+   * Origin for the optimised route. Best-effort only — if the fix fails we fall back
+   * to "first assigned school is the origin", which is what web does when it has no
+   * `userLocation` either.
+   */
+  useEffect(() => {
+    if (isSCA) return;
+    Geolocation.getCurrentPosition(
+      pos => setMyLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => setMyLocation(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+    );
+  }, [isSCA]);
+
+  /**
+   * Web parity: AssignedSchoolsMap (LiveTracking.jsx:426-763) hands the day's stops to
+   * Google with `optimizeWaypoints: true` — Google's TSP solver — then shows the total
+   * distance / drive time and relabels the stops in the solved order.
+   *
+   * The JS Maps SDK isn't available in React Native, so this uses the Directions *web
+   * service* with GOOGLE_MAPS_API_KEY (constants.ts:18, from .env). That is an
+   * established pattern in this app: HomeLocationScreen.tsx, SchoolsListScreen.tsx and
+   * AddSchoolScreen.tsx all call maps.googleapis.com REST endpoints with the same key.
+   *
+   * Every non-OK path falls back to the server's `visitOrder` ordering and records the
+   * literal `status` + `error_message` for the on-screen notice, so a key without the
+   * Directions API enabled shows up as "REQUEST_DENIED" rather than as silence.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const stops = myAssignments.filter(a => a.schoolLatitude && a.schoolLongitude);
+
+    // A re-run that takes an early-return path must clear the flag itself: the previous
+    // request's `finally` is gated on `cancelled` and will not do it, which would leave
+    // the card stuck on "Optimising route…" forever.
+    setRouteOptLoading(false);
+
+    // Nothing to solve: 0 or 1 stop has no ordering problem.
+    if (stops.length < 2) {
+      setOptimizedStops(null);
+      setRouteStats(null);
+      setRouteOptFailure(null);
+      return;
+    }
+
+    if (!GOOGLE_MAPS_API_KEY) {
+      setOptimizedStops(null);
+      setRouteStats(null);
+      setRouteOptFailure({ status: 'NO_API_KEY', detail: 'GOOGLE_MAPS_API_KEY is empty in .env.' });
+      return;
+    }
+
+    const hasOrigin = !!myLocation;
+    // With a live fix the phone is the origin and every school is a stop; otherwise the
+    // first school anchors the route (web's no-userLocation branch). Google always needs
+    // a fixed destination, so the last school stays last in both cases and only the
+    // in-between stops get reordered.
+    const middle = hasOrigin ? stops.slice(0, -1) : stops.slice(1, -1);
+
+    // The Directions API rejects more than 25 waypoints; optimisation is also the part
+    // that blows up combinatorially. Beyond that we keep the server order rather than
+    // send a request we know will 400.
+    if (middle.length > 23) {
+      setOptimizedStops(null);
+      setRouteStats(null);
+      setRouteOptFailure({
+        status: 'TOO_MANY_WAYPOINTS',
+        detail: `${stops.length} stops exceeds the Directions API waypoint limit.`,
+      });
+      return;
+    }
+
+    const origin = hasOrigin
+      ? `${myLocation!.latitude},${myLocation!.longitude}`
+      : `${stops[0].schoolLatitude},${stops[0].schoolLongitude}`;
+    const last = stops[stops.length - 1];
+    const destination = `${last.schoolLatitude},${last.schoolLongitude}`;
+    const waypointParam = middle.length
+      ? `&waypoints=${encodeURIComponent(`optimize:true|${middle.map(s => `${s.schoolLatitude},${s.schoolLongitude}`).join('|')}`)}`
+      : '';
+
+    const url =
+      'https://maps.googleapis.com/maps/api/directions/json' +
+      `?origin=${encodeURIComponent(origin)}` +
+      `&destination=${encodeURIComponent(destination)}` +
+      waypointParam +
+      `&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
+
+    setRouteOptLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        if (cancelled) return;
+
+        const status: string = json?.status ?? 'UNKNOWN_ERROR';
+        const route = json?.routes?.[0];
+
+        if (status !== 'OK' || !route) {
+          // Surfaced two ways on purpose: the console line is for a developer with a
+          // device attached, the state drives the in-app notice for everyone else.
+          console.warn(
+            '[LiveTracking] Directions optimisation failed',
+            { status, error_message: json?.error_message, stops: stops.length },
+          );
+          setOptimizedStops(null);
+          setRouteStats(null);
+          setRouteOptFailure({ status, detail: json?.error_message });
+          return;
+        }
+
+        const legs: any[] = Array.isArray(route.legs) ? route.legs : [];
+        const totalMetres = legs.reduce((sum, l) => sum + (l?.distance?.value ?? 0), 0);
+        const totalSeconds = legs.reduce((sum, l) => sum + (l?.duration?.value ?? 0), 0);
+
+        const order: number[] = Array.isArray(route.waypoint_order) ? route.waypoint_order : [];
+        // A returned index outside the waypoint array would silently drop a school from
+        // the day plan, so an unusable order means we keep the server ordering.
+        const usable =
+          order.length === middle.length &&
+          order.every(i => Number.isInteger(i) && i >= 0 && i < middle.length) &&
+          new Set(order).size === order.length;
+
+        if (!usable && middle.length > 0) {
+          console.warn('[LiveTracking] Directions returned an unusable waypoint_order', order);
+          setOptimizedStops(null);
+          setRouteStats(null);
+          setRouteOptFailure({ status: 'INVALID_WAYPOINT_ORDER', detail: 'Google returned a waypoint order that did not map to the sent stops.' });
+          return;
+        }
+
+        const reordered = hasOrigin
+          ? [...order.map(i => middle[i]), last]
+          : [stops[0], ...order.map(i => middle[i]), last];
+
+        setOptimizedStops(reordered);
+        setRouteStats({
+          distanceKm: (totalMetres / 1000).toFixed(1),
+          durationMin: Math.round(totalSeconds / 60),
+        });
+        setRouteOptFailure(null);
+      } catch (e: any) {
+        if (cancelled) return;
+        console.warn('[LiveTracking] Directions request errored', e?.message ?? e);
+        setOptimizedStops(null);
+        setRouteStats(null);
+        setRouteOptFailure({ status: 'REQUEST_FAILED', detail: e?.message ? String(e.message) : 'Network request failed.' });
+      } finally {
+        if (!cancelled) setRouteOptLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [myAssignments, myLocation, routeOptAttempt]);
+
+  /** Stops in the order we show them: optimised when we have it, server order otherwise. */
+  const displayStops = optimizedStops ?? myAssignments;
 
   // ── My Day: permission + tracking engine ────────────────────────────────────
 
@@ -1062,15 +1520,51 @@ export const LiveTrackingScreen = () => {
     });
     if (!locOk) { setDayActionLoading(false); return; }
     try {
-      const res = await trackingApi.startDay();
+      // The allowance rate is picked per vehicle, so the vehicle MUST go with the
+      // request — this used to call startDay() with no argument, so the session was
+      // created with VehicleType = null and fell back to the "applies to all vehicles"
+      // allowance config. This screen is the ZH/RH/SH/SCA view (navConfig.ts:115), so
+      // it was managers starting their OWN day who got the wrong rate; FOs go through
+      // MyDayTrackingScreen, which already passed a vehicle.
+      //   TrackingController.cs:19  [HttpPost("start-day")]
+      //   TrackingController.cs:20  StartDay([FromBody] StartDayRequest? request = null)
+      //   TrackingController.cs:26  return Ok(ApiResponse<SessionResponseDto>.Ok(result));
+      // StartDayRequest is `{ public string? VehicleType { get; set; } }`.
+      const res = await trackingApi.startDay(selectedVehicle);
       const data = res.data as SessionResponseDto;
+      setShowVehiclePicker(false);
       setDaySession(data?.session ?? null); setStartEnabled(false); setEndEnabled(true);
     } catch (err: any) {
       const msg: string = err?.response?.data?.message ?? '';
-      if (err?.response?.status === 400 && msg.toLowerCase().includes('already')) { await fetchDaySession(); }
+      if (err?.response?.status === 400 && msg.toLowerCase().includes('already')) { setShowVehiclePicker(false); await fetchDaySession(); }
       else Alert.alert('Error', msg || 'Failed to start day.');
     } finally { setDayActionLoading(false); }
   };
+
+  const last30Days = useMemo(
+    () => Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return toISODate(d); }),
+    [],
+  );
+
+  /**
+   * Hands the whole ordered day plan to the Maps app as one multi-stop route.
+   * Callers pass `displayStops`, so this deep link carries the Directions-optimised
+   * order when the optimisation succeeded and the server `visitOrder` when it did not —
+   * navigation works identically either way. No origin is set, so Maps starts from the
+   * device's current position.
+   */
+  const openRouteNavigation = useCallback((stops: SchoolAssignment[]) => {
+    const pts = stops.filter(s => s.schoolLatitude && s.schoolLongitude);
+    if (pts.length === 0) { Alert.alert('No route', 'No assigned school has coordinates.'); return; }
+    const dest = pts[pts.length - 1];
+    const waypoints = pts.slice(0, -1).map(s => `${s.schoolLatitude},${s.schoolLongitude}`).join('|');
+    const url =
+      'https://www.google.com/maps/dir/?api=1' +
+      `&destination=${dest.schoolLatitude},${dest.schoolLongitude}` +
+      (waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : '') +
+      '&travelmode=driving';
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open Maps.'));
+  }, []);
 
   const handleEndDay = () => {
     Alert.alert('End Day', 'This will stop tracking and calculate your allowance.', [
@@ -1109,10 +1603,11 @@ export const LiveTrackingScreen = () => {
     return `${Math.floor(diffMs / 3600000)}h ${Math.floor((diffMs % 3600000) / 60000)}m`;
   };
 
-  const getStatusColor = (status?: string) => status === 'active' ? '#22C55E' : status === 'ended' ? '#EF4444' : '#9CA3AF';
+  // Theme tokens are resolved here in the body — never in a default parameter, where `T`
+  // is not in scope.
+  const getStatusColor = (status?: string) =>
+    status === 'active' ? T.success : status === 'ended' ? T.danger : T.dim;
   const getStatusLabel = (status?: string) => status === 'active' ? 'Active' : status === 'ended' ? 'Day Ended' : 'Not Started';
-
-  const last7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return toISODate(d); }), []);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -1161,20 +1656,312 @@ export const LiveTrackingScreen = () => {
   // SH list available for the SCA SH-filter chips
   const shList = useMemo(() => liveUsers.filter(u => u.role === 'SH'), [liveUsers]);
 
+  // ── Team Last Locations ───────────────────────────────────────────────────
+
+  /**
+   * Web parity: the "Team Last Locations" table (LiveTracking.jsx:1746-1823), columns
+   * Name / Role / Status / Last Seen / Location / Distance / Actions with a per-row
+   * "View Route" button. View Route drives the existing IndividualTrackingView via
+   * handlePersonPress — the same route viewer the grouped lists already open.
+   *
+   * Web's "Last Known" state has no mobile equivalent: LiveLocationDto (types/index.ts)
+   * carries no isLastKnownLocation / lastSessionDate, so the status cell shows only the
+   * three states the DTO can actually express.
+   */
+  const teamStatusOf = (u: LiveLocationDto) =>
+    u.status === 'active'
+      ? { label: 'Active', color: T.success }
+      : u.status === 'ended'
+        ? { label: 'Ended', color: T.dim }
+        : { label: 'Not Started', color: T.warning };
+
+  const hasCoords = (u: LiveLocationDto) =>
+    !!u.latitude && !!u.longitude && (u.latitude !== 0 || u.longitude !== 0);
+
+  // ── Client-side paging (see PAGE_SIZE: neither endpoint binds page/limit) ──
+  const teamPageCount = Math.max(1, Math.ceil(scopedUsers.length / PAGE_SIZE));
+  const assignPageCount = Math.max(1, Math.ceil(teamAssignments.length / PAGE_SIZE));
+
+  // The live poll reshapes `scopedUsers` every 30s and the date picker refetches the
+  // assignments — without these the user can be stranded on a page that no longer exists.
+  useEffect(() => {
+    setTeamPage(p => Math.min(p, teamPageCount));
+  }, [teamPageCount]);
+  useEffect(() => {
+    setAssignPage(p => Math.min(p, assignPageCount));
+  }, [assignPageCount]);
+
+  const renderTeamLastLocations = () => {
+    const rows = scopedUsers.slice((teamPage - 1) * PAGE_SIZE, teamPage * PAGE_SIZE);
+    const from = scopedUsers.length === 0 ? 0 : (teamPage - 1) * PAGE_SIZE + 1;
+    const to = Math.min(teamPage * PAGE_SIZE, scopedUsers.length);
+
+    const pager = teamPageCount > 1 && (
+      <View style={nStyles.pgRow}>
+        <Text style={[nStyles.pgCount, { color: T.dim }]}>
+          Showing {from}–{to} of {scopedUsers.length}
+        </Text>
+        <Pagination page={teamPage} pageCount={teamPageCount} onChange={setTeamPage} />
+      </View>
+    );
+
+    const header = (
+      <View style={[nStyles.cardHead, { marginBottom: 10 }]}>
+        <View style={nStyles.cardHeadLeft}>
+          <MapPin size={15} color={T.accent} />
+          <View style={{ flexShrink: 1, minWidth: 0 }}>
+            <Text style={[nStyles.cardTitle, { color: T.text }]}>Team Last Locations</Text>
+            <Text style={[nStyles.tblSubtitle, { color: T.dim }]}>
+              Last known position of all subordinates
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+
+    const viewRouteBtn = (u: LiveLocationDto) => (
+      <TouchableOpacity
+        onPress={() => handlePersonPress(u)}
+        style={[nStyles.viewRouteBtn, { backgroundColor: T.accentSoft, borderColor: T.accent }]}
+      >
+        <Navigation size={12} color={T.accent} />
+        <Text style={[nStyles.viewRouteTxt, { color: T.accent }]}>View Route</Text>
+      </TouchableOpacity>
+    );
+
+    if (table) {
+      return (
+        <View style={[nStyles.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          {header}
+          <View style={[nStyles.tbl, { borderColor: T.line }]}>
+            <View style={[nStyles.tr, { backgroundColor: T.cardAlt }]}>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamName]}>Name</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamRole]}>Role</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamStatus]}>Status</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamSeen]}>Last Seen</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamLoc]}>Location</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamDist]}>Distance</Text>
+              {/* header <Text> ignores alignItems — left-aligned so it sits over the button */}
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cTeamActions]}>Actions</Text>
+            </View>
+
+            {rows.map(u => {
+              const st = teamStatusOf(u);
+              return (
+                <View key={u.userId} style={[nStyles.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}>
+                  <View style={[nStyles.cTeamName, nStyles.teamNameCell]}>
+                    <View style={[nStyles.teamAvatar, { backgroundColor: roleTint(u.role, T) }]}>
+                      <Text style={[nStyles.teamAvatarTxt, { color: T.onAccent }]}>{initials(u.name)}</Text>
+                    </View>
+                    {/* the avatar is fixed-width, so the name is what must shrink */}
+                    <Text
+                      style={[nStyles.tdName, { color: T.text }, nStyles.cellText]}
+                      numberOfLines={1}
+                    >
+                      {u.name || '—'}
+                    </Text>
+                  </View>
+                  <View style={nStyles.cTeamRole}>
+                    <StatusBadge label={u.role || 'FO'} color={T.info} />
+                  </View>
+                  <View style={nStyles.cTeamStatus}>
+                    <StatusBadge label={st.label} color={st.color} />
+                  </View>
+                  <Text style={[nStyles.td, { color: T.sub }, nStyles.cTeamSeen]} numberOfLines={1}>
+                    {u.lastSeen ? fmtTime(u.lastSeen) : '—'}
+                  </Text>
+                  <Text style={[nStyles.tdMono, { color: T.sub }, nStyles.cTeamLoc]} numberOfLines={1}>
+                    {hasCoords(u)
+                      ? `${Number(u.latitude).toFixed(5)}, ${Number(u.longitude).toFixed(5)}`
+                      : '—'}
+                  </Text>
+                  <Text style={[nStyles.td, { color: T.text }, nStyles.cTeamDist]}>
+                    {u.totalDistanceKm > 0 ? `${u.totalDistanceKm.toFixed(1)} km` : '—'}
+                  </Text>
+                  <View style={nStyles.cTeamActions}>
+                    {hasCoords(u) ? viewRouteBtn(u) : <Text style={[nStyles.td, { color: T.dim }]}>—</Text>}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+          {pager}
+        </View>
+      );
+    }
+
+    // ── phone: one card per member, same fields as the table ──
+    return (
+      <View style={[nStyles.card, { backgroundColor: T.card, borderColor: T.line }]}>
+        {header}
+        <View style={{ gap: 8 }}>
+          {rows.map(u => {
+            const st = teamStatusOf(u);
+            return (
+              <View key={u.userId} style={[nStyles.teamCard, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                <View style={nStyles.teamCardTop}>
+                  <View style={[nStyles.teamAvatar, { backgroundColor: roleTint(u.role, T) }]}>
+                    <Text style={[nStyles.teamAvatarTxt, { color: T.onAccent }]}>{initials(u.name)}</Text>
+                  </View>
+                  <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+                    <Text style={[nStyles.tdName, { color: T.text }]} numberOfLines={1}>{u.name || '—'}</Text>
+                    <Text style={[nStyles.tdSub, { color: T.dim }]} numberOfLines={1}>{u.role || 'FO'}</Text>
+                  </View>
+                  <StatusBadge label={st.label} color={st.color} />
+                </View>
+
+                <View style={nStyles.teamCardMeta}>
+                  <View style={nStyles.teamMetaItem}>
+                    <Text style={[nStyles.teamMetaLbl, { color: T.dim }]}>Last Seen</Text>
+                    <Text style={[nStyles.teamMetaVal, { color: T.text }]} numberOfLines={1}>
+                      {u.lastSeen ? fmtTime(u.lastSeen) : '—'}
+                    </Text>
+                  </View>
+                  <View style={nStyles.teamMetaItem}>
+                    <Text style={[nStyles.teamMetaLbl, { color: T.dim }]}>Distance</Text>
+                    <Text style={[nStyles.teamMetaVal, { color: T.text }]} numberOfLines={1}>
+                      {u.totalDistanceKm > 0 ? `${u.totalDistanceKm.toFixed(1)} km` : '—'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={nStyles.teamCardBottom}>
+                  <Text style={[nStyles.tdMono, { color: T.sub, flexShrink: 1, minWidth: 0 }]} numberOfLines={1}>
+                    {hasCoords(u)
+                      ? `${Number(u.latitude).toFixed(5)}, ${Number(u.longitude).toFixed(5)}`
+                      : 'No location'}
+                  </Text>
+                  {hasCoords(u) && viewRouteBtn(u)}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+        {pager}
+      </View>
+    );
+  };
+
+  /**
+   * Team Assignments — the manager's record list for the selected date, so it follows
+   * the house split: iPad renders a real table, the phone renders stacked rows.
+   * Paged client-side (see PAGE_SIZE) because GET /school-assignments/team binds only
+   * `date`.
+   */
+  const renderTeamAssignments = () => {
+    const rows = teamAssignments.slice((assignPage - 1) * PAGE_SIZE, assignPage * PAGE_SIZE);
+    const from = (assignPage - 1) * PAGE_SIZE + 1;
+    const to = Math.min(assignPage * PAGE_SIZE, teamAssignments.length);
+
+    const pager = assignPageCount > 1 && (
+      <View style={nStyles.pgRow}>
+        <Text style={[nStyles.pgCount, { color: T.dim }]}>
+          Showing {from}–{to} of {teamAssignments.length}
+        </Text>
+        <Pagination page={assignPage} pageCount={assignPageCount} onChange={setAssignPage} />
+      </View>
+    );
+
+    const delBtn = (a: SchoolAssignment) => (
+      <TouchableOpacity
+        onPress={() => setPendingDeleteId(a.id)}
+        hitSlop={8}
+        style={[nStyles.reportBtn, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}
+      >
+        <Trash2 size={13} color={T.danger} />
+      </TouchableOpacity>
+    );
+
+    if (table) {
+      return (
+        <>
+          <View style={[nStyles.tbl, { borderColor: T.line }]}>
+            <View style={[nStyles.tr, { backgroundColor: T.cardAlt }]}>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgOrder]}>#</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgSchool]}>School</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgFo]}>Field Officer</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgCity]}>City</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgTime]}>Time</Text>
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgStatus]}>Status</Text>
+              {/* header <Text> ignores alignItems — left-aligned over the icon button */}
+              <Text style={[nStyles.th, { color: T.dim }, nStyles.cAsgActions]}>Actions</Text>
+            </View>
+
+            {rows.map(a => (
+              <View key={a.id} style={[nStyles.tr, { borderTopColor: T.line, borderTopWidth: 1 }]}>
+                <Text style={[nStyles.td, { color: T.sub }, nStyles.cAsgOrder]}>{a.visitOrder}</Text>
+                <Text style={[nStyles.tdName, { color: T.text }, nStyles.cAsgSchool]} numberOfLines={1}>
+                  {a.schoolName}
+                </Text>
+                <Text style={[nStyles.td, { color: T.sub }, nStyles.cAsgFo]} numberOfLines={1}>
+                  {a.userName ?? '—'}
+                </Text>
+                <Text style={[nStyles.td, { color: T.sub }, nStyles.cAsgCity]} numberOfLines={1}>
+                  {a.schoolCity || '—'}
+                </Text>
+                <Text style={[nStyles.td, { color: T.sub }, nStyles.cAsgTime]} numberOfLines={1}>
+                  {a.timeSpentMinutes != null ? `${Math.round(a.timeSpentMinutes)}m` : '—'}
+                </Text>
+                <View style={nStyles.cAsgStatus}>
+                  <StatusBadge
+                    label={a.isVisited ? 'Visited' : 'Pending'}
+                    color={a.isVisited ? T.success : T.warning}
+                  />
+                </View>
+                <View style={nStyles.cAsgActions}>{delBtn(a)}</View>
+              </View>
+            ))}
+          </View>
+          {pager}
+        </>
+      );
+    }
+
+    // ── phone: one row per assignment, same fields as the table ──
+    return (
+      <>
+        <View style={{ gap: 8 }}>
+          {rows.map(a => (
+            <View key={a.id} style={[nStyles.stopRow, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+              <View style={[nStyles.stopOrder, { backgroundColor: T.accentSoft }]}>
+                <Text style={[nStyles.stopOrderTxt, { color: T.accent }]}>{a.visitOrder}</Text>
+              </View>
+              <View style={nStyles.stopBody}>
+                <Text style={[nStyles.stopName, { color: T.text }]} numberOfLines={1}>
+                  {a.schoolName}
+                </Text>
+                <Text style={[nStyles.stopCity, { color: T.dim }]} numberOfLines={1}>
+                  {a.userName ?? '—'}
+                  {a.schoolCity ? ` · ${a.schoolCity}` : ''}
+                  {a.timeSpentMinutes != null ? ` · ${Math.round(a.timeSpentMinutes)}m` : ''}
+                </Text>
+              </View>
+              <StatusBadge
+                label={a.isVisited ? 'Visited' : 'Pending'}
+                color={a.isVisited ? T.success : T.warning}
+              />
+              {delBtn(a)}
+            </View>
+          ))}
+        </View>
+        {pager}
+      </>
+    );
+  };
+
   // ── Individual tracking guard ─────────────────────────────────────────────
 
   if (trackingPerson) {
     return (
       <IndividualTrackingView
         person={trackingPerson}
-        managerRoleColor={rc}
         onBack={() => setTrackingPerson(null)}
       />
     );
   }
 
   if (loading) {
-    return <LoadingSpinner fullScreen color={rc.primary} message="Loading tracking..." />;
+    return <LoadingSpinner fullScreen color={T.accent} message="Loading tracking..." />;
   }
 
   const subtitle =
@@ -1187,145 +1974,433 @@ export const LiveTrackingScreen = () => {
     ...(!isSCA ? [{ key: 'myDay' as TabKey, label: 'My Day', badge: undefined }] : []),
     { key: 'map' as TabKey, label: 'Map', badge: activeCount },
     { key: 'team' as TabKey, label: 'Team', badge: liveUsers.length },
+    // Web's ManagerSection tab bar (LiveTracking.jsx:1573-1577) carries School
+    // Assignments for exactly these roles.
+    ...(isManager ? [{ key: 'assignments' as TabKey, label: 'Assignments', badge: undefined }] : []),
   ];
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Live Tracking" subtitle={subtitle} color={rc.primary} onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())} />
+  const selectedFO = assignFOs.find(f => f.id === assignFOId) ?? null;
+  const filteredSchools = allSchools.filter(
+    s => !schoolSearch.trim() || s.name.toLowerCase().includes(schoolSearch.trim().toLowerCase()),
+  );
+  // Role-grouped FO picker, matching web's <optgroup> grouping by zone/region.
+  const foGroups = (() => {
+    const g: Record<string, UserDto[]> = {};
+    assignFOs.forEach(u => {
+      const k = u.zone || u.region || 'Team';
+      (g[k] ||= []).push(u);
+    });
+    return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+  const visitedCount = myAssignments.filter(a => a.isVisited).length;
 
-      {/* Tab bar */}
-      <View style={styles.tabBar}>
-        {tabs.map(t => (
-          <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, activeTab === t.key && { borderBottomColor: rc.primary }]}
-            onPress={() => setActiveTab(t.key)}
-          >
-            <Text style={[styles.tabText, activeTab === t.key && { color: rc.primary }]}>{t.label}</Text>
-            {t.badge != null && t.badge > 0 && (
-              <View style={[styles.tabBadge, { backgroundColor: rc.primary }]}>
-                <Text style={styles.tabBadgeText}>{t.badge}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+  return (
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top']}>
+      {/* ScreenHeader paints white text on `color`, so it takes the Sunstone gradient's
+          deep start (T.accentFrom) rather than T.accent — in dark mode T.accent is the
+          light gold and white-on-gold is unreadable. */}
+      <ScreenHeader
+        title="Live Tracking"
+        subtitle={subtitle}
+        color={T.accentFrom}
+        onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())}
+      />
+
+      {/* Tab bar — the kit's .seg idiom (cardAlt track, accent-tinted active cell),
+          extended with the live counts web shows on each tab. */}
+      <View style={[styles.tabBar, { backgroundColor: T.card, borderBottomColor: T.line }]}>
+        <View style={[styles.tabTrack, { backgroundColor: T.cardAlt }]}>
+          {tabs.map(t => {
+            const on = activeTab === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                activeOpacity={0.85}
+                style={[styles.tab, on && { backgroundColor: T.accentSoft }]}
+                onPress={() => setActiveTab(t.key)}
+              >
+                <Text
+                  style={[styles.tabText, { color: on ? T.accent : T.sub }]}
+                  numberOfLines={1}
+                >
+                  {t.label}
+                </Text>
+                {t.badge != null && t.badge > 0 && (
+                  <View style={[styles.tabBadge, { backgroundColor: on ? T.accent : T.dim }]}>
+                    <Text style={[styles.tabBadgeText, { color: T.onAccent }]}>{t.badge}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* ── MY DAY TAB ───────────────────────────────────────────────────── */}
       {activeTab === 'myDay' && (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, wide && styles.contentWide]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/*
+            iPad landscape splits My Day into two equal-height rails: the session
+            summary + history on the left, the day's route plan on the right. On the
+            phone both wrappers are plain gap-12 columns, so the cards simply stack
+            in the same order they always did.
+          */}
+          <View style={[styles.mdBody, wide && styles.paneRow]}>
+          <View style={[styles.mdCol, wide && styles.pane]}>
+
           {/* Location permission banner */}
           {locationChecked && !locationGranted && (
-            <TouchableOpacity style={mdStyles.permBanner} onPress={requestLocationPermission} activeOpacity={0.7}>
-              <MapPin size={16} color="#DC2626" />
-              <View style={{ flex: 1 }}>
-                <Text style={mdStyles.permTitle}>Location Access Required</Text>
-                <Text style={mdStyles.permSub}>Tap to enable location for tracking</Text>
+            <TouchableOpacity
+              style={[mdStyles.permBanner, { backgroundColor: withAlpha(T.danger, SOFT_TINT), borderColor: T.danger }]}
+              onPress={requestLocationPermission}
+              activeOpacity={0.7}
+            >
+              <MapPin size={16} color={T.danger} strokeWidth={ICON_STROKE} />
+              <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+                <Text style={[mdStyles.permTitle, { color: T.danger }]}>Location Access Required</Text>
+                <Text style={[mdStyles.permSub, { color: T.sub }]}>Tap to enable location for tracking</Text>
               </View>
-              <Text style={mdStyles.permAction}>Enable</Text>
+              <Text style={[mdStyles.permAction, { color: T.danger, backgroundColor: withAlpha(T.danger, 0.12) }]}>
+                Enable
+              </Text>
             </TouchableOpacity>
           )}
 
           {/* My Day card */}
-          <View style={mdStyles.card}>
+          <View style={[nStyles.card, { backgroundColor: T.card, borderColor: T.line }]}>
             <View style={mdStyles.cardHeader}>
-              <View>
-                <Text style={mdStyles.cardTitle}>My Day</Text>
-                <Text style={mdStyles.cardDate}>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
+              <View style={{ flexShrink: 1, minWidth: 0 }}>
+                <Text style={[nStyles.cardTitle, { color: T.text }]}>My Day</Text>
+                <Text style={[mdStyles.cardDate, { color: T.dim }]}>
+                  {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </Text>
               </View>
               <View style={mdStyles.btnRow}>
-                <TouchableOpacity
-                  style={[mdStyles.actionBtn, { backgroundColor: startEnabled ? '#16A34A' : '#9CA3AF' }]}
-                  onPress={handleStartDay}
+                <Btn
+                  label={dayActionLoading && startEnabled ? 'Starting…' : 'Start My Day'}
+                  variant="success"
+                  small
+                  onPress={() => setShowVehiclePicker(true)}
                   disabled={!startEnabled || dayActionLoading}
-                >
-                  <Navigation size={14} color="#FFF" />
-                  <Text style={mdStyles.actionBtnText}>{dayActionLoading && startEnabled ? 'Starting…' : 'Start My Day'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[mdStyles.actionBtn, { backgroundColor: endEnabled ? '#DC2626' : '#9CA3AF' }]}
+                  icon={<Navigation size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+                />
+                <Btn
+                  label={dayActionLoading && endEnabled ? 'Ending…' : 'End Day'}
+                  variant="danger"
+                  small
                   onPress={handleEndDay}
                   disabled={!endEnabled || dayActionLoading}
-                >
-                  <Text style={mdStyles.actionBtnText}>{dayActionLoading && endEnabled ? 'Ending…' : 'End Day'}</Text>
-                </TouchableOpacity>
+                />
               </View>
             </View>
 
             {daySession?.status === 'ended' && (
-              <View style={mdStyles.endedBanner}>
-                <Check size={14} color="#22C55E" />
-                <Text style={mdStyles.endedText}>Session ended. You can start again anytime.</Text>
+              <View style={[mdStyles.banner, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
+                <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+                <Text style={[mdStyles.bannerTxt, { color: T.success, flexShrink: 1, minWidth: 0 }]}>
+                  Session ended. You can start again anytime.
+                </Text>
               </View>
             )}
             {daySession?.isSuspicious && (
-              <View style={mdStyles.fraudBanner}>
-                <AlertTriangle size={14} color="#DC2626" />
-                <Text style={mdStyles.fraudText}>Session flagged — fraud score: {daySession.fraudScore}</Text>
+              <View style={[mdStyles.banner, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+                <AlertTriangle size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+                <Text style={[mdStyles.bannerTxt, { color: T.danger, flexShrink: 1, minWidth: 0 }]}>
+                  Session flagged — fraud score: {daySession.fraudScore}
+                </Text>
               </View>
             )}
 
-            {/* Stats grid */}
+            {/* Stats grid — three equal-height tiles, stretched so none is clipped */}
             <View style={mdStyles.statsGrid}>
-              <View style={mdStyles.statBox}>
-                <Navigation size={16} color="#0D9488" />
-                <Text style={mdStyles.statVal}>{daySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km</Text>
-                <Text style={mdStyles.statLbl}>Today's Distance</Text>
+              <View style={[mdStyles.statBox, { backgroundColor: T.accentSoft }]}>
+                <Navigation size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+                <Text style={[mdStyles.statVal, { color: T.text }]} numberOfLines={1}>
+                  {daySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km
+                </Text>
+                <Text style={[mdStyles.statLbl, { color: T.sub }]}>Today's Distance</Text>
               </View>
-              <View style={[mdStyles.statBox, { backgroundColor: '#FFFBEB' }]}>
-                <DollarSign size={16} color="#D97706" />
-                <Text style={[mdStyles.statVal, { color: '#92400E' }]}>{formatCurrency(daySession?.allowanceAmount ?? 0)}</Text>
-                <Text style={[mdStyles.statLbl, { color: '#D97706' }]}>Today's Allowance</Text>
+              <View style={[mdStyles.statBox, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
+                <DollarSign size={16} color={T.warning} strokeWidth={ICON_STROKE} />
+                <Text style={[mdStyles.statVal, { color: T.text }]} numberOfLines={1}>
+                  {formatCurrency(daySession?.allowanceAmount ?? 0)}
+                </Text>
+                <Text style={[mdStyles.statLbl, { color: T.sub }]}>Today's Allowance</Text>
               </View>
-              <View style={[mdStyles.statBox, { backgroundColor: '#EFF6FF' }]}>
+              <View style={[mdStyles.statBox, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
                 <View style={[mdStyles.statusDot, { backgroundColor: getStatusColor(daySession?.status) }]} />
-                <Text style={[mdStyles.statVal, { color: '#1D4ED8', fontSize: rf(13) }]}>{getStatusLabel(daySession?.status)}</Text>
-                <Text style={[mdStyles.statLbl, { color: '#3B82F6' }]}>Session Status</Text>
+                <Text style={[mdStyles.statVal, { color: T.text, fontSize: rf(13) }]} numberOfLines={1}>
+                  {getStatusLabel(daySession?.status)}
+                </Text>
+                <Text style={[mdStyles.statLbl, { color: T.sub }]}>Session Status</Text>
               </View>
             </View>
 
-            {dayLoading && <LoadingSpinner color={rc.primary} />}
+            {/* Distance breakdown — web shows this after the day ends
+                (LiveTracking.jsx:1190-1208). The three numbers come straight off
+                TrackingSessionDto: RawDistanceKm / FilteredDistanceKm / ReconstructedDistanceKm. */}
+            {daySession?.status === 'ended' && (
+              <View style={[nStyles.breakdown, { borderTopColor: T.line }]}>
+                <Text style={[nStyles.breakdownTitle, { color: T.sub }]}>Distance Breakdown</Text>
+                <View style={nStyles.breakdownRow}>
+                  <View style={nStyles.breakdownItem}>
+                    <Text style={[nStyles.breakdownVal, { color: T.text }]}>{(daySession.rawDistanceKm ?? 0).toFixed(2)} km</Text>
+                    <Text style={[nStyles.breakdownLbl, { color: T.dim }]}>Raw GPS</Text>
+                  </View>
+                  <View style={nStyles.breakdownItem}>
+                    <Text style={[nStyles.breakdownVal, { color: T.text }]}>{(daySession.filteredDistanceKm ?? 0).toFixed(2)} km</Text>
+                    <Text style={[nStyles.breakdownLbl, { color: T.dim }]}>After Filtering</Text>
+                  </View>
+                  <View style={nStyles.breakdownItem}>
+                    <Text style={[nStyles.breakdownVal, { color: T.accent }]}>{(daySession.reconstructedDistanceKm ?? 0).toFixed(2)} km</Text>
+                    <Text style={[nStyles.breakdownLbl, { color: T.dim }]}>Reconstructed</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {dayLoading && <LoadingSpinner color={T.accent} />}
           </View>
 
           {/* Tracking History */}
-          <View style={mdStyles.card}>
+          <View style={[nStyles.card, { backgroundColor: T.card, borderColor: T.line }]}>
             <View style={mdStyles.historyHeader}>
-              <Text style={mdStyles.cardTitle}>My Tracking History</Text>
+              <Text style={[nStyles.cardTitle, { color: T.text }]}>My Tracking History</Text>
               <View style={mdStyles.dateRow}>
-                <Calendar size={14} color="#9CA3AF" />
+                <Calendar size={14} color={T.dim} strokeWidth={ICON_STROKE} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {last7Days.map((d, i) => (
-                    <TouchableOpacity
-                      key={d}
-                      style={[mdStyles.dateChip, historyDate === d && { backgroundColor: rc.primary }]}
-                      onPress={() => handleHistoryDate(d)}
-                    >
-                      <Text style={[mdStyles.dateChipText, historyDate === d && { color: '#FFF' }]}>
-                        {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {last30Days.map((d, i) => {
+                    const on = historyDate === d;
+                    return (
+                      <TouchableOpacity
+                        key={d}
+                        style={[
+                          mdStyles.dateChip,
+                          { backgroundColor: on ? T.accentSoft : T.cardAlt, borderColor: on ? T.accent : T.line },
+                        ]}
+                        onPress={() => handleHistoryDate(d)}
+                      >
+                        <Text style={[mdStyles.dateChipText, { color: on ? T.accent : T.sub }]}>
+                          {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </View>
             </View>
 
             {historyLoading ? (
-              <LoadingSpinner color={rc.primary} message="Loading..." />
+              <LoadingSpinner color={T.accent} message="Loading..." />
             ) : historySession ? (
+              /* Six equal-height tiles — alignItems:'stretch' so a wrapped row never
+                 leaves a short tile with dead space beside a tall one. On the iPad rail
+                 they stay two-up (flexBasis 47%); the rail is too narrow for six across. */
               <View style={mdStyles.historyGrid}>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Distance</Text><Text style={mdStyles.histVal}>{historySession.totalDistanceKm?.toFixed(1)} km</Text></View>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Allowance</Text><Text style={mdStyles.histVal}>{formatCurrency(historySession.allowanceAmount)}</Text></View>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Start</Text><Text style={mdStyles.histVal}>{formatTime(historySession.startedAt)}</Text></View>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>End</Text><Text style={mdStyles.histVal}>{historySession.endedAt ? formatTime(historySession.endedAt) : '--'}</Text></View>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Duration</Text><Text style={mdStyles.histVal}>{getSessionDuration(historySession)}</Text></View>
-                <View style={mdStyles.histItem}><Text style={mdStyles.histLbl}>Pings</Text><Text style={mdStyles.histVal}>{historySession.pingCount ?? 0}</Text></View>
+                {([
+                  ['Distance', `${historySession.totalDistanceKm?.toFixed(1) ?? '0.0'} km`],
+                  ['Allowance', formatCurrency(historySession.allowanceAmount)],
+                  ['Start', formatTime(historySession.startedAt)],
+                  ['End', historySession.endedAt ? formatTime(historySession.endedAt) : '--'],
+                  ['Duration', getSessionDuration(historySession)],
+                  ['Pings', String(historySession.pingCount ?? 0)],
+                ] as [string, string][]).map(([lbl, val]) => (
+                  <View key={lbl} style={[mdStyles.histItem, { backgroundColor: T.cardAlt }]}>
+                    <Text style={[mdStyles.histLbl, { color: T.dim }]}>{lbl}</Text>
+                    <Text style={[mdStyles.histVal, { color: T.text }]} numberOfLines={1}>{val}</Text>
+                  </View>
+                ))}
               </View>
             ) : (
-              <View style={mdStyles.emptyHist}>
-                <MapPin size={28} color="#D1D5DB" />
-                <Text style={mdStyles.emptyHistText}>No tracking data for this date</Text>
+              <View style={nStyles.empty}>
+                <MapPin size={26} color={T.dim} strokeWidth={ICON_STROKE} />
+                <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No tracking data for this date</Text>
               </View>
             )}
+          </View>
+
+          </View>
+          <View style={[styles.mdCol, wide && styles.pane]}>
+
+          {/* ── Today's assigned schools: ordered plan + progress + navigation ── */}
+          <View style={[nStyles.card, { backgroundColor: T.card, borderColor: T.line }]}>
+            <View style={nStyles.cardHead}>
+              <View style={nStyles.cardHeadLeft}>
+                <RouteIcon size={15} color={T.accent} />
+                <Text style={[nStyles.cardTitle, { color: T.text }]}>Today's Schools</Text>
+              </View>
+              <TouchableOpacity onPress={fetchMyAssignments} hitSlop={10} style={nStyles.refreshBtn}>
+                <RefreshCw size={13} color={T.sub} />
+                <Text style={[nStyles.refreshTxt, { color: T.sub }]}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {myAssignLoading ? (
+              <LoadingSpinner color={T.accent} />
+            ) : myAssignments.length === 0 ? (
+              <View style={nStyles.empty}>
+                <SchoolIcon size={26} color={T.dim} />
+                <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No schools assigned for today</Text>
+              </View>
+            ) : (
+              <>
+                {/* Visited progress */}
+                <View style={nStyles.progressWrap}>
+                  <View style={nStyles.progressLabelRow}>
+                    <Text style={[nStyles.progressLbl, { color: T.sub }]}>
+                      {visitedCount} of {myAssignments.length} visited
+                    </Text>
+                    <Text style={[nStyles.progressPct, { color: T.accent }]}>
+                      {Math.round((visitedCount / myAssignments.length) * 100)}%
+                    </Text>
+                  </View>
+                  <View style={[nStyles.progressTrack, { backgroundColor: T.fieldBg }]}>
+                    <View
+                      style={[
+                        nStyles.progressFill,
+                        { backgroundColor: T.success, width: `${(visitedCount / myAssignments.length) * 100}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                {/* Route stats — total driving distance / time for the optimised plan */}
+                <View style={nStyles.routeStatRow}>
+                  {routeStats && (
+                    <>
+                      <View style={nStyles.routeStat}>
+                        <Navigation size={13} color={T.accent} />
+                        <Text style={[nStyles.routeStatVal, { color: T.text }]}>{routeStats.distanceKm} km</Text>
+                        <Text style={[nStyles.routeStatLbl, { color: T.dim }]}>total</Text>
+                      </View>
+                      <View style={nStyles.routeStat}>
+                        <Clock size={13} color={T.accent} />
+                        <Text style={[nStyles.routeStatVal, { color: T.text }]}>{routeStats.durationMin} min</Text>
+                        <Text style={[nStyles.routeStatLbl, { color: T.dim }]}>est. drive</Text>
+                      </View>
+                    </>
+                  )}
+                  <View style={nStyles.routeStat}>
+                    <MapPin size={13} color={T.accent} />
+                    <Text style={[nStyles.routeStatVal, { color: T.text }]}>{myAssignments.length}</Text>
+                    <Text style={[nStyles.routeStatLbl, { color: T.dim }]}>schools</Text>
+                  </View>
+                </View>
+
+                {/* Optimisation state — success badge, in-flight note, or failure notice */}
+                {routeOptLoading ? (
+                  <View style={[nStyles.routeNotice, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                    <Sparkles size={13} color={T.dim} />
+                    <Text style={[nStyles.routeNoticeTxt, { color: T.sub }]}>Optimising route…</Text>
+                  </View>
+                ) : optimizedStops ? (
+                  <View style={[nStyles.routeNotice, { backgroundColor: T.accentSoft, borderColor: T.accent }]}>
+                    <Sparkles size={13} color={T.accent} />
+                    <Text style={[nStyles.routeNoticeTxt, { color: T.accent }]}>
+                      Optimised route — shortest driving path calculated
+                    </Text>
+                  </View>
+                ) : routeOptFailure ? (
+                  // Non-blocking: the list below is still the full, usable day plan in the
+                  // server's visitOrder. The status/error_message are printed verbatim so a
+                  // key without the Directions API enabled is diagnosable from the device.
+                  <View style={[nStyles.routeNotice, { backgroundColor: T.cardAlt, borderColor: T.warning }]}>
+                    <AlertTriangle size={13} color={T.warning} />
+                    <View style={nStyles.routeNoticeBody}>
+                      <Text style={[nStyles.routeNoticeTxt, { color: T.warning }]}>
+                        Showing planned order — route could not be optimised ({routeOptFailure.status})
+                      </Text>
+                      {!!routeOptFailure.detail && (
+                        <Text style={[nStyles.routeNoticeDetail, { color: T.dim }]}>{routeOptFailure.detail}</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity onPress={() => setRouteOptAttempt(n => n + 1)} hitSlop={8}>
+                      <Text style={[nStyles.routeNoticeRetry, { color: T.accent }]}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Route preview */}
+                {/* The landscape right rail is much taller than a phone card, so the
+                    preview grows with it instead of leaving the rail half empty. */}
+                <View style={[nStyles.routeMapWrap, wide && nStyles.routeMapWrapWide, { borderColor: T.line }]}>
+                  <MapView
+                    style={StyleSheet.absoluteFill}
+                    initialRegion={{
+                      latitude: displayStops[0]?.schoolLatitude || INDIA_REGION.latitude,
+                      longitude: displayStops[0]?.schoolLongitude || INDIA_REGION.longitude,
+                      latitudeDelta: 0.25,
+                      longitudeDelta: 0.25,
+                    }}
+                    pointerEvents="none"
+                  >
+                    {displayStops
+                      .filter(a => a.schoolLatitude && a.schoolLongitude)
+                      .map(a => (
+                        <Marker
+                          key={a.id}
+                          coordinate={{ latitude: a.schoolLatitude, longitude: a.schoolLongitude }}
+                          title={a.schoolName}
+                          pinColor={a.isVisited ? T.success : T.warning}
+                        />
+                      ))}
+                    <Polyline
+                      coordinates={displayStops
+                        .filter(a => a.schoolLatitude && a.schoolLongitude)
+                        .map(a => ({ latitude: a.schoolLatitude, longitude: a.schoolLongitude }))}
+                      strokeColor={T.accent}
+                      strokeWidth={3}
+                    />
+                  </MapView>
+                </View>
+
+                <Btn
+                  label="Start Navigation"
+                  onPress={() => openRouteNavigation(displayStops)}
+                  icon={<Navigation size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+                  style={{ marginTop: 10 }}
+                />
+
+                {/* Ordered stop list — optimised order when we have one, else visitOrder */}
+                <View style={{ marginTop: 12, gap: 8 }}>
+                  {displayStops.map((a, idx) => (
+                    <View key={a.id} style={[nStyles.stopRow, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                      <View style={[nStyles.stopOrder, { backgroundColor: a.isVisited ? T.success : T.accentSoft }]}>
+                        <Text style={[nStyles.stopOrderTxt, { color: a.isVisited ? '#FFF' : T.accent }]}>
+                          {optimizedStops ? idx + 1 : a.visitOrder}
+                        </Text>
+                      </View>
+                      <View style={nStyles.stopBody}>
+                        <Text style={[nStyles.stopName, { color: T.text }]} numberOfLines={1}>{a.schoolName}</Text>
+                        {!!a.schoolCity && (
+                          <Text style={[nStyles.stopCity, { color: T.dim }]} numberOfLines={1}>{a.schoolCity}</Text>
+                        )}
+                      </View>
+                      <StatusBadge
+                        label={a.isVisited ? 'Visited' : 'Pending'}
+                        color={a.isVisited ? T.success : T.warning}
+                      />
+                      {/* Wires to the existing VisitReportScreen (registered as
+                          "VisitReport" in AppNavigator.tsx:545). */}
+                      <TouchableOpacity
+                        onPress={() => nav.navigate('VisitReport', { schoolName: a.schoolName, schoolId: a.schoolId })}
+                        hitSlop={8}
+                        style={[nStyles.reportBtn, { backgroundColor: T.accentSoft }]}
+                      >
+                        <FileText size={13} color={T.accent} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+
+          </View>
           </View>
 
           <View style={{ height: 24 }} />
@@ -1340,6 +2415,7 @@ export const LiveTrackingScreen = () => {
             style={StyleSheet.absoluteFill}
             initialRegion={INDIA_REGION}
             showsUserLocation={false}
+            mapType={mapKind}
           >
             {mapUsers.map(u => (
               <Marker
@@ -1353,84 +2429,125 @@ export const LiveTrackingScreen = () => {
             ))}
           </MapView>
 
-          {/* Status filter chips */}
-          <View style={styles.mapFilterRow}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              {(['all', 'active', 'ended'] as StatusFilter[]).map(s => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.mapChip, statusFilter === s && { backgroundColor: rc.primary }]}
-                  onPress={() => setStatusFilter(s)}
+          {/* Status filter — the kit's Segmented control */}
+          <View style={[styles.mapFilterRow, wide && styles.mapOverlayWide]}>
+            <Segmented<StatusFilter>
+              value={statusFilter}
+              onChange={setStatusFilter}
+              style={{ backgroundColor: T.card, borderWidth: 1, borderColor: T.line }}
+              options={[
+                { label: 'All', value: 'all' },
+                { label: '● Active', value: 'active' },
+                { label: '○ Ended', value: 'ended' },
+              ]}
+            />
+          </View>
+
+          {/* Map-type selector — web offers Default/Satellite/Terrain/Hybrid */}
+          <View style={[nStyles.mapKindBar, wide && styles.mapOverlayWide, { backgroundColor: T.card, borderColor: T.line }]}>
+            <Layers size={13} color={T.sub} strokeWidth={ICON_STROKE} />
+            {MAP_KINDS.map(m => (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setMapKind(m.key)}
+                style={[
+                  nStyles.mapKindChip,
+                  mapKind === m.key && { backgroundColor: T.accentSoft },
+                ]}
+              >
+                <Text
+                  style={[
+                    nStyles.mapKindTxt,
+                    { color: mapKind === m.key ? T.accent : T.sub },
+                  ]}
                 >
-                  <Text style={[styles.mapChipText, statusFilter === s && { color: '#FFF' }]}>
-                    {s === 'all' ? 'All' : s === 'active' ? '● Active' : '○ Ended'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* Count */}
-          <View style={styles.mapCountBadge}>
-            <Users size={12} color="#6B7280" />
-            <Text style={styles.mapCountText}>{activeCount} active / {mapUsers.length} shown</Text>
+          <View style={[styles.mapCountBadge, { backgroundColor: T.card, borderColor: T.line }]}>
+            <Users size={12} color={T.sub} strokeWidth={ICON_STROKE} />
+            <Text style={[styles.mapCountText, { color: T.sub }]}>
+              {activeCount} active / {mapUsers.length} shown
+            </Text>
           </View>
 
           {/* Empty hint */}
           {mapUsers.length === 0 && (
             <View style={styles.mapEmptyHint} pointerEvents="none">
-              <Text style={styles.mapEmptyIcon}>📍</Text>
-              <Text style={styles.mapEmptyTitle}>No users match filter</Text>
-              <Text style={styles.mapEmptySubtitle}>Change the status filter above</Text>
+              <View style={[styles.mapEmptyCard, { backgroundColor: T.card, borderColor: T.line }]}>
+                <MapPin size={26} color={T.dim} strokeWidth={ICON_STROKE} />
+                <Text style={[styles.mapEmptyTitle, { color: T.text }]}>No users match filter</Text>
+                <Text style={[styles.mapEmptySubtitle, { color: T.dim }]}>Change the status filter above</Text>
+              </View>
             </View>
           )}
 
           {/* Info sheet when marker tapped */}
           {selectedMarker && (
-            <View style={styles.infoSheet}>
-              <View style={styles.infoHandle} />
+            <View
+              style={[
+                wide ? styles.infoSheetWide : styles.infoSheet,
+                // one `borderColor` covers both: the sheet only draws a top border,
+                // the landscape panel draws all four.
+                { backgroundColor: T.card, borderColor: T.line },
+              ]}
+            >
+              <View style={[styles.infoHandle, { backgroundColor: T.lineStrong }]} />
               <View style={styles.infoRow}>
-                <View style={[styles.infoAvatar, { backgroundColor: roleColor(selectedMarker.role) }]}>
-                  <Text style={styles.infoAvatarText}>{initials(selectedMarker.name)}</Text>
+                <View style={[styles.infoAvatar, { backgroundColor: roleTint(selectedMarker.role, T) }]}>
+                  <Text style={[styles.infoAvatarText, { color: T.onAccent }]}>{initials(selectedMarker.name)}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.infoName}>{selectedMarker.name}</Text>
+                <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+                  <Text style={[styles.infoName, { color: T.text }]} numberOfLines={1}>{selectedMarker.name}</Text>
                   <View style={styles.infoMeta}>
-                    <RoleBadge role={selectedMarker.role} />
-                    {selectedMarker.zoneName && <Text style={styles.infoSub}>{selectedMarker.zoneName}</Text>}
+                    <RolePill role={selectedMarker.role} />
+                    {selectedMarker.zoneName && (
+                      <Text style={[styles.infoSub, { color: T.dim }]} numberOfLines={1}>{selectedMarker.zoneName}</Text>
+                    )}
                     {selectedMarker.regionName && !selectedMarker.zoneName && (
-                      <Text style={styles.infoSub}>{selectedMarker.regionName}</Text>
+                      <Text style={[styles.infoSub, { color: T.dim }]} numberOfLines={1}>{selectedMarker.regionName}</Text>
                     )}
                   </View>
                 </View>
                 <TouchableOpacity onPress={() => setSelectedMarker(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <X size={18} color="#9CA3AF" />
+                  <X size={18} color={T.sub} strokeWidth={ICON_STROKE} />
                 </TouchableOpacity>
               </View>
 
+              {/* Equal-height stat tiles */}
               <View style={styles.infoStats}>
-                <View style={styles.infoStat}>
-                  <Navigation size={13} color={rc.primary} />
-                  <Text style={styles.infoStatVal}>{selectedMarker.totalDistanceKm.toFixed(1)} km</Text>
-                  <Text style={styles.infoStatLbl}>Distance</Text>
+                <View style={[styles.infoStat, { backgroundColor: T.cardAlt }]}>
+                  <Navigation size={13} color={T.accent} strokeWidth={ICON_STROKE} />
+                  <Text style={[styles.infoStatVal, { color: T.text }]} numberOfLines={1}>
+                    {selectedMarker.totalDistanceKm.toFixed(1)} km
+                  </Text>
+                  <Text style={[styles.infoStatLbl, { color: T.dim }]}>Distance</Text>
                 </View>
-                <View style={styles.infoStat}>
-                  <Clock size={13} color={rc.primary} />
-                  <Text style={styles.infoStatVal}>{formatRelativeDate(selectedMarker.lastSeen)}</Text>
-                  <Text style={styles.infoStatLbl}>Last Seen</Text>
+                <View style={[styles.infoStat, { backgroundColor: T.cardAlt }]}>
+                  <Clock size={13} color={T.accent} strokeWidth={ICON_STROKE} />
+                  <Text style={[styles.infoStatVal, { color: T.text }]} numberOfLines={1}>
+                    {formatRelativeDate(selectedMarker.lastSeen)}
+                  </Text>
+                  <Text style={[styles.infoStatLbl, { color: T.dim }]}>Last Seen</Text>
                 </View>
-                <View style={styles.infoStat}>
-                  <Activity size={13} color={rc.primary} />
-                  <Text style={styles.infoStatVal}>{selectedMarker.speedKmh?.toFixed(0) ?? '--'} km/h</Text>
-                  <Text style={styles.infoStatLbl}>Speed</Text>
+                <View style={[styles.infoStat, { backgroundColor: T.cardAlt }]}>
+                  <Activity size={13} color={T.accent} strokeWidth={ICON_STROKE} />
+                  <Text style={[styles.infoStatVal, { color: T.text }]} numberOfLines={1}>
+                    {selectedMarker.speedKmh?.toFixed(0) ?? '--'} km/h
+                  </Text>
+                  <Text style={[styles.infoStatLbl, { color: T.dim }]}>Speed</Text>
                 </View>
               </View>
 
-              <Button
-                title="Track This Person →"
+              <Btn
+                label="Track This Person"
+                small
                 onPress={() => { setSelectedMarker(null); setTrackingPerson(selectedMarker); }}
-                color={rc.primary}
-                size="sm"
+                icon={<Navigation size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
                 style={styles.infoTrackBtn}
               />
             </View>
@@ -1442,116 +2559,138 @@ export const LiveTrackingScreen = () => {
       {activeTab === 'team' && (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, wide && styles.contentWide]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[rc.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[T.accent]} />}
         >
+          {/* iPad landscape puts the filter bar and the selected-user card side by
+              side as equal-height rails; on the phone they stack as before. */}
+          <View style={[styles.mdBody, wide && styles.paneRow]}>
           {/* ── Filter bar: User picker + Date + Refresh ── */}
-          <View style={tfStyles.filterCard}>
-            <TouchableOpacity style={tfStyles.userSelector} onPress={() => setShowTeamUserPicker(true)}>
-              <Users size={15} color="#6B7280" />
-              <Text style={tfStyles.userSelectorLabel}>User</Text>
-              <Text style={[tfStyles.userSelectorValue, !selectedTeamUser && { color: '#9CA3AF' }]} numberOfLines={1}>
+          <View style={[tfStyles.filterCard, wide && styles.pane, { backgroundColor: T.card, borderColor: T.line }]}>
+            <TouchableOpacity
+              style={[tfStyles.userSelector, { backgroundColor: T.fieldBg, borderColor: T.line }]}
+              onPress={() => setShowTeamUserPicker(true)}
+            >
+              <Users size={15} color={T.sub} strokeWidth={ICON_STROKE} />
+              <Text style={[tfStyles.userSelectorLabel, { color: T.sub }]}>User</Text>
+              <Text
+                style={[tfStyles.userSelectorValue, { color: selectedTeamUser ? T.text : T.dim }]}
+                numberOfLines={1}
+              >
                 {selectedTeamUser
                   ? `${selectedTeamUser.name} - ${selectedTeamUser.status === 'active' ? 'Active' : 'Ended'}`
                   : '— Select a User —'}
               </Text>
-              <ChevronDown size={14} color="#9CA3AF" />
+              <ChevronDown size={14} color={T.dim} strokeWidth={ICON_STROKE} />
             </TouchableOpacity>
             <View style={tfStyles.dateRefreshRow}>
               <DateInput
                 label=""
                 value={teamDate}
                 onChange={setTeamDate}
-                accentColor={rc.primary}
+                accentColor={T.accent}
               />
-              <TouchableOpacity style={[tfStyles.refreshBtn, { borderColor: rc.primary }]} onPress={() => { setRefreshing(true); fetchLive().finally(() => setRefreshing(false)); }}>
-                <Text style={[tfStyles.refreshText, { color: rc.primary }]}>↻ Refresh</Text>
-              </TouchableOpacity>
+              <Btn
+                label="Refresh"
+                variant="secondary"
+                small
+                onPress={() => { setRefreshing(true); fetchLive().finally(() => setRefreshing(false)); }}
+                icon={<RefreshCw size={13} color={T.text} strokeWidth={ICON_STROKE} />}
+              />
             </View>
           </View>
 
           {/* ── Selected user stats card ── */}
           {selectedTeamUser && (
-            <View style={tfStyles.statsCard}>
+            <View style={[tfStyles.statsCard, wide && styles.pane, { backgroundColor: T.card, borderColor: T.line }]}>
               <View style={tfStyles.statsCardTop}>
                 {selectedTeamUser.avatar && selectedTeamUser.avatar.startsWith('http') ? (
                   <Image source={{ uri: selectedTeamUser.avatar }} style={tfStyles.statsAvatar} />
                 ) : (
-                  <View style={[tfStyles.statsAvatar, { backgroundColor: roleColor(selectedTeamUser.role), alignItems: 'center', justifyContent: 'center' }]}>
-                    <Text style={tfStyles.statsAvatarText}>{initials(selectedTeamUser.name)}</Text>
+                  <View style={[tfStyles.statsAvatar, { backgroundColor: roleTint(selectedTeamUser.role, T), alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={[tfStyles.statsAvatarText, { color: T.onAccent }]}>{initials(selectedTeamUser.name)}</Text>
                   </View>
                 )}
-                <View>
-                  <Text style={tfStyles.statsName}>{selectedTeamUser.name}</Text>
-                  <View style={[tfStyles.statusChip, { backgroundColor: selectedTeamUser.status === 'active' ? '#D1FAE5' : '#F3F4F6' }]}>
-                    <Text style={[tfStyles.statusChipText, { color: selectedTeamUser.status === 'active' ? '#059669' : '#9CA3AF' }]}>
-                      {selectedTeamUser.status === 'active' ? 'Active' : 'Ended'}
-                    </Text>
-                  </View>
+                <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1, gap: 4 }}>
+                  <Text style={[tfStyles.statsName, { color: T.text }]} numberOfLines={1}>{selectedTeamUser.name}</Text>
+                  <StatusBadge
+                    label={selectedTeamUser.status === 'active' ? 'Active' : 'Ended'}
+                    color={selectedTeamUser.status === 'active' ? T.success : T.dim}
+                  />
                 </View>
-                <TouchableOpacity onPress={() => setSelectedTeamUser(null)} hitSlop={10} style={{ marginLeft: 'auto' }}>
-                  <X size={16} color="#9CA3AF" />
+                <TouchableOpacity onPress={() => setSelectedTeamUser(null)} hitSlop={10}>
+                  <X size={16} color={T.sub} strokeWidth={ICON_STROKE} />
                 </TouchableOpacity>
               </View>
               <View style={tfStyles.statsRow}>
                 <View style={tfStyles.statItem}>
-                  <Text style={tfStyles.statLabel}>Last Seen</Text>
-                  <Text style={tfStyles.statValue}>{formatRelativeDate(selectedTeamUser.lastSeen)}</Text>
+                  <Text style={[tfStyles.statLabel, { color: T.dim }]}>Last Seen</Text>
+                  <Text style={[tfStyles.statValue, { color: T.text }]} numberOfLines={1}>{formatRelativeDate(selectedTeamUser.lastSeen)}</Text>
                 </View>
                 <View style={tfStyles.statItem}>
-                  <Text style={tfStyles.statLabel}>Distance Today</Text>
-                  <Text style={tfStyles.statValue}>{selectedTeamUser.totalDistanceKm.toFixed(1)} km</Text>
+                  <Text style={[tfStyles.statLabel, { color: T.dim }]}>Distance Today</Text>
+                  <Text style={[tfStyles.statValue, { color: T.text }]} numberOfLines={1}>{selectedTeamUser.totalDistanceKm.toFixed(1)} km</Text>
                 </View>
                 <View style={tfStyles.statItem}>
-                  <Text style={tfStyles.statLabel}>Allowance</Text>
-                  <Text style={tfStyles.statValue}>{formatCurrency(selectedTeamUser.allowanceAmount)}</Text>
+                  <Text style={[tfStyles.statLabel, { color: T.dim }]}>Allowance</Text>
+                  <Text style={[tfStyles.statValue, { color: T.text }]} numberOfLines={1}>{formatCurrency(selectedTeamUser.allowanceAmount)}</Text>
                 </View>
               </View>
               <View style={tfStyles.statsRowSecond}>
                 <View style={tfStyles.statItem}>
-                  <Text style={tfStyles.statLabel}>Speed</Text>
-                  <Text style={tfStyles.statValue}>{selectedTeamUser.speedKmh?.toFixed(1) ?? '0.0'} km/h</Text>
+                  <Text style={[tfStyles.statLabel, { color: T.dim }]}>Speed</Text>
+                  <Text style={[tfStyles.statValue, { color: T.text }]} numberOfLines={1}>{selectedTeamUser.speedKmh?.toFixed(1) ?? '0.0'} km/h</Text>
                 </View>
                 {selectedTeamUser.batteryLevel != null && (
                   <View style={tfStyles.statItem}>
-                    <Text style={tfStyles.statLabel}>Battery</Text>
-                    <Text style={[tfStyles.statValue, selectedTeamUser.batteryLevel < 0.2 ? { color: '#DC2626' } : {}]}>
+                    <Text style={[tfStyles.statLabel, { color: T.dim }]}>Battery</Text>
+                    <Text
+                      style={[tfStyles.statValue, { color: selectedTeamUser.batteryLevel < 0.2 ? T.danger : T.text }]}
+                      numberOfLines={1}
+                    >
                       🔋 {Math.round(selectedTeamUser.batteryLevel * 100)}%
                     </Text>
                   </View>
                 )}
-                <TouchableOpacity
-                  style={[tfStyles.viewRouteBtn, { backgroundColor: rc.primary }]}
+                <Btn
+                  label="View Route"
+                  small
                   onPress={() => handlePersonPress(selectedTeamUser)}
-                >
-                  <Navigation size={13} color="#FFF" />
-                  <Text style={tfStyles.viewRouteBtnText}>View Route</Text>
-                </TouchableOpacity>
+                  icon={<Navigation size={13} color="#FFF" strokeWidth={ICON_STROKE} />}
+                />
               </View>
             </View>
           )}
+          </View>
 
           {/* Summary */}
           <View style={styles.summaryRow}>
-            <Users size={14} color={rc.primary} />
-            <Text style={styles.summaryText}>{activeCount} active · {scopedUsers.length} tracked today</Text>
-            <Text style={styles.summaryHint}>Tap to track</Text>
+            <Users size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+            <Text style={[styles.summaryText, { color: T.sub, flexShrink: 1, minWidth: 0 }]}>
+              {activeCount} active · {scopedUsers.length} tracked today
+            </Text>
+            <Text style={[styles.summaryHint, { color: T.dim }]}>Tap to track</Text>
           </View>
 
+          {/* ── Team Last Locations (web's LiveTracking.jsx:1746-1823) ──────── */}
+          {scopedUsers.length > 0 && renderTeamLastLocations()}
+
           {scopedUsers.length === 0 ? (
-            <EmptyState
+            <Empty
+              icon={<Radio size={30} color={T.dim} strokeWidth={ICON_STROKE} />}
               title="No tracking data"
               subtitle="No team members have started tracking today."
-              icon="📡"
             />
           ) : (
             <>
               {/* ZH: flat FO list (zone-scoped) */}
               {user?.role === 'ZH' && (
-                <View style={styles.listCard}>
+                <View style={[styles.listCard, { backgroundColor: T.card, borderColor: T.line }]}>
                   {scopedUsers.length === 0 ? (
-                    <Text style={styles.emptyListText}>None of your FOs have started tracking today.</Text>
+                    <Text style={[styles.emptyListText, { color: T.dim }]}>
+                      None of your FOs have started tracking today.
+                    </Text>
                   ) : (
                     scopedUsers.map(fo => (
                       <PersonRow key={fo.userId} user={fo} onPress={handlePersonPress} />
@@ -1563,22 +2702,18 @@ export const LiveTrackingScreen = () => {
               {/* RH: search + grouped by zone (ZH + FOs) */}
               {user?.role === 'RH' && (
                 <>
-                  <View style={styles.scaSearchBar}>
-                    <TextInput
-                      style={styles.scaSearchInput}
-                      placeholder="Search by name..."
-                      placeholderTextColor="#9CA3AF"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                    />
-                  </View>
+                  <SearchBar
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search by name…"
+                  />
                   {(() => {
                     const filtered = searchQuery.trim()
                       ? scopedUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()))
                       : scopedUsers;
                     const groups = buildZoneGroups(filtered);
                     return groups.length === 0
-                      ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
+                      ? <Empty icon={<MapPin size={26} color={T.dim} strokeWidth={ICON_STROKE} />} title="No data" subtitle="No team members are tracking." />
                       : groups.map(g => (
                         <ZoneGroupSection key={g.zoneName} group={g} onPersonPress={handlePersonPress} defaultExpanded />
                       ));
@@ -1589,28 +2724,21 @@ export const LiveTrackingScreen = () => {
               {/* SH: search + role filter + grouped by region → zone (RH + ZH + FOs) */}
               {user?.role === 'SH' && (
                 <>
-                  <View style={styles.scaSearchBar}>
-                    <TextInput
-                      style={styles.scaSearchInput}
-                      placeholder="Search by name..."
-                      placeholderTextColor="#9CA3AF"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                    />
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaRoleRow}>
-                    {(['all', 'RH', 'ZH', 'FO'] as const).map(r => (
-                      <TouchableOpacity
-                        key={r}
-                        style={[styles.scaRoleChip, roleFilter === r && { backgroundColor: rc.primary }]}
-                        onPress={() => setRoleFilter(r)}
-                      >
-                        <Text style={[styles.scaRoleText, roleFilter === r && { color: '#FFF' }]}>
-                          {r === 'all' ? 'All Roles' : r}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  <SearchBar
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search by name…"
+                  />
+                  <Segmented<string>
+                    value={roleFilter}
+                    onChange={setRoleFilter}
+                    options={[
+                      { label: 'All Roles', value: 'all' },
+                      { label: 'RH', value: 'RH' },
+                      { label: 'ZH', value: 'ZH' },
+                      { label: 'FO', value: 'FO' },
+                    ]}
+                  />
                   {(() => {
                     const filtered = scopedUsers.filter(u => {
                       const matchRole = roleFilter === 'all' || u.role === roleFilter;
@@ -1619,7 +2747,7 @@ export const LiveTrackingScreen = () => {
                     });
                     const groups = buildRegionGroups(filtered);
                     return groups.length === 0
-                      ? <EmptyState title="No data" subtitle="No team members are tracking." icon="📍" />
+                      ? <Empty icon={<MapPin size={26} color={T.dim} strokeWidth={ICON_STROKE} />} title="No data" subtitle="No team members are tracking." />
                       : groups.map(g => (
                         <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
                       ));
@@ -1632,46 +2760,63 @@ export const LiveTrackingScreen = () => {
                 <>
                   {/* SH filter chips — "View as SH" selector */}
                   {shList.length > 0 && (
-                    <View style={styles.scaSHFilterBlock}>
-                      <Text style={styles.scaSHFilterLabel}>Filter by Head</Text>
+                    <View style={[styles.scaSHFilterBlock, { backgroundColor: T.card, borderColor: T.line }]}>
+                      <Text style={[styles.scaSHFilterLabel, { color: T.dim }]}>Filter by Head</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaSHFilterRow}>
                         {/* All chip */}
                         <TouchableOpacity
-                          style={[styles.scaSHChip, selectedSHId === null && { backgroundColor: rc.primary }]}
+                          style={[
+                            styles.scaSHChip,
+                            {
+                              backgroundColor: selectedSHId === null ? T.accentSoft : T.cardAlt,
+                              borderColor: selectedSHId === null ? T.accent : T.line,
+                            },
+                          ]}
                           onPress={() => handleSelectSH(null)}
                         >
-                          <Text style={[styles.scaSHChipText, selectedSHId === null && { color: '#FFF' }]}>All</Text>
+                          <Text style={[styles.scaSHChipText, { color: selectedSHId === null ? T.accent : T.sub }]}>
+                            All
+                          </Text>
                         </TouchableOpacity>
                         {/* One chip per SH */}
-                        {shList.map(sh => (
-                          <TouchableOpacity
-                            key={sh.userId}
-                            style={[
-                              styles.scaSHChip,
-                              selectedSHId === sh.userId && { backgroundColor: rc.primary },
-                              sh.status === 'active' && selectedSHId !== sh.userId && { borderColor: '#22C55E', borderWidth: 1.5 },
-                            ]}
-                            onPress={() => handleSelectSH(sh.userId)}
-                          >
-                            <View style={[styles.scaSHChipDot, { backgroundColor: sh.status === 'active' ? '#22C55E' : '#9CA3AF' }]} />
-                            <Text style={[styles.scaSHChipText, selectedSHId === sh.userId && { color: '#FFF' }]} numberOfLines={1}>
-                              {sh.name}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                        {shList.map(sh => {
+                          const on = selectedSHId === sh.userId;
+                          const live = sh.status === 'active';
+                          return (
+                            <TouchableOpacity
+                              key={sh.userId}
+                              style={[
+                                styles.scaSHChip,
+                                {
+                                  backgroundColor: on ? T.accentSoft : T.cardAlt,
+                                  borderColor: on ? T.accent : live ? T.success : T.line,
+                                },
+                              ]}
+                              onPress={() => handleSelectSH(sh.userId)}
+                            >
+                              <View style={[styles.scaSHChipDot, { backgroundColor: live ? T.success : T.dim }]} />
+                              <Text
+                                style={[styles.scaSHChipText, { color: on ? T.accent : T.sub }]}
+                                numberOfLines={1}
+                              >
+                                {sh.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </ScrollView>
                       {/* Selected SH summary */}
                       {selectedSHId !== null && (
-                        <View style={styles.scaSHSelectedBanner}>
+                        <View style={[styles.scaSHSelectedBanner, { borderTopColor: T.line }]}>
                           {shTeamLoading ? (
-                            <Text style={styles.scaSHSelectedText}>Loading team...</Text>
+                            <Text style={[styles.scaSHSelectedText, { color: T.sub }]}>Loading team…</Text>
                           ) : (
-                            <Text style={styles.scaSHSelectedText}>
+                            <Text style={[styles.scaSHSelectedText, { color: T.sub }]} numberOfLines={2}>
                               Showing team: {shList.find(s => s.userId === selectedSHId)?.name} · {scaBaseUsers.filter(u => u.role !== 'SH').length} members
                             </Text>
                           )}
                           <TouchableOpacity onPress={() => handleSelectSH(null)} hitSlop={8}>
-                            <X size={14} color="#6B7280" />
+                            <X size={14} color={T.sub} strokeWidth={ICON_STROKE} />
                           </TouchableOpacity>
                         </View>
                       )}
@@ -1679,39 +2824,40 @@ export const LiveTrackingScreen = () => {
                   )}
 
                   {/* Search bar */}
-                  <View style={styles.scaSearchBar}>
-                    <TextInput
-                      style={styles.scaSearchInput}
-                      placeholder="Search by name..."
-                      placeholderTextColor="#9CA3AF"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                    />
-                  </View>
+                  <SearchBar
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search by name…"
+                  />
 
-                  {/* Role filter chips */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaRoleRow}>
-                    {(['all', 'SH', 'RH', 'ZH', 'FO'] as const).map(r => (
-                      <TouchableOpacity
-                        key={r}
-                        style={[styles.scaRoleChip, roleFilter === r && { backgroundColor: rc.primary }]}
-                        onPress={() => setRoleFilter(r)}
-                      >
-                        <Text style={[styles.scaRoleText, roleFilter === r && { color: '#FFF' }]}>
-                          {r === 'all' ? 'All Roles' : r}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  {/* Role filter */}
+                  <Segmented<string>
+                    value={roleFilter}
+                    onChange={setRoleFilter}
+                    options={[
+                      { label: 'All', value: 'all' },
+                      { label: 'SH', value: 'SH' },
+                      { label: 'RH', value: 'RH' },
+                      { label: 'ZH', value: 'ZH' },
+                      { label: 'FO', value: 'FO' },
+                    ]}
+                  />
 
                   {shTeamLoading ? (
-                    <LoadingSpinner color={rc.primary} message="Loading team..." />
+                    <LoadingSpinner color={T.accent} message="Loading team..." />
                   ) : (
                     <>
                       {/* SH-level users (shown only in All view, not when filtering by specific SH) */}
                       {selectedSHId === null && scaFilteredUsers.filter(u => u.role === 'SH').length > 0 && (
-                        <View style={styles.scaSHSection}>
-                          <Text style={styles.scaSHLabel}>National Heads (SH)</Text>
+                        <View style={[styles.scaSHSection, { borderColor: withAlpha(roleTint('SH', T), 0.35) }]}>
+                          <Text
+                            style={[
+                              styles.scaSHLabel,
+                              { color: roleTint('SH', T), backgroundColor: withAlpha(roleTint('SH', T), SOFT_TINT) },
+                            ]}
+                          >
+                            National Heads (SH)
+                          </Text>
                           {scaFilteredUsers.filter(u => u.role === 'SH').map(u => (
                             <PersonRow key={u.userId} user={u} onPress={handlePersonPress} />
                           ))}
@@ -1720,7 +2866,7 @@ export const LiveTrackingScreen = () => {
 
                       {/* Regional hierarchy */}
                       {buildRegionGroups(scaFilteredUsers.filter(u => u.role !== 'SH')).length === 0
-                        ? <EmptyState title="No users match" subtitle="Try adjusting the search or role filter." icon="🔍" />
+                        ? <Empty icon={<Users size={26} color={T.dim} strokeWidth={ICON_STROKE} />} title="No users match" subtitle="Try adjusting the search or role filter." />
                         : buildRegionGroups(scaFilteredUsers.filter(u => u.role !== 'SH')).map(g => (
                           <RegionGroupSection key={g.regionName} group={g} onPersonPress={handlePersonPress} />
                         ))
@@ -1735,54 +2881,279 @@ export const LiveTrackingScreen = () => {
         </ScrollView>
       )}
 
-      {/* ── Team User Picker Modal ── */}
-      <Modal visible={showTeamUserPicker} transparent animationType="slide" onRequestClose={() => setShowTeamUserPicker(false)}>
-        <View style={tfStyles.pickerOverlay}>
-          <View style={tfStyles.pickerSheet}>
-            <View style={tfStyles.pickerHeader}>
-              <Text style={tfStyles.pickerTitle}>Select User</Text>
-              <TouchableOpacity onPress={() => { setShowTeamUserPicker(false); setTeamUserSearch(''); }} hitSlop={10}>
-                <X size={20} color="#6B7280" />
+      {/* ── SCHOOL ASSIGNMENTS TAB ───────────────────────────────────────── */}
+      {activeTab === 'assignments' && (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, wide && styles.contentWide]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* iPad landscape: the assign form becomes a fixed 340pt rail on the left and
+              the assignments table takes the rest of the width. Both rails stretch to
+              the same height. On the phone they stack, unchanged. */}
+          <View style={[styles.mdBody, wide && styles.paneRow]}>
+          {/* Assign form */}
+          <View style={[nStyles.card, wide && styles.paneForm, { backgroundColor: T.card, borderColor: T.line }]}>
+            <Text style={[nStyles.cardTitle, { color: T.text, marginBottom: 12 }]}>
+              Assign Schools to Field Officer
+            </Text>
+
+            {/* FO picker */}
+            <Text style={[nStyles.label, { color: T.sub }]}>Field Officer</Text>
+            <TouchableOpacity
+              onPress={() => setShowFOPicker(true)}
+              style={[nStyles.selectBox, { backgroundColor: T.fieldBg, borderColor: T.line }]}
+            >
+              <Text
+                style={[nStyles.selectTxt, { color: selectedFO ? T.text : T.dim }]}
+                numberOfLines={1}
+              >
+                {selectedFO
+                  ? `${selectedFO.name} (${selectedFO.zone || selectedFO.region || 'FO'})`
+                  : 'Select FO'}
+              </Text>
+              <ChevronDown size={15} color={T.dim} />
+            </TouchableOpacity>
+
+            {/* Date */}
+            <View style={{ marginTop: 12 }}>
+              <DateInput
+                label="Assignment Date"
+                value={assignDate}
+                onChange={setAssignDate}
+                accentColor={T.accent}
+              />
+            </View>
+
+            {/* School multi-select */}
+            <Text style={[nStyles.label, { color: T.sub, marginTop: 4 }]}>Select Schools</Text>
+            <TouchableOpacity
+              onPress={() => setSchoolPickerOpen(true)}
+              style={[nStyles.selectBox, { backgroundColor: T.fieldBg, borderColor: T.line }]}
+            >
+              <Text
+                style={[nStyles.selectTxt, { color: selectedSchoolIds.length ? T.text : T.dim }]}
+                numberOfLines={1}
+              >
+                {selectedSchoolIds.length
+                  ? `${selectedSchoolIds.length} school(s) selected`
+                  : 'Tap to select schools…'}
+              </Text>
+              <ChevronRight size={15} color={T.dim} />
+            </TouchableOpacity>
+
+            {/* Selected pills with per-pill remove */}
+            {selectedSchoolIds.length > 0 && (
+              <View style={nStyles.pillWrap}>
+                {selectedSchoolIds.map((sid, idx) => (
+                  <FilterChip
+                    key={sid}
+                    label={`${idx + 1}. ${allSchools.find(s => s.id === sid)?.name ?? sid}`}
+                    onRemove={() => toggleSchoolSelection(sid)}
+                  />
+                ))}
+              </View>
+            )}
+
+            <Btn
+              label={assignSaving ? 'Assigning…' : `Assign ${selectedSchoolIds.length} School(s)`}
+              onPress={handleBulkAssign}
+              loading={assignSaving}
+              disabled={assignSaving || !assignFOId || selectedSchoolIds.length === 0}
+              icon={<Check size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+              style={{ marginTop: 14 }}
+            />
+            <Text style={[nStyles.hint, { color: T.dim }]}>
+              Existing schools for this FO and date are kept — new picks are added to the plan.
+            </Text>
+          </View>
+
+          {/* Team assignments table */}
+          <View style={[nStyles.card, wide && styles.pane, { backgroundColor: T.card, borderColor: T.line }]}>
+            <View style={nStyles.cardHead}>
+              <Text style={[nStyles.cardTitle, { color: T.text, flexShrink: 1, minWidth: 0 }]} numberOfLines={1}>
+                Team Assignments — {assignDate === toISODate(new Date()) ? 'Today' : assignDate}
+              </Text>
+              <TouchableOpacity onPress={fetchTeamAssignments} hitSlop={10} style={nStyles.refreshBtn}>
+                <RefreshCw size={13} color={T.sub} />
+                <Text style={[nStyles.refreshTxt, { color: T.sub }]}>Refresh</Text>
               </TouchableOpacity>
             </View>
-            <View style={tfStyles.pickerSearch}>
-              <TextInput
-                style={tfStyles.pickerSearchInput}
-                placeholder="Search name..."
-                placeholderTextColor="#9CA3AF"
-                value={teamUserSearch}
-                onChangeText={setTeamUserSearch}
-              />
-              {teamUserSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setTeamUserSearch('')}>
-                  <X size={14} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={scopedUsers.filter(u => !teamUserSearch || u.name.toLowerCase().includes(teamUserSearch.toLowerCase()))}
-              keyExtractor={item => String(item.userId)}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={tfStyles.pickerItem}
-                  onPress={() => { setSelectedTeamUser(item); setShowTeamUserPicker(false); setTeamUserSearch(''); }}
-                >
-                  <View style={[tfStyles.pickerAvatar, { backgroundColor: roleColor(item.role) }]}>
-                    <Text style={tfStyles.pickerAvatarText}>{initials(item.name)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={tfStyles.pickerItemName}>{item.name}</Text>
-                    <Text style={tfStyles.pickerItemSub}>{item.role}{item.zoneName ? ` · ${item.zoneName}` : ''}</Text>
-                  </View>
-                  <View style={[tfStyles.statusDot2, { backgroundColor: item.status === 'active' ? '#22C55E' : '#9CA3AF' }]} />
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={<Text style={tfStyles.pickerEmpty}>No users found</Text>}
-            />
+
+            {assignLoading ? (
+              <LoadingSpinner color={T.accent} />
+            ) : teamAssignments.length === 0 ? (
+              <View style={nStyles.empty}>
+                <SchoolIcon size={26} color={T.dim} />
+                <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No school assignments for this date</Text>
+              </View>
+            ) : (
+              renderTeamAssignments()
+            )}
           </View>
+          </View>
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      )}
+
+      {/* ── Vehicle Picker Modal (drives the allowance rate) ── */}
+      <FormModal
+        visible={showVehiclePicker}
+        title="Select Mode of Transport"
+        onClose={() => setShowVehiclePicker(false)}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowVehiclePicker(false)} style={{ flex: 1 }} />
+            <Btn
+              label={dayActionLoading ? 'Starting…' : 'Start My Day'}
+              onPress={handleStartDay}
+              loading={dayActionLoading}
+              disabled={dayActionLoading}
+              style={{ flex: 1 }}
+            />
+          </>
+        }
+      >
+        <Text style={[nStyles.hint, { color: T.sub, marginTop: 0, marginBottom: 12 }]}>
+          Your allowance rate will be set based on the vehicle you select.
+        </Text>
+        <View style={{ gap: 8 }}>
+          {VEHICLE_OPTIONS.map(v => {
+            const on = selectedVehicle === v.value;
+            return (
+              <TouchableOpacity
+                key={v.value}
+                onPress={() => setSelectedVehicle(v.value)}
+                style={[
+                  nStyles.vehicleRow,
+                  {
+                    backgroundColor: on ? T.accentSoft : T.fieldBg,
+                    borderColor: on ? T.accent : T.line,
+                  },
+                ]}
+              >
+                <Text style={nStyles.vehicleIcon}>{v.icon}</Text>
+                <Text
+                  style={[nStyles.vehicleLbl, { color: on ? T.accent : T.text }]}
+                  numberOfLines={1}
+                >
+                  {v.label}
+                </Text>
+                {on && <Check size={15} color={T.accent} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </Modal>
+      </FormModal>
+
+      {/* ── FO Picker Modal (role-grouped) ── */}
+      <FormModal visible={showFOPicker} title="Select Field Officer" onClose={() => setShowFOPicker(false)}>
+        <ScrollView style={{ maxHeight: 380 }} keyboardShouldPersistTaps="handled">
+          {foGroups.length === 0 && (
+            <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No assignable field officers</Text>
+          )}
+          {foGroups.map(([group, list]) => (
+            <View key={group} style={{ marginBottom: 10 }}>
+              <Text style={[nStyles.groupLbl, { color: T.dim }]}>{group.toUpperCase()}</Text>
+              {list.map(u => (
+                <TouchableOpacity
+                  key={u.id}
+                  onPress={() => { setAssignFOId(u.id); setShowFOPicker(false); }}
+                  style={[
+                    nStyles.pickRow,
+                    { borderBottomColor: T.line },
+                    assignFOId === u.id && { backgroundColor: T.accentSoft },
+                  ]}
+                >
+                  <Text style={[nStyles.pickTxt, { color: T.text }]} numberOfLines={1}>{u.name}</Text>
+                  {assignFOId === u.id && <Check size={15} color={T.accent} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
+      </FormModal>
+
+      {/* ── School Multi-Select Modal ── */}
+      <FormModal
+        visible={schoolPickerOpen}
+        title="Select Schools"
+        onClose={() => { setSchoolPickerOpen(false); setSchoolSearch(''); }}
+        footer={
+          <Btn
+            label="Done"
+            onPress={() => { setSchoolPickerOpen(false); setSchoolSearch(''); }}
+            style={{ flex: 1 }}
+          />
+        }
+      >
+        <SearchBar value={schoolSearch} onChangeText={setSchoolSearch} placeholder="Search schools…" />
+        <ScrollView style={{ maxHeight: 340, marginTop: 10 }} keyboardShouldPersistTaps="handled">
+          {filteredSchools.length === 0 ? (
+            <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No schools match your search</Text>
+          ) : (
+            filteredSchools.map(s => (
+              <View key={s.id} style={[nStyles.pickRow, { borderBottomColor: T.line }]}>
+                <Checkbox
+                  on={selectedSchoolIds.includes(s.id)}
+                  onToggle={() => toggleSchoolSelection(s.id)}
+                  label={s.name}
+                />
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </FormModal>
+
+      <ConfirmModal
+        visible={pendingDeleteId !== null}
+        title="Remove Assignment"
+        message="This school will be removed from the field officer's plan for this date."
+        icon={<Trash2 size={22} color={T.danger} />}
+        confirmLabel="Remove"
+        onConfirm={() => { if (pendingDeleteId !== null) handleDeleteAssignment(pendingDeleteId); }}
+        onCancel={() => setPendingDeleteId(null)}
+      />
+
+      {/* ── Team User Picker Modal — one modal idiom for the whole screen ── */}
+      <FormModal
+        visible={showTeamUserPicker}
+        title="Select User"
+        onClose={() => { setShowTeamUserPicker(false); setTeamUserSearch(''); }}
+      >
+        <SearchBar value={teamUserSearch} onChangeText={setTeamUserSearch} placeholder="Search name…" />
+        <ScrollView style={{ maxHeight: 340, marginTop: 10 }} keyboardShouldPersistTaps="handled">
+          {(() => {
+            const rows = scopedUsers.filter(
+              u => !teamUserSearch || u.name.toLowerCase().includes(teamUserSearch.toLowerCase()),
+            );
+            if (rows.length === 0) {
+              return <Text style={[nStyles.emptyTxt, { color: T.dim }]}>No users found</Text>;
+            }
+            return rows.map(item => (
+              <TouchableOpacity
+                key={item.userId}
+                style={[nStyles.pickRow, { borderBottomColor: T.line }]}
+                onPress={() => { setSelectedTeamUser(item); setShowTeamUserPicker(false); setTeamUserSearch(''); }}
+              >
+                <View style={[tfStyles.pickerAvatar, { backgroundColor: roleTint(item.role, T) }]}>
+                  <Text style={[tfStyles.pickerAvatarText, { color: T.onAccent }]}>{initials(item.name)}</Text>
+                </View>
+                <View style={{ flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+                  <Text style={[nStyles.pickTxt, { color: T.text }]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={[nStyles.stopCity, { color: T.dim }]} numberOfLines={1}>
+                    {item.role}{item.zoneName ? ` · ${item.zoneName}` : ''}
+                  </Text>
+                </View>
+                <View
+                  style={[tfStyles.statusDot2, { backgroundColor: item.status === 'active' ? T.success : T.dim }]}
+                />
+              </TouchableOpacity>
+            ));
+          })()}
+        </ScrollView>
+      </FormModal>
 
       <BackgroundLocationDisclosure
         visible={showBgDisclosure}
@@ -1796,200 +3167,376 @@ export const LiveTrackingScreen = () => {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 12 },
-  section: { padding: 16 },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827', marginBottom: 12 },
+  content: { padding: 14, gap: 12 },
+  /** iPad landscape gutters — matches SchoolsListScreen's `scrollWide`. */
+  contentWide: { paddingHorizontal: 22 },
 
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  /**
+   * Two-pane row for iPad landscape.
+   *
+   * `alignItems:'stretch'` + `flex:1` on each pane makes both cards exactly as tall
+   * as the taller one, so a short card never leaves dead space beside a long one
+   * (FODashboard.tsx:777). `flexWrap:'nowrap'` keeps the pair on one line — on the
+   * phone the same children render with no wrapper style at all and simply stack.
+   */
+  paneRow: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'stretch', gap: 12 },
+  /**
+   * Phone fallbacks for the pane wrappers. `content` sets gap:12 on the ScrollView's
+   * direct children only, so once cards live one level deeper each wrapper has to
+   * carry the same gap or the stacked phone layout loses all its spacing.
+   */
+  mdBody: { gap: 12 },
+  mdCol: { gap: 12 },
+  pane: { flex: 1, minWidth: 0 },
+  /** The assign form is a fixed-width rail; the table takes whatever is left. */
+  paneForm: { width: 340, flexGrow: 0, flexShrink: 0 },
+
+  /**
+   * Landscape map overlays. Both bars keep their left edge and are capped rather
+   * than stretched across the full iPad width, which otherwise leaves a Segmented
+   * control almost a metre wide.
+   */
+  mapOverlayWide: { maxWidth: 520 },
+
+  // Tab bar — .seg geometry (track radius 12 / pad 4, cell h32 radius 9)
+  tabBar: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1 },
+  tabTrack: { flexDirection: 'row', gap: 4, padding: 4, borderRadius: 12 },
   tab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 13, borderBottomWidth: 2, borderBottomColor: 'transparent', gap: 5,
+    height: 32, borderRadius: 9, gap: 5, paddingHorizontal: 4, minWidth: 0,
   },
-  tabText: { fontSize: rf(13), fontWeight: '600', color: '#9CA3AF' },
+  tabText: { fontSize: rf(12), fontWeight: '700', flexShrink: 1, minWidth: 0, textAlign: 'center' },
   tabBadge: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  tabBadgeText: { fontSize: rf(10), fontWeight: '700', color: '#FFF' },
+  tabBadgeText: { fontSize: rf(10), fontWeight: '700' },
 
-  // Map overlay
+  // Map overlays
   mapFilterRow: { position: 'absolute', top: 12, left: 12, right: 12, zIndex: 20 },
-  mapChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3, elevation: 3,
-  },
-  mapChipText: { fontSize: rf(12), fontWeight: '700', color: '#374151' },
   mapCountBadge: {
     position: 'absolute', bottom: 16, left: 16,
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3, elevation: 3,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 14, borderWidth: 1,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3, elevation: 3,
     zIndex: 10,
   },
-  mapCountText: { fontSize: rf(12), fontWeight: '600', color: '#6B7280' },
+  mapCountText: { fontSize: rf(12), fontWeight: '600' },
   mapEmptyHint: {
-    position: 'absolute', top: '40%', left: 0, right: 0,
-    alignItems: 'center', justifyContent: 'center', zIndex: 5,
+    position: 'absolute', top: '38%', left: 0, right: 0,
+    alignItems: 'center', justifyContent: 'center', zIndex: 5, paddingHorizontal: 24,
   },
-  mapEmptyIcon: { fontSize: 36, marginBottom: 8 },
-  mapEmptyTitle: { fontSize: rf(15), fontWeight: '700', color: '#374151', marginBottom: 4 },
-  mapEmptySubtitle: { fontSize: rf(12), color: '#9CA3AF', fontWeight: '500' },
+  mapEmptyCard: {
+    alignItems: 'center', gap: 6, paddingVertical: 20, paddingHorizontal: 24,
+    borderRadius: 16, borderWidth: 1,
+  },
+  mapEmptyTitle: { fontSize: rf(15), fontWeight: '700', textAlign: 'center' },
+  mapEmptySubtitle: { fontSize: rf(12), fontWeight: '500', textAlign: 'center' },
 
   // Info sheet
   infoSheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#FFF', borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, elevation: 14,
     paddingBottom: 14, zIndex: 15,
   },
+  /**
+   * iPad landscape: the marker detail becomes a floating right-hand panel instead of
+   * a full-bleed bottom sheet — a 1000pt-wide sheet holding three small tiles is all
+   * dead space, and it buries the map. Declared as a separate object (not an override
+   * of `infoSheet`) so no `undefined` has to unset left/right.
+   */
+  infoSheetWide: {
+    position: 'absolute', bottom: 16, right: 16, width: 360, maxWidth: '46%',
+    borderRadius: 20, borderWidth: 1,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, elevation: 14,
+    paddingBottom: 14, zIndex: 15,
+  },
   infoHandle: {
-    width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2,
+    width: 36, height: 4, borderRadius: 2,
     alignSelf: 'center', marginTop: 10, marginBottom: 8,
   },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingBottom: 10, gap: 12 },
-  infoAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  infoAvatarText: { fontSize: rf(14), fontWeight: '800', color: '#FFF' },
-  infoName: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  infoAvatar: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  infoAvatarText: { fontSize: rf(14), fontWeight: '800' },
+  infoName: { fontSize: rf(15), fontWeight: '700' },
   infoMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  infoSub: { fontSize: rf(12), color: '#9CA3AF' },
-  infoStats: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 12 },
-  infoStat: { flex: 1, backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10, alignItems: 'center', gap: 3 },
-  infoStatVal: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  infoStatLbl: { fontSize: rf(10), color: '#9CA3AF', fontWeight: '500' },
-  infoStatCurr: { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  infoSub: { fontSize: rf(12), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+  // alignItems:'stretch' so the three tiles are the same height whatever they hold.
+  infoStats: { flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: 16, gap: 8, marginBottom: 12 },
+  infoStat: { flex: 1, minWidth: 0, borderRadius: 11, padding: 10, alignItems: 'center', gap: 3 },
+  infoStatVal: { fontSize: rf(12), fontWeight: '700', textAlign: 'center' },
+  infoStatLbl: { fontSize: rf(10), fontWeight: '500', textAlign: 'center' },
   infoTrackBtn: { marginHorizontal: 16 },
 
   // Team tab
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  summaryText: { fontSize: rf(13), color: '#6B7280', fontWeight: '500' },
-  summaryHint: { fontSize: rf(11), color: '#D1D5DB', fontWeight: '500', marginLeft: 'auto' },
-  listCard: { backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
-  emptyListText: { fontSize: rf(13), color: '#9CA3AF', textAlign: 'center', padding: 20 },
+  summaryText: { fontSize: rf(13), fontWeight: '500' },
+  summaryHint: { fontSize: rf(11), fontWeight: '500', marginLeft: 'auto' },
+  listCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  emptyListText: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', padding: 20 },
 
-  // Allowances
-  // SCA-specific styles
-  scaSearchBar: { paddingHorizontal: 12, paddingVertical: 8 },
-  scaSearchInput: {
-    backgroundColor: '#FFF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
-    fontSize: rf(14), color: '#111827', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  scaRoleRow: { paddingHorizontal: 12, paddingBottom: 10, gap: 8 },
-  scaRoleChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: '#E5E7EB',
-  },
-  scaRoleText: { fontSize: rf(12), fontWeight: '700', color: '#374151' },
-  scaSHSection: {
-    marginHorizontal: 12, marginBottom: 10,
-    borderRadius: 12, borderWidth: 1, borderColor: '#E11D4844', overflow: 'hidden',
-  },
+  // SCA-specific blocks
+  scaSHSection: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   scaSHLabel: {
-    fontSize: rf(12), fontWeight: '700', color: '#E11D48',
-    backgroundColor: '#FFF1F2', paddingHorizontal: 14, paddingVertical: 8,
+    fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4,
+    paddingHorizontal: 14, paddingVertical: 8, textTransform: 'uppercase',
   },
-  // SH filter chips (SCA view)
-  scaSHFilterBlock: {
-    marginHorizontal: 12, marginBottom: 8,
-    backgroundColor: '#F8FAFF', borderRadius: 12,
-    borderWidth: 1, borderColor: '#E0E7FF', padding: 10,
+  scaSHFilterBlock: { borderRadius: 16, borderWidth: 1, padding: 12 },
+  scaSHFilterLabel: {
+    fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4,
+    marginBottom: 8, textTransform: 'uppercase',
   },
-  scaSHFilterLabel: { fontSize: rf(11), fontWeight: '700', color: '#6B7280', marginBottom: 8 },
   scaSHFilterRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
   scaSHChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: '#E5E7EB',
+    paddingHorizontal: 12, height: 28, borderRadius: 14, borderWidth: 1,
   },
   scaSHChipDot: { width: 7, height: 7, borderRadius: 3.5 },
-  scaSHChipText: { fontSize: rf(12), fontWeight: '600', color: '#374151', maxWidth: 100 },
+  scaSHChipText: { fontSize: rf(12), fontWeight: '600', maxWidth: 110, flexShrink: 1, minWidth: 0 },
   scaSHSelectedBanner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E0E7FF',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    marginTop: 8, paddingTop: 8, borderTopWidth: 1,
   },
-  scaSHSelectedText: { fontSize: rf(11), color: '#4B5563', fontWeight: '500', flex: 1 },
+  scaSHSelectedText: { fontSize: rf(11), fontWeight: '500', flexShrink: 1, minWidth: 0, flexGrow: 1 },
 });
 
 // ─── My Day styles ────────────────────────────────────────────────────────────
 const mdStyles = StyleSheet.create({
   permBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FEF2F2', borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: '#FECACA', marginBottom: 4,
+    borderRadius: 14, padding: 14, borderWidth: 1,
   },
-  permTitle: { fontSize: rf(13), fontWeight: '700', color: '#DC2626' },
-  permSub: { fontSize: rf(11), color: '#991B1B', marginTop: 2 },
-  permAction: { fontSize: rf(12), fontWeight: '700', color: '#DC2626', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  cardTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  cardDate: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  btnRow: { flexDirection: 'row', gap: 8 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
-  actionBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
-  endedBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10, marginBottom: 12 },
-  endedText: { fontSize: rf(12), fontWeight: '600', color: '#22C55E' },
-  fraudBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10, marginBottom: 12 },
-  fraudText: { fontSize: rf(12), fontWeight: '600', color: '#DC2626' },
-  statsGrid: { flexDirection: 'row', gap: 10 },
-  statBox: { flex: 1, backgroundColor: '#F0FDF9', borderRadius: 12, padding: 12, alignItems: 'center', gap: 5 },
-  statVal: { fontSize: rf(15), fontWeight: '800', color: '#134E4A' },
-  statLbl: { fontSize: rf(10), color: '#0D9488', fontWeight: '600', textAlign: 'center' },
+  permTitle: { fontSize: rf(13), fontWeight: '700' },
+  permSub: { fontSize: rf(11), fontWeight: '500', marginTop: 2 },
+  permAction: {
+    fontSize: rf(12), fontWeight: '700',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9, overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    gap: 10, marginBottom: 14, flexWrap: 'wrap',
+  },
+  cardDate: { fontSize: rf(12), fontWeight: '500', marginTop: 2 },
+  btnRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  banner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 11, padding: 10, marginBottom: 12,
+  },
+  bannerTxt: { fontSize: rf(12), fontWeight: '600' },
+  // Equal-height tiles: stretch, and every cell fills the row height.
+  statsGrid: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
+  statBox: {
+    flex: 1, minWidth: 0, borderRadius: 13, padding: 12,
+    alignItems: 'center', justifyContent: 'flex-start', gap: 5,
+  },
+  statVal: { fontSize: rf(15), fontWeight: '800', textAlign: 'center' },
+  statLbl: { fontSize: rf(10), fontWeight: '600', textAlign: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   historyHeader: { marginBottom: 12 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
-  dateChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 18, backgroundColor: '#F3F4F6' },
-  dateChipText: { fontSize: rf(11), fontWeight: '600', color: '#374151' },
-  historyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  histItem: { width: '47%', backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12 },
-  histLbl: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500', marginBottom: 4 },
-  histVal: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  emptyHist: { alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
-  emptyHistText: { fontSize: rf(13), color: '#9CA3AF' },
+  dateChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1 },
+  dateChipText: { fontSize: rf(11), fontWeight: '600' },
+  historyGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 8 },
+  histItem: { flexGrow: 1, flexBasis: '47%', minWidth: 0, borderRadius: 11, padding: 12 },
+  histLbl: { fontSize: rf(11), fontWeight: '500', marginBottom: 4 },
+  histVal: { fontSize: rf(14), fontWeight: '700' },
 });
 
 // ─── Team Filter styles ────────────────────────────────────────────────────────
 const tfStyles = StyleSheet.create({
   // Filter bar
-  filterCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', gap: 10 },
+  filterCard: { borderRadius: 16, padding: 12, borderWidth: 1, gap: 10 },
   userSelector: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#F9FAFB',
+    borderWidth: 1.5, borderRadius: 13, height: 46, paddingHorizontal: 14,
   },
-  userSelectorLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
-  userSelectorValue: { flex: 1, fontSize: rf(13), color: '#111827', fontWeight: '500' },
-  dateRefreshRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
-  refreshText: { fontSize: rf(12), fontWeight: '700' },
+  userSelectorLabel: { fontSize: rf(12.5), fontWeight: '600' },
+  // flexShrink:1 + minWidth:0 — a long user name must ellipsise, not cover the chevron.
+  userSelectorValue: { flexShrink: 1, minWidth: 0, flexGrow: 1, fontSize: rf(13), fontWeight: '500' },
+  dateRefreshRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
 
   // Selected user stats card
-  statsCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
+  statsCard: { borderRadius: 16, padding: 12, borderWidth: 1, gap: 12 },
   statsCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statsAvatar: { width: 44, height: 44, borderRadius: 22 },
-  statsAvatarText: { fontSize: rf(14), fontWeight: '800', color: '#FFF' },
-  statsName: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 4 },
-  statusChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100, alignSelf: 'flex-start' },
-  statusChipText: { fontSize: rf(11), fontWeight: '700' },
-  statsRow: { flexDirection: 'row', gap: 12 },
-  statsRowSecond: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statItem: { flex: 1 },
-  statLabel: { fontSize: rf(11), color: '#9CA3AF', fontWeight: '500', marginBottom: 3 },
-  statValue: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  viewRouteBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  viewRouteBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
+  statsAvatar: { width: 44, height: 44, borderRadius: 13 },
+  statsAvatarText: { fontSize: rf(14), fontWeight: '800' },
+  statsName: { fontSize: rf(14), fontWeight: '700' },
+  statsRow: { flexDirection: 'row', alignItems: 'stretch', gap: 12 },
+  statsRowSecond: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  statItem: { flexShrink: 1, minWidth: 0, flexGrow: 1, flexBasis: 0 },
+  statLabel: { fontSize: rf(11), fontWeight: '500', marginBottom: 3 },
+  statValue: { fontSize: rf(14), fontWeight: '700' },
 
-  // Picker modal
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  pickerSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '70%' },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  pickerTitle: { fontSize: rf(16), fontWeight: '700', color: '#111827' },
-  pickerSearch: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-  pickerSearchInput: { flex: 1, fontSize: rf(14), color: '#111827' },
-  pickerItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  pickerAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  pickerAvatarText: { fontSize: rf(12), fontWeight: '800', color: '#FFF' },
-  pickerItemName: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  pickerItemSub: { fontSize: rf(11), color: '#9CA3AF', marginTop: 2 },
+  // Picker rows
+  pickerAvatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  pickerAvatarText: { fontSize: rf(12), fontWeight: '800' },
   statusDot2: { width: 9, height: 9, borderRadius: 4.5 },
-  pickerEmpty: { textAlign: 'center', padding: 32, fontSize: rf(14), color: '#9CA3AF' },
+});
+
+/**
+ * Styles for the parity work added on top of the original screen. These are
+ * theme-driven: every colour is applied inline from useAppTheme() tokens at the
+ * call site, so nothing here hardcodes a hex.
+ */
+const nStyles = StyleSheet.create({
+  // No marginBottom — every list that holds these cards sets its own `gap`.
+  card: { borderRadius: 16, borderWidth: 1, padding: 14 },
+
+  stateCard: {
+    borderRadius: 16, borderWidth: 1, padding: 24,
+    alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  stateTitle: { fontSize: rf(15), fontWeight: '700', textAlign: 'center' },
+  stateTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: 18 },
+
+  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
+  cardHeadLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0 },
+  cardTitle: { fontSize: rf(14), fontWeight: '700' },
+  label: { fontSize: rf(12), fontWeight: '600', marginBottom: 6 },
+  hint: { fontSize: rf(11), fontWeight: '400', marginTop: 8, lineHeight: 16 },
+
+  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5 },
+  refreshTxt: { fontSize: rf(11), fontWeight: '600' },
+
+  selectBox: {
+    height: 46, borderWidth: 1.5, borderRadius: 13, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+  },
+  // flexShrink:1 + minWidth:0 — without both, a long school/FO name paints straight
+  // over the chevron instead of ellipsising.
+  selectTxt: { fontSize: rf(14), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+
+  pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+
+  empty: { alignItems: 'center', paddingVertical: 26, gap: 8 },
+  emptyTxt: { fontSize: rf(13), fontWeight: '500', textAlign: 'center' },
+
+  groupLbl: { fontSize: rf(10), fontWeight: '700', letterSpacing: 0.6, marginBottom: 4, marginTop: 4 },
+  pickRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 8, paddingVertical: 11, paddingHorizontal: 4, borderBottomWidth: 1,
+  },
+  pickTxt: { fontSize: rf(14), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+
+  vehicleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 13, borderWidth: 2,
+  },
+  vehicleIcon: { fontSize: rf(18) },
+  vehicleLbl: { fontSize: rf(13), fontWeight: '600', flexShrink: 1, minWidth: 0 },
+
+  breakdown: { borderTopWidth: 1, marginTop: 12, paddingTop: 12 },
+  breakdownTitle: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },
+  breakdownRow: { flexDirection: 'row', gap: 8 },
+  breakdownItem: { flex: 1, alignItems: 'center', gap: 2 },
+  breakdownVal: { fontSize: rf(13), fontWeight: '700' },
+  breakdownLbl: { fontSize: rf(10), fontWeight: '500', textAlign: 'center' },
+
+  progressWrap: { marginBottom: 12 },
+  progressLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  progressLbl: { fontSize: rf(12), fontWeight: '600' },
+  progressPct: { fontSize: rf(12), fontWeight: '700' },
+  progressTrack: { height: 7, borderRadius: 4, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 4 },
+
+  routeStatRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 14, marginBottom: 10 },
+  routeStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  routeStatVal: { fontSize: rf(13), fontWeight: '700' },
+  routeStatLbl: { fontSize: rf(11), fontWeight: '500' },
+
+  routeNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10,
+  },
+  // flexShrink:1 + minWidth:0 so a long error_message wraps instead of pushing Retry off-screen
+  routeNoticeBody: { flexShrink: 1, minWidth: 0, flexGrow: 1 },
+  routeNoticeTxt: { fontSize: rf(11.5), fontWeight: '600', flexShrink: 1 },
+  routeNoticeDetail: { fontSize: rf(10.5), fontWeight: '400', marginTop: 2, lineHeight: 14 },
+  routeNoticeRetry: { fontSize: rf(11.5), fontWeight: '700' },
+
+  routeMapWrap: { height: 180, borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  routeMapWrapWide: { height: 300 },
+
+  stopRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderRadius: 13, paddingHorizontal: 10, paddingVertical: 9,
+  },
+  stopOrder: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  stopOrderTxt: { fontSize: rf(12), fontWeight: '700' },
+  stopBody: { flexShrink: 1, minWidth: 0, flexGrow: 1 },
+  stopName: { fontSize: rf(13), fontWeight: '600' },
+  stopCity: { fontSize: rf(11), fontWeight: '400', marginTop: 1 },
+  reportBtn: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+
+  // ── Team Last Locations ──
+  tblSubtitle: { fontSize: rf(11), fontWeight: '400', marginTop: 1 },
+  tbl: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  tr: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12 },
+  th: { fontSize: rf(10.5), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(12.5), fontWeight: '500' },
+  tdMono: { fontSize: rf(11.5), fontWeight: '500' },
+  tdName: { fontSize: rf(13), fontWeight: '700' },
+  tdSub: { fontSize: rf(11), fontWeight: '500', marginTop: 1 },
+  teamNameCell: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  /** Any <Text> living inside a flex cell, so it ellipsises instead of pushing. */
+  cellText: { flexShrink: 1, minWidth: 0 },
+
+  /**
+   * Column bases. Each constant is applied to BOTH the header <Text> and the body
+   * cell, so the two can never drift apart.
+   *
+   * `flexShrink:1, minWidth:0` is mandatory on every flexible cell: flexShrink
+   * defaults to 0 in RN, so a long value (a full name, a lat/lon pair) refuses to
+   * shrink below its content width and shoves every column after it out of
+   * alignment. The fixed-width action column deliberately keeps the RN default of
+   * flexShrink:0 — it must stay exactly 118 wide so the buttons line up.
+   */
+  cTeamName: { flex: 2, flexShrink: 1, minWidth: 0 },
+  cTeamRole: { flex: 0.9, flexShrink: 1, minWidth: 0 },
+  cTeamStatus: { flex: 1.1, flexShrink: 1, minWidth: 0 },
+  cTeamSeen: { flex: 1.1, flexShrink: 1, minWidth: 0 },
+  cTeamLoc: { flex: 1.6, flexShrink: 1, minWidth: 0 },
+  cTeamDist: { flex: 0.9, flexShrink: 1, minWidth: 0 },
+  cTeamActions: { width: 118 },
+
+  // ── Team Assignments table (iPad) ──
+  cAsgOrder: { width: 40 },
+  cAsgSchool: { flex: 2.2, flexShrink: 1, minWidth: 0 },
+  cAsgFo: { flex: 1.4, flexShrink: 1, minWidth: 0 },
+  cAsgCity: { flex: 1.2, flexShrink: 1, minWidth: 0 },
+  cAsgTime: { flex: 0.8, flexShrink: 1, minWidth: 0 },
+  cAsgStatus: { flex: 1, flexShrink: 1, minWidth: 0 },
+  cAsgActions: { width: 44 },
+
+  pgRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 10, flexWrap: 'wrap', marginTop: 12,
+  },
+  pgCount: { fontSize: rf(11.5), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+
+  teamAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  teamAvatarTxt: { fontSize: rf(11), fontWeight: '700' },
+
+  viewRouteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 6, alignSelf: 'flex-start',
+  },
+  viewRouteTxt: { fontSize: rf(11), fontWeight: '700' },
+
+  teamCard: { borderWidth: 1, borderRadius: 13, padding: 10, gap: 9 },
+  teamCardTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  teamCardMeta: { flexDirection: 'row', gap: 10 },
+  teamMetaItem: { flex: 1, minWidth: 0 },
+  teamMetaLbl: { fontSize: rf(10), fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  teamMetaVal: { fontSize: rf(12.5), fontWeight: '600', marginTop: 1 },
+  teamCardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+
+  mapKindBar: {
+    position: 'absolute', top: 58, left: 12, right: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5,
+    zIndex: 20,
+  },
+  mapKindChip: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9 },
+  mapKindTxt: { fontSize: rf(11), fontWeight: '600' },
 });

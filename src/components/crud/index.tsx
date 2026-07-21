@@ -14,7 +14,7 @@ import {
   TextStyle,
   TextInputProps,
 } from 'react-native';
-import { Check, ChevronLeft, ChevronRight, X, Search as SearchIcon } from 'lucide-react-native';
+import { Check, ChevronLeft, ChevronRight, ChevronDown, X, Search as SearchIcon } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
 import { GradientBackground } from '../common/GradientBackground';
@@ -235,7 +235,13 @@ export const Trigger = ({ label, open, onPress, icon, style }: {
       style={[s.trigger, { backgroundColor: T.card, borderColor: open ? T.accent : T.line }, style]}
     >
       {icon}
-      <Text style={[s.triggerTxt, { color: T.text }]}>{label}</Text>
+      {/* flex:1 so the label fills the row and pushes the chevron to the far right. */}
+      <Text style={[s.triggerTxt, { color: T.text }]} numberOfLines={1}>{label}</Text>
+      {/* Static down-chevron — the affordance that says "this opens a list". It does
+          NOT rotate: a transform on the icon flickered/mis-painted on first render and
+          only settled after a re-render, so it stays fixed like a real select. Only the
+          colour tracks the open state, matching the border. */}
+      <ChevronDown size={16} color={open ? T.accent : T.dim} strokeWidth={2.2} />
     </TouchableOpacity>
   );
 };
@@ -478,7 +484,9 @@ const s = StyleSheet.create({
     height: 44, borderRadius: 13, borderWidth: 1,
     flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14,
   },
-  triggerTxt: { fontSize: rf(13), fontWeight: '600' },
+  // flex:1 + minWidth:0 so a long label truncates instead of shoving the chevron
+  // off the right edge (flexShrink defaults to 0 in RN).
+  triggerTxt: { fontSize: rf(13), fontWeight: '600', flex: 1, minWidth: 0 },
   dd: {
     width: 200, borderRadius: 14, borderWidth: 1, padding: 6, marginTop: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.15, shadowRadius: 40, elevation: 12,

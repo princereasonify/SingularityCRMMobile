@@ -16,7 +16,7 @@ import { DateInput } from '../../components/common/DateInput';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, IconBtn, Field, Segmented, Trigger, Dropdown,
-  StatusBadge, FilterChip, Pagination, Avatar, FormModal, ConfirmModal,
+  StatusBadge, FilterChip, Pagination, ListCard, Avatar, FormModal, ConfirmModal,
 } from '../../components/crud';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -293,27 +293,61 @@ function RejectModal({ onClose, onReject, rejecting }: {
   );
 }
 
-// ─── Leave card ───────────────────────────────────────────────────────────────
-function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: {
-  leave: any; isTeam: boolean;
-  onCancel: (id: number) => void; onApprove: (l: any) => void; onReject: (id: number) => void;
+/** A leave is cancellable while it is still upcoming and not already closed. */
+const isCancellable = (leave: any) =>
+  ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
+  new Date(leave.leaveDate) >= new Date(getToday());
+
+// ─── Expanded detail — shared verbatim by the iPad table row and the phone row ─
+function LeaveDetail({ leave }: { leave: any }) {
+  const T = useAppTheme();
+  return (
+    <View style={[s.expanded, { borderTopColor: T.line }]}>
+      {!!leave.coverArrangement && (
+        <Text style={[s.expTxt, { color: T.sub }]}>
+          <Text style={[s.expLabel, { color: T.text }]}>Cover: </Text>{leave.coverArrangement}
+        </Text>
+      )}
+      {!!leave.actionedByName && (
+        <Text style={[s.expTxt, { color: T.sub }]}>
+          <Text style={[s.expLabel, { color: T.text }]}>
+            {leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by:{' '}
+          </Text>
+          {leave.actionedByName}
+          {leave.actionedAt ? ` on ${new Date(leave.actionedAt).toLocaleDateString('en-IN')}` : ''}
+        </Text>
+      )}
+      {!!leave.rejectionReason && (
+        <Text style={[s.expTxt, { color: T.danger }]}>
+          <Text style={[s.expLabel, { color: T.danger }]}>Rejection reason: </Text>{leave.rejectionReason}
+        </Text>
+      )}
+      {!!leave.planImpactMessage && (
+        <View style={[s.impact, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
+          <AlertTriangle size={13} color={T.warning} strokeWidth={ICON_STROKE} />
+          <Text style={[s.impactTxt, { color: T.warning }]}>{leave.planImpactMessage}</Text>
+        </View>
+      )}
+      <Text style={[s.applied, { color: T.dim }]}>Applied: {fmtApplied(leave.createdAt)}</Text>
+    </View>
+  );
+}
+
+// ─── Phone list row (kit ListCard, column layout so the detail can drop below) ─
+function LeaveRow({ leave, isTeam, actions }: {
+  leave: any; isTeam: boolean; actions: React.ReactNode;
 }) {
   const T = useAppTheme();
   const [expanded, setExpanded] = useState(false);
 
   const sc = statusToken(T, leave.status);
   const cc = categoryToken(T, leave.leaveCategory);
-  const canCancel =
-    ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
-    new Date(leave.leaveDate) >= new Date(getToday());
-
   const d = new Date(leave.leaveDate);
 
   return (
-    <View
+    <ListCard
       style={[
-        s.lcard,
-        { backgroundColor: T.card, borderColor: T.line },
+        s.rowCard,
         // Web left-borders pending team rows in amber; mirrored with the warning token.
         isTeam && leave.status === 'Pending' && { borderLeftWidth: 3, borderLeftColor: T.warning },
       ]}
@@ -333,7 +367,7 @@ function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: {
           </View>
         )}
 
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           {isTeam && (
             <Text style={[s.lname, { color: T.text }]} numberOfLines={1}>
               {leave.userName}
@@ -356,57 +390,69 @@ function LeaveCard({ leave, isTeam, onCancel, onApprove, onReject }: {
         </View>
 
         <View style={s.lactions}>
-          {isTeam && leave.status === 'Pending' && (
-            <>
-              <IconBtn kind="view" label="Approve" onPress={() => onApprove(leave)}>
-                <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
-              </IconBtn>
-              <IconBtn kind="del" label="Reject" onPress={() => onReject(leave.id)}>
-                <X size={14} color={T.danger} strokeWidth={ICON_STROKE} />
-              </IconBtn>
-            </>
-          )}
-          {!isTeam && canCancel && (
-            <IconBtn kind="del" label="Cancel leave" onPress={() => onCancel(leave.id)}>
-              <Ban size={13} color={T.danger} strokeWidth={ICON_STROKE} />
-            </IconBtn>
-          )}
+          {actions}
           {expanded
             ? <ChevronUp size={16} color={T.dim} strokeWidth={ICON_STROKE} />
             : <ChevronDown size={16} color={T.dim} strokeWidth={ICON_STROKE} />}
         </View>
       </TouchableOpacity>
 
-      {expanded && (
-        <View style={[s.expanded, { borderTopColor: T.line }]}>
-          {!!leave.coverArrangement && (
-            <Text style={[s.expTxt, { color: T.sub }]}>
-              <Text style={[s.expLabel, { color: T.text }]}>Cover: </Text>{leave.coverArrangement}
-            </Text>
-          )}
-          {!!leave.actionedByName && (
-            <Text style={[s.expTxt, { color: T.sub }]}>
-              <Text style={[s.expLabel, { color: T.text }]}>
-                {leave.status === 'Rejected' ? 'Rejected' : 'Approved'} by:{' '}
-              </Text>
-              {leave.actionedByName}
-              {leave.actionedAt ? ` on ${new Date(leave.actionedAt).toLocaleDateString('en-IN')}` : ''}
-            </Text>
-          )}
-          {!!leave.rejectionReason && (
-            <Text style={[s.expTxt, { color: T.danger }]}>
-              <Text style={[s.expLabel, { color: T.danger }]}>Rejection reason: </Text>{leave.rejectionReason}
-            </Text>
-          )}
-          {!!leave.planImpactMessage && (
-            <View style={[s.impact, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
-              <AlertTriangle size={13} color={T.warning} strokeWidth={ICON_STROKE} />
-              <Text style={[s.impactTxt, { color: T.warning }]}>{leave.planImpactMessage}</Text>
+      {expanded && <LeaveDetail leave={leave} />}
+    </ListCard>
+  );
+}
+
+// ─── iPad table row ───────────────────────────────────────────────────────────
+function LeaveTableRow({ leave, isTeam, actions }: {
+  leave: any; isTeam: boolean; actions: React.ReactNode;
+}) {
+  const T = useAppTheme();
+  const [expanded, setExpanded] = useState(false);
+
+  const sc = statusToken(T, leave.status);
+  const cc = categoryToken(T, leave.leaveCategory);
+
+  return (
+    <View style={{ borderTopColor: T.line, borderTopWidth: 1 }}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => setExpanded(e => !e)}
+        style={[
+          s.tr,
+          isTeam && leave.status === 'Pending' && { borderLeftColor: T.warning },
+        ]}
+      >
+        {isTeam && (
+          <View style={[s.cEmp, s.nameCell]}>
+            <Avatar initials={initialsOf(leave.userName)} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>{leave.userName || DASH}</Text>
+              {!!leave.userRole && (
+                <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>{leave.userRole}</Text>
+              )}
             </View>
-          )}
-          <Text style={[s.applied, { color: T.dim }]}>Applied: {fmtApplied(leave.createdAt)}</Text>
+          </View>
+        )}
+        <Text style={[s.td, { color: T.sub }, s.cDate]} numberOfLines={1}>{fmtDate(leave.leaveDate)}</Text>
+        <Text style={[s.td, { color: T.sub }, s.cType]} numberOfLines={1}>{typeLabel(leave.leaveType)}</Text>
+        <View style={s.cCat}>
+          <StatusBadge label={leave.leaveCategory || DASH} color={cc} />
         </View>
-      )}
+        <View style={s.cStatus}>
+          <StatusBadge label={statusLabel(leave.status)} color={sc} />
+        </View>
+        <Text style={[s.td, { color: T.sub }, s.cReason]} numberOfLines={2}>{leave.reason || DASH}</Text>
+        <View style={s.cAct}>
+          <View style={s.actions}>
+            {actions}
+            {expanded
+              ? <ChevronUp size={16} color={T.dim} strokeWidth={ICON_STROKE} />
+              : <ChevronDown size={16} color={T.dim} strokeWidth={ICON_STROKE} />}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {expanded && <LeaveDetail leave={leave} />}
     </View>
   );
 }
@@ -417,6 +463,8 @@ export const LeaveManagementScreen = () => {
   const T = useAppTheme();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  /** iPad always gets the real table — never a card grid. Phones get kit list rows. */
+  const table = isTabletDevice;
 
   const role = user?.role || 'FO';
   /** Web: `const isManager = user?.role !== 'FO'`. Matched exactly — never narrow this. */
@@ -591,6 +639,55 @@ export const LeaveManagementScreen = () => {
       : null,
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
+  // ── row actions (identical on table and list rows) ──
+  const rowActions = (leave: any) => (
+    <>
+      {isTeam && leave.status === 'Pending' && (
+        <>
+          <IconBtn kind="view" label="Approve" onPress={() => setApproveTarget(leave)}>
+            <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+          <IconBtn kind="del" label="Reject" onPress={() => setRejectId(leave.id)}>
+            <X size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+          </IconBtn>
+        </>
+      )}
+      {!isTeam && isCancellable(leave) && (
+        <IconBtn kind="del" label="Cancel leave" onPress={() => setCancelId(leave.id)}>
+          <Ban size={13} color={T.danger} strokeWidth={ICON_STROKE} />
+        </IconBtn>
+      )}
+    </>
+  );
+
+  // ── table (tablet) ──
+  const renderTable = () => (
+    <View style={[s.tbl, { backgroundColor: T.card, borderColor: T.line }]}>
+      <View style={[s.tr, { backgroundColor: T.cardAlt }]}>
+        {isTeam && <Text style={[s.th, { color: T.dim }, s.cEmp]}>Employee</Text>}
+        <Text style={[s.th, { color: T.dim }, s.cDate]}>Leave Date</Text>
+        <Text style={[s.th, { color: T.dim }, s.cType]}>Type</Text>
+        <Text style={[s.th, { color: T.dim }, s.cCat]}>Category</Text>
+        <Text style={[s.th, { color: T.dim }, s.cStatus]}>Status</Text>
+        <Text style={[s.th, { color: T.dim }, s.cReason]}>Reason</Text>
+        <Text style={[s.th, { color: T.dim }, s.cAct]}>Actions</Text>
+      </View>
+
+      {rows.map(l => (
+        <LeaveTableRow key={l.id} leave={l} isTeam={isTeam} actions={rowActions(l)} />
+      ))}
+    </View>
+  );
+
+  // ── list rows (phone) ──
+  const renderRows = () => (
+    <View style={{ gap: 10 }}>
+      {rows.map(l => (
+        <LeaveRow key={l.id} leave={l} isTeam={isTeam} actions={rowActions(l)} />
+      ))}
+    </View>
+  );
+
   const renderBody = () => {
     if (loading) return <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />;
     if (error !== 'none') {
@@ -627,22 +724,7 @@ export const LeaveManagementScreen = () => {
     }
     return (
       <>
-        {/* Full-width rows on every size. The old two-up grid left a card at ~48%
-            with dead space beside it whenever the count was odd — most visibly with
-            a single leave — and the two cells never matched height. */}
-        <View style={{ gap: 10 }}>
-          {rows.map(l => (
-            <View key={l.id}>
-              <LeaveCard
-                leave={l}
-                isTeam={isTeam}
-                onCancel={id => setCancelId(id)}
-                onApprove={lv => setApproveTarget(lv)}
-                onReject={id => setRejectId(id)}
-              />
-            </View>
-          ))}
-        </View>
+        {table ? renderTable() : renderRows()}
         {totalPages > 1 && (
           <View style={s.pgRow}>
             <Text style={[s.count, { color: T.dim }]}>
@@ -672,19 +754,15 @@ export const LeaveManagementScreen = () => {
           />
         }
       >
-        {/* Plain themed title block on T.bg — house pattern, no gradient hero. */}
-        <View style={[s.header, wide && s.headerWide]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.title, { color: T.text }]}>Leave Management</Text>
-            <Text style={[s.sub, { color: T.dim }]}>Apply for leaves and track your leave history</Text>
-          </View>
+        {/* No in-page title or hamburger — the topbar (native drawer header for
+            RH/SH/SCA) already names the screen and carries the menu. Just the action. */}
+        <View style={s.actionBar}>
           {/* Ungated, matching web: Apply Leave renders for every role. */}
           <Btn
             label="Apply Leave"
             small
             onPress={() => setShowApply(true)}
             icon={<Plus size={15} color="#FFF" strokeWidth={ICON_STROKE} />}
-            style={wide ? undefined : { alignSelf: 'flex-start' }}
           />
         </View>
 
@@ -828,10 +906,8 @@ const s = StyleSheet.create({
   scroll: { padding: 14, gap: 12 },
   scrollWide: { paddingHorizontal: 22 },
 
-  header: { gap: 10 },
-  headerWide: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  title: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.3 },
-  sub: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+  /** Just the primary action, right-aligned, now the title/subtitle are gone. */
+  actionBar: { flexDirection: 'row', justifyContent: 'flex-end' },
 
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   ctrlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -841,10 +917,44 @@ const s = StyleSheet.create({
   filtersWide: { flexDirection: 'row', alignItems: 'flex-start' },
   ddFull: { width: '100%' },
 
-  // iPad two-up grid — uses the horizontal room without stretching a single column.
+  // ── iPad table ──
+  // Every text column carries flexShrink:1 + minWidth:0 in its SHARED constant, so the
+  // header cell and the body cell always resolve to the same width. RN defaults
+  // flexShrink to 0: without this a long reason refuses to shrink and pushes every
+  // later column out of alignment with its header.
+  tbl: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  // The 3px left rule is on EVERY row (transparent unless the row is a pending team
+  // request), including the header. Adding it only to pending rows would inset them
+  // by 3px and knock every one of their cells out of line with the header.
+  tr: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
+  },
+  th: { fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  td: { fontSize: rf(13), fontWeight: '500' },
+  tdName: { fontSize: rf(13.5), fontWeight: '700' },
+  tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
+  nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cEmp: { flex: 2, flexShrink: 1, minWidth: 0 },
+  cDate: { flex: 1.7, flexShrink: 1, minWidth: 0 },
+  cType: { flex: 1.4, flexShrink: 1, minWidth: 0 },
+  cCat: { flex: 1.1, flexShrink: 1, minWidth: 0 },
+  cStatus: { flex: 1.2, flexShrink: 1, minWidth: 0 },
+  cReason: { flex: 2.2, flexShrink: 1, minWidth: 0 },
+  // Fixed action column — no flexShrink, so the icons never collapse. Header text
+  // stays left (alignItems does nothing to a <Text>) so it sits over the icons.
+  cAct: { width: 92 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
-  // leave card
-  lcard: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  // leave row
+  // ListCard is a padded flex ROW; a leave row needs a column so the expanded detail
+  // can drop underneath. paddingVertical/Horizontal beat `padding` in Yoga, so both
+  // axis-specific keys must be zeroed explicitly.
+  rowCard: {
+    flexDirection: 'column', alignItems: 'stretch',
+    paddingVertical: 0, paddingHorizontal: 0, gap: 0, overflow: 'hidden',
+  },
   lrow: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
   dateBox: { alignItems: 'center', minWidth: 42 },
   dateDay: { fontSize: rf(19), fontWeight: '800', letterSpacing: -0.4 },

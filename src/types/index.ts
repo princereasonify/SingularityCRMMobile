@@ -69,6 +69,25 @@ export interface SchoolAssignment {
   isVisited: boolean;
   timeSpentMinutes: number | null;
   geofenceRadiusMetres: number;
+  // Present on every SchoolAssignmentDto the API returns, but optional here so the
+  // existing SchoolsListScreen call sites keep type-checking unchanged.
+  schoolId?: number;
+  userId?: number;
+  userName?: string;
+  assignedById?: number;
+  assignedByName?: string;
+  assignmentDate?: string;
+  visitedAt?: string | null;
+  notes?: string | null;
+}
+
+/** SchoolGeofenceDto — GET /schools/map (SchoolsController.GetSchoolsForMap). */
+export interface SchoolGeofence {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMetres: number;
 }
 
 export interface Region {
@@ -684,7 +703,11 @@ export interface School {
   address?: string;            // DTO key is `Address`, not fullAddress
   latitude: number;
   longitude: number;
-  geofenceRadiusMeters: number;
+  // British spelling, matching the wire. Every SchoolDto in SchoolDtos.cs declares
+  // `GeofenceRadiusMetres`, so the American spelling this used to carry never bound
+  // to anything — reading it returned undefined and silently collapsed every geofence
+  // circle to the 100m fallback.
+  geofenceRadiusMetres: number;
   studentCount?: number;
   principalName?: string;
   principalPhone?: string;
@@ -847,7 +870,11 @@ export interface DemoAssignment {
   schoolId: number;
   schoolName: string;
   leadName?: string;
+  // The API has always returned these two ids (DemoDtos.cs:10,12) but only the
+  // display names were typed here, so callers could not check ownership.
+  requestedById: number;
   requestedByName: string;
+  assignedToId: number;
   assignedToName: string;
   scheduledDate: string;
   scheduledStartTime: string;
@@ -898,8 +925,36 @@ export interface OnboardAssignment {
   completionPercentage: number;
   scheduledStartDate?: string;
   scheduledEndDate?: string;
-  modules?: string[];
+  /**
+   * A STRING, not an array — OnboardAssignmentDto.Modules is `string?` (OnboardDtos.cs:18)
+   * holding a JSON array. This was typed `string[]`, so OnboardDetailScreen called
+   * `.map()` on a string and threw at runtime whenever a record had modules. Parse it
+   * with parseModules() below rather than indexing it directly.
+   *
+   * Note DealDto.modules IS genuinely `string[]` — DealDto.Modules is `List<string>`
+   * (DealDto.cs:15). Only onboarding uses the packed-string form.
+   */
+  modules?: string;
 }
+
+/**
+ * Tolerant parse of OnboardAssignment.modules. The column has held a JSON array, a
+ * comma-separated list, and null across the data's lifetime, so handle all three
+ * rather than assuming the current writer's format.
+ */
+export const parseModules = (raw?: string | null): string[] => {
+  if (!raw) return [];
+  const s = raw.trim();
+  if (s.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    } catch {
+      // Malformed JSON — fall through to the comma split below.
+    }
+  }
+  return s.split(',').map(m => m.trim()).filter(Boolean);
+};
 
 // ─── Route Plan ───────────────────────────────────────────────────────────────
 
@@ -948,7 +1003,12 @@ export interface UpdateRoutePlanRequest {
 // ─── Visit Report ─────────────────────────────────────────────────────────────
 
 export interface CreateVisitReportRequest {
-  schoolVisitLogId: number;
+  // All three links are `int?` on CreateVisitReportRequest (VisitReportDtos.cs:33-35).
+  // schoolVisitLogId was typed as required here, and schoolId was missing entirely —
+  // so a report filed straight from a school (rather than from a logged visit) had
+  // nothing tying it to that school and saved with SchoolId null.
+  schoolVisitLogId?: number;
+  schoolId?: number;
   activityId?: number;
   purpose: string;
   personMetId?: number;
@@ -957,6 +1017,18 @@ export interface CreateVisitReportRequest {
   nextAction: string;
   nextActionDate?: string;
   nextActionNotes?: string;
+  customFields?: string;
+  // VisitReport.cs:19-21 comments these columns as "JSON array of URLs", and web
+  // sends `JSON.stringify(form.photos)` (LiveTracking.jsx:816-818) — so these are
+  // JSON-encoded string arrays, not bare URLs.
+  photos?: string;
+  videos?: string;
+  audioNotes?: string;
+  /** Enum FeedbackSentiment { Positive, Negative, Neutral } — parsed case-insensitively. */
+  feedbackSentiment?: string;
+  feedbackText?: string;
+  feedbackPersonName?: string;
+  feedbackPersonDesignation?: string;
 }
 
 // ─── AI ───────────────────────────────────────────────────────────────────────

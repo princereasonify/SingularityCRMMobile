@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { SchoolAssignment } from '../types';
+import { SchoolAssignment, SchoolGeofence } from '../types';
 
 export interface BulkAssignRequest {
   userId: number;
@@ -39,4 +39,17 @@ export const schoolAssignmentsApi = {
 
   reassignSchool: (data: { schoolId: number; newUserId: number; assignmentDate: string; notes?: string }) =>
     apiClient.post('/school-assignments/reassign', data),
+
+  /**
+   * Source list for the assignment school picker — the same endpoint web uses
+   * (`schoolService.getSchoolsForMap`).
+   *
+   *   SchoolsController.cs:109  [HttpGet("map")]
+   *   SchoolsController.cs:113  return Ok(ApiResponse<List<SchoolGeofenceDto>>.Ok(schools));
+   *
+   * SchoolGeofenceDto is only { Id, Name, Latitude, Longitude, GeofenceRadiusMetres } —
+   * there is NO `city` field. Web filters this list on `s.city`, which is always
+   * undefined, so its city search silently never matches. We search on name only.
+   */
+  getSchoolsForMap: () => apiClient.get<SchoolGeofence[]>('/schools/map'),
 };

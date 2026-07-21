@@ -819,7 +819,9 @@ export const AllowancesScreen = () => {
           )}
           <View style={[s.cName, s.nameCell]}>
             <Avatar initials={initialsOf(a.userName)} />
-            <Text style={[s.tdName, { color: T.text }]} numberOfLines={1}>{a.userName || DASH}</Text>
+            {/* flexShrink defaults to 0 in RN — without it a long name refuses to
+                shrink and pushes every column after it out of its header. */}
+            <Text style={[s.tdName, { color: T.text }, s.cellTxt]} numberOfLines={1}>{a.userName || DASH}</Text>
           </View>
           <View style={s.cRole}>
             {a.role ? <StatusBadge label={a.role} color={T.info} /> : <Text style={[s.td, { color: T.dim }]}>{DASH}</Text>}
@@ -904,7 +906,7 @@ export const AllowancesScreen = () => {
     e.billUrl ? (
       <TouchableOpacity style={s.billLink} onPress={() => Linking.openURL(e.billUrl)} hitSlop={6}>
         <ExternalLink size={12} color={T.accent} strokeWidth={ICON_STROKE} />
-        <Text style={[s.billLinkTxt, { color: T.accent }]}>View Bill</Text>
+        <Text style={[s.billLinkTxt, { color: T.accent }, s.cellTxt]} numberOfLines={1}>View Bill</Text>
       </TouchableOpacity>
     ) : (
       <Text style={[s.td, { color: T.dim }]}>No bill</Text>
@@ -1032,14 +1034,8 @@ export const AllowancesScreen = () => {
           />
         }
       >
-        {/* Plain themed title block on T.bg — house pattern, no gradient hero. */}
-        <View style={s.header}>
-          <Text style={[s.title, { color: T.text }]}>Allowances</Text>
-          <Text style={[s.sub, { color: T.dim }]}>
-            {isManager ? 'Review and approve allowances for your team' : 'View your allowance history'}
-          </Text>
-        </View>
-
+        {/* No in-page title — the topbar (native drawer header for RH/SH/SCA)
+            already names the screen. The Travel/Expense tabs lead the content. */}
         <Segmented<MainTab>
           value={mainTab}
           onChange={setMainTab}
@@ -1360,6 +1356,8 @@ const s = StyleSheet.create({
   tdAmt: { fontSize: rf(13.5), fontWeight: '800' },
   tdSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 1 },
   nameCell: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  /** Text inside a row-direction cell must shrink, or it overflows into the next column. */
+  cellTxt: { flexShrink: 1, minWidth: 0 },
   cCheck: { width: 26 },
   cName: { flex: 2 },
   cRole: { flex: 0.9 },

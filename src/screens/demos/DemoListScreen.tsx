@@ -11,6 +11,7 @@ import {
 
 import { demosApi } from '../../api/demos';
 import { DemoAssignment } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 import { DateInput } from '../../components/common/DateInput';
 import { Icon, ICON_STROKE } from '../../components/common/Icon';
 import {
@@ -32,15 +33,21 @@ const DASH = '—';
 const DEMO_APP_URL = 'https://app.singularity-learn.com/';
 
 /**
- * Web's tab strip is ['', Requested, Scheduled, InProgress, Completed, Cancelled] —
- * it silently omits Approved and Rescheduled even though DemoStatus (and the mobile
- * screen this replaces) has them. Superset kept on purpose: the server parses any
- * DemoStatus, so dropping them would strand those demos behind an unusable filter.
+ * Same seven statuses web's tab strip offers (DemoManagement.jsx `tabs`, minus its
+ * leading '' / "All" entry — here "All" is expressed by clearing the dropdown).
  */
 const STATUSES = [
   'Requested', 'Approved', 'Scheduled', 'InProgress',
   'Completed', 'Cancelled', 'Rescheduled',
 ] as const;
+
+/**
+ * Assignee-role filter. GET /demos is scoped by hierarchy server-side (FO own,
+ * ZH zone, RH region, SH/SCA everything), so only SH/SCA — who see every tier —
+ * have anything to narrow. DemoService ignores `role` for the scoped roles.
+ */
+const ROLES = ['FO', 'ZH', 'RH', 'SH'] as const;
+const ROLE_FILTER_ROLES = ['SH', 'SCA'];
 
 const OUTCOMES = ['Successful', 'Partial', 'Unsuccessful', 'Rescheduled'] as const;
 const SENTIMENTS = ['Positive', 'Neutral', 'Negative'] as const;
@@ -172,6 +179,9 @@ function CompleteModal({ demoId, onClose, onDone }: {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export const DemoListScreen = ({ navigation }: any) => {
   const T = useAppTheme();
+  const { user } = useAuth();
+  /** Only SH/SCA see every tier, so only they get the assignee-role filter. */
+  const canFilterByRole = ROLE_FILTER_ROLES.includes(user?.role || '');
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
   /** iPad always gets the table — never a card grid. Phones get list rows. */
@@ -185,10 +195,11 @@ export const DemoListScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
 
   const [status, setStatus] = useState('');
+  const [role, setRole] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [openDd, setOpenDd] = useState<'status' | null>(null);
+  const [openDd, setOpenDd] = useState<'status' | 'role' | null>(null);
 
   const [completeId, setCompleteId] = useState<number | null>(null);
 
@@ -208,7 +219,7 @@ export const DemoListScreen = ({ navigation }: any) => {
 
   const fetchDemos = useCallback(async (pg: number) => {
     try {
-      // GET /demos takes (status, assignedToId, from, to, page, limit) and returns
+      // GET /demos takes (status, assignedToId, from, to, page, limit, role) and returns
       //   Ok(ApiResponse<object>.Ok(new { demos, total, page, limit }))
       // — see DemosController.GetDemos. apiClient unwraps the ApiResponse envelope,
       // so res.data is the { demos, total, page, limit } object itself.
@@ -216,6 +227,9 @@ export const DemoListScreen = ({ navigation }: any) => {
         status: status || undefined,
         from: from || undefined,
         to: to || undefined,
+        // Sending `role` from a non-SH/SCA caller is harmless (the service ignores it),
+        // but the control is hidden for them so it is never set in the first place.
+        role: canFilterByRole && role ? role : undefined,
         page: pg,
         limit: PAGE_SIZE,
       });
@@ -232,14 +246,14 @@ export const DemoListScreen = ({ navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [status, from, to]);
+  }, [status, role, canFilterByRole, from, to]);
 
   // Any filter change resets to page 1 (web does the same on tab change).
   useEffect(() => {
     setLoading(true);
     setPage(1);
     fetchDemos(1);
-  }, [status, from, to]);
+  }, [status, role, from, to]);
 
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
@@ -267,9 +281,13 @@ export const DemoListScreen = ({ navigation }: any) => {
 
   const activeChips = [
     status ? { label: status, clear: () => setStatus('') } : null,
+    canFilterByRole && role ? { label: `Role: ${role}`, clear: () => setRole('') } : null,
     from ? { label: `From: ${formatDate(from)}`, clear: () => setFrom('') } : null,
     to ? { label: `To: ${formatDate(to)}`, clear: () => setTo('') } : null,
   ].filter(Boolean) as { label: string; clear: () => void }[];
+
+  /** Web parity: DemoManagement's "Clear dates" button, widened to every filter. */
+  const clearAllFilters = () => { setStatus(''); setRole(''); setFrom(''); setTo(''); };
 
   // ── media links (populated by the Record Demo flow / feedback upload) ──
   const mediaLinks = (d: DemoAssignment) => {
@@ -465,12 +483,9 @@ export const DemoListScreen = ({ navigation }: any) => {
           />
         }
       >
-        {/* Title block + Assign Demo — web's page header */}
-        <View style={[s.header, wide && s.headerWide]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.title, { color: T.text }]}>Demo Management</Text>
-            <Text style={[s.subtitle, { color: T.sub }]}>Assign, track, and manage product demos</Text>
-          </View>
+        {/* No in-page title or hamburger — the topbar (native drawer header for
+            RH/SH/SCA) already names the screen and carries the menu. Just the action. */}
+        <View style={s.actionBar}>
           <Btn
             label="Assign Demo"
             small
@@ -507,6 +522,25 @@ export const DemoListScreen = ({ navigation }: any) => {
             />
           )}
 
+          {/* Assignee-role filter — SH/SCA only, mirroring web's role select. */}
+          {canFilterByRole && (
+            <>
+              <Trigger
+                label={role ? `Role: ${role}` : 'All Roles'}
+                open={openDd === 'role'}
+                onPress={() => setOpenDd(openDd === 'role' ? null : 'role')}
+              />
+              {openDd === 'role' && (
+                <Dropdown
+                  style={{ width: wide ? 260 : '100%' }}
+                  value={role}
+                  onSelect={v => { setRole(v === role ? '' : v); setOpenDd(null); }}
+                  options={ROLES.map(r => ({ label: r, value: r }))}
+                />
+              )}
+            </>
+          )}
+
           <View style={s.countRow}>
             <Text style={[s.count, { color: T.dim }]}>
               {totalCount} demo{totalCount === 1 ? '' : 's'}
@@ -515,6 +549,9 @@ export const DemoListScreen = ({ navigation }: any) => {
               <View style={s.chipWrap}>
                 {activeChips.map(c => <FilterChip key={c.label} label={c.label} onRemove={c.clear} />)}
               </View>
+            )}
+            {activeChips.length > 0 && (
+              <Btn label="Clear all" variant="secondary" small onPress={clearAllFilters} />
             )}
           </View>
 
@@ -570,10 +607,8 @@ const s = StyleSheet.create({
   scroll: { padding: 14, gap: 12 },
   scrollWide: { paddingHorizontal: 22 },
 
-  header: { gap: 10 },
-  headerWide: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.4 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+  /** Just the primary action, right-aligned, now the title/subtitle are gone. */
+  actionBar: { flexDirection: 'row', justifyContent: 'flex-end' },
 
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
