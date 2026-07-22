@@ -14,6 +14,8 @@ export const leadsApi = {
      * by ASP.NET model binding and the filter would return everyone's leads.
      */
     userId?: number;
+    /** Named server-side filter: 'active' | 'hot' | 'unassigned' (bound as [FromQuery] string? filter). */
+    filter?: string;
   }) => apiClient.get<PaginatedResult<LeadListDto>>('/leads', { params }),
 
   getLead: (id: number) => apiClient.get<LeadDto>(`/leads/${id}`),

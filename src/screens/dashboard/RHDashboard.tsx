@@ -319,10 +319,16 @@ export const RHDashboard = ({ navigation }: any) => {
   );
 
   const kpiDeck = (items: Kpi[], rowKey: string) => {
-    const w = wide ? `${100 / items.length}%` : '50%';
+    // Phone: two columns. An odd final card would otherwise sit alone with a 50%
+    // empty gap beside it, so it spans the full row instead.
+    const oddTail = !wide && items.length % 2 === 1;
     return (
       <View key={rowKey} style={[s.grid, wide && s.kpiRowWide]}>
-        {items.map(k => (
+        {items.map((k, i) => {
+          const w = wide
+            ? `${100 / items.length}%`
+            : oddTail && i === items.length - 1 ? '100%' : '50%';
+          return (
           <View
             key={k.label}
             style={[{ width: w as any, padding: cellPad }, wide && s.kpiCell]}
@@ -351,7 +357,8 @@ export const RHDashboard = ({ navigation }: any) => {
               )}
             </Card>
           </View>
-        ))}
+          );
+        })}
       </View>
     );
   };

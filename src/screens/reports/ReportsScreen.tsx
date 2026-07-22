@@ -399,15 +399,17 @@ function GenerateModal({ reportType, role, isManager, teamFos, onGenerate, onClo
 
         {isDaily ? (
           <Field label="Report Date">
-            <DateInput value={genDate} onChange={setGenDate} accentColor={T.accent} />
+            {/* Reports can't cover a future date — latest selectable day is today. */}
+            <DateInput value={genDate} onChange={setGenDate} accentColor={T.accent} maxDate={todayStr()} />
           </Field>
         ) : (
           <View style={wide ? s.row2 : s.col2}>
             <Field label="From" style={{ flex: 1 }}>
-              <DateInput value={genFrom} onChange={setGenFrom} accentColor={T.accent} />
+              {/* From cannot be after To, and neither can be in the future. */}
+              <DateInput value={genFrom} onChange={setGenFrom} accentColor={T.accent} maxDate={genTo || todayStr()} />
             </Field>
             <Field label="To" style={{ flex: 1 }}>
-              <DateInput value={genTo} onChange={setGenTo} accentColor={T.accent} />
+              <DateInput value={genTo} onChange={setGenTo} accentColor={T.accent} minDate={genFrom} maxDate={todayStr()} />
             </Field>
           </View>
         )}
@@ -467,8 +469,11 @@ export const ReportsScreen = (_: any) => {
   const fetchAiReports = useCallback(async (type: ReportKey, from: string, to: string) => {
     setLoadFailed(false);
     try {
-      // AiReportFilterDto binds DateFrom / DateTo / ReportType (see controller note).
-      const filters: any = { dateFrom: from, dateTo: to };
+      // AiReportFilterDto binds DateFrom / DateTo / ReportType / PageSize (whole DTO).
+      // Server defaults PageSize=20, so without this the list was silently capped at 20
+      // (client paginates the returned set at 10). Request the full window; the client
+      // then pages over all of it.
+      const filters: any = { dateFrom: from, dateTo: to, pageSize: 500 };
       const ft = FILTER_TYPE[type];
       if (ft) filters.reportType = ft;
       const res = await aiReportsApi.getReports(filters);
@@ -1335,10 +1340,10 @@ ${actionItemsHtml}
 
             <View style={wide ? s.dateRowWide : s.dateRow}>
               <Field label="From" style={{ flex: 1 }}>
-                <DateInput value={dateFrom} onChange={setDateFrom} accentColor={T.accent} />
+                <DateInput value={dateFrom} onChange={setDateFrom} accentColor={T.accent} maxDate={dateTo || todayStr()} />
               </Field>
               <Field label="To" style={{ flex: 1 }}>
-                <DateInput value={dateTo} onChange={setDateTo} accentColor={T.accent} />
+                <DateInput value={dateTo} onChange={setDateTo} accentColor={T.accent} minDate={dateFrom} maxDate={todayStr()} />
               </Field>
             </View>
           </View>

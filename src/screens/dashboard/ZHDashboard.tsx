@@ -8,7 +8,7 @@ import { CheckCircle, XCircle, ChevronRight, RotateCw, AlertCircle } from 'lucid
 import { Icon, IconName, ICON_STROKE } from '../../components/common/Icon';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card } from '../../components/ui';
-import { Btn, Segmented, StatusBadge, Avatar } from '../../components/crud';
+import { Btn, Segmented, StatusBadge, Avatar, FormModal, Input } from '../../components/crud';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { dashboardApi } from '../../api/dashboard';
@@ -98,6 +98,8 @@ export const ZHDashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [approving, setApproving] = useState<number | null>(null);
+  const [rejectId, setRejectId] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -137,15 +139,23 @@ export const ZHDashboard = ({ navigation }: any) => {
         },
       ]);
     } else {
-      Alert.prompt?.('Reject Deal', 'Enter rejection reason:', async (note) => {
-        setApproving(dealId);
-        try {
-          await dealsApi.approveDeal(dealId, false, note || 'Rejected');
-          fetch();
-        } catch { Alert.alert('Error', 'Failed to reject deal'); }
-        setApproving(null);
-      });
+      // Alert.prompt is iOS-only — on Android it is undefined, so this used to
+      // silently do nothing. A themed FormModal works on both platforms.
+      setRejectNote('');
+      setRejectId(dealId);
     }
+  };
+
+  const submitReject = async () => {
+    if (rejectId == null) return;
+    const dealId = rejectId;
+    setRejectId(null);
+    setApproving(dealId);
+    try {
+      await dealsApi.approveDeal(dealId, false, rejectNote.trim() || 'Rejected');
+      fetch();
+    } catch { Alert.alert('Error', 'Failed to reject deal'); }
+    setApproving(null);
   };
 
   const onRefresh = useCallback(() => {
@@ -347,10 +357,16 @@ export const ZHDashboard = ({ navigation }: any) => {
   );
 
   const kpiDeck = (items: Kpi[], rowKey: string) => {
-    const w = wide ? `${100 / items.length}%` : '50%';
+    // Phone: two columns. An odd final card would otherwise sit alone with a 50%
+    // empty gap beside it (the "orphaned 5th card"), so it spans the full row.
+    const oddTail = !wide && items.length % 2 === 1;
     return (
       <View key={rowKey} style={[s.grid, wide && s.kpiRowWide]}>
-        {items.map(k => (
+        {items.map((k, i) => {
+          const w = wide
+            ? `${100 / items.length}%`
+            : oddTail && i === items.length - 1 ? '100%' : '50%';
+          return (
           <View
             key={k.label}
             style={[{ width: w as any, padding: cellPad }, wide && s.kpiCell]}
@@ -379,7 +395,8 @@ export const ZHDashboard = ({ navigation }: any) => {
               )}
             </Card>
           </View>
-        ))}
+          );
+        })}
       </View>
     );
   };
@@ -617,6 +634,27 @@ export const ZHDashboard = ({ navigation }: any) => {
         {rowA.length > 0 && panelRow(rowA)}
         {rowB.length > 0 && panelRow(rowB)}
       </Body>
+
+      <FormModal
+        visible={rejectId != null}
+        title="Reject Deal"
+        onClose={() => setRejectId(null)}
+        footer={
+          <>
+            <View style={{ flex: 1 }} />
+            <Btn label="Cancel" variant="secondary" onPress={() => setRejectId(null)} small />
+            <Btn label="Reject" onPress={submitReject} small />
+          </>
+        }
+      >
+        <Input
+          label="Rejection reason"
+          value={rejectNote}
+          onChangeText={setRejectNote}
+          placeholder="Why is this deal being rejected?"
+          multiline
+        />
+      </FormModal>
     </View>
   );
 };

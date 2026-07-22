@@ -8,6 +8,8 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   ActivityIndicator,
   StyleProp,
   ViewStyle,
@@ -383,21 +385,37 @@ export const FormModal = ({ visible, title, onClose, children, footer, wide }: {
   const T = useAppTheme();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={s.scrim} onPress={onClose}>
-        <Pressable
-          onPress={() => {}}
-          style={[s.modal, { backgroundColor: T.card, maxWidth: wide ? 560 : 340 }]}
-        >
-          <View style={[s.mhead, { borderBottomColor: T.line }]}>
-            <Text style={[s.mtitle, { color: T.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}>
-              <X size={18} color={T.sub} />
-            </TouchableOpacity>
-          </View>
-          <View style={s.mbody}>{children}</View>
-          {!!footer && <View style={[s.mfoot, { borderTopColor: T.line }]}>{footer}</View>}
+      {/* KeyboardAvoidingView lifts the modal above the on-screen keyboard; the body is a
+          bounded ScrollView so a tall form (many fields, an image preview) can always be
+          scrolled to reach the footer. Previously the body was a fixed View, so on small
+          phones the Save/Cancel footer was pushed off-screen with no way to reach it. */}
+      <KeyboardAvoidingView
+        style={s.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={s.scrim} onPress={onClose}>
+          <Pressable
+            onPress={() => {}}
+            style={[s.modal, { backgroundColor: T.card, maxWidth: wide ? 560 : 340 }]}
+          >
+            <View style={[s.mhead, { borderBottomColor: T.line }]}>
+              <Text style={[s.mtitle, { color: T.text }]}>{title}</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={10}>
+                <X size={18} color={T.sub} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={s.mbodyScroll}
+              contentContainerStyle={s.mbody}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
+            {!!footer && <View style={[s.mfoot, { borderTopColor: T.line }]}>{footer}</View>}
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -519,11 +537,14 @@ const s = StyleSheet.create({
   avTxt: { fontSize: rf(12.5), fontWeight: '800' },
 
   // modal
+  kav: { flex: 1 },
   scrim: { flex: 1, backgroundColor: 'rgba(20,15,8,0.42)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   modal: {
-    width: '100%', borderRadius: 20, overflow: 'hidden',
+    width: '100%', maxHeight: '90%', borderRadius: 20, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.25, shadowRadius: 60, elevation: 20,
   },
+  // Bounded so a tall form scrolls inside the modal instead of shoving the footer off-screen.
+  mbodyScroll: { flexShrink: 1, flexGrow: 0 },
   mhead: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 18, paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth,

@@ -12,11 +12,10 @@ import { requestFCMPermission } from '../../services/pushNotificationService';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { SelectPicker } from '../../components/common/SelectPicker';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { Icon, ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, IconBtn, SearchBar, Segmented, Trigger, Dropdown,
+  Btn, IconBtn, SearchBar, Segmented, Trigger, Dropdown, Field,
   StatusBadge, FilterChip, Pagination, ListCard, Avatar, FormModal,
 } from '../../components/crud';
 import { STAGE_COLORS, STAGE_LABELS, getScoreColor } from '../../utils/constants';
@@ -142,6 +141,7 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
   const [fos, setFos] = useState<UserDto[]>([]);
   const [assignModal, setAssignModal] = useState<{ leadId: number; school: string; currentFoId?: number } | null>(null);
   const [selectedFoId, setSelectedFoId] = useState<string | number>('');
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
   useEffect(() => {
@@ -190,23 +190,17 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
 
   const fetchLeads = useCallback(async (pg = 1) => {
     try {
+      // Active/Hot/Unassigned/Won are now applied SERVER-side (backend `filter` param),
+      // so pagination and the "N leads" total are correct. Previously these filtered only
+      // the current 10-row page while the count came from the unfiltered response, hiding
+      // matching leads on later pages. `Won` maps to a stage; the rest to the named filter.
       const stage = filter === 'Won' ? 'Won' : undefined;
-      const res = await leadsApi.getLeads({ page: pg, pageSize: PAGE_SIZE, search: search || undefined, stage, userId: userIdFilter });
-      const items = res.data?.items ?? [];
-      let filtered = items;
-      if (filter === 'Active') filtered = items.filter(l => !['Won', 'Lost'].includes(l.stage));
-      // Legend everywhere reads ">70" but PipelineKanban uses `score >= 70` — keep
-      // `>= 70` so the Hot filter and the Kanban's hot border agree. Web's
-      // LeadsList.jsx :67 now uses `>= 70` too, so all three agree.
-      if (filter === 'Hot') filtered = items.filter(l => l.score >= 70);
-      /**
-       * "Unassigned" means "no FO assigned". LeadListDto.FoId is a NON-nullable
-       * int (0 when unset), AssignedById is `int?` and means "who assigned it"
-       * (null = self-created). Web LeadsList.jsx :70 also filters `!lead.foId`,
-       * so both platforms use the same semantic.
-       */
-      if (filter === 'Unassigned') filtered = items.filter(l => !l.foId);
-      setLeads(filtered);
+      const named = filter === 'Active' ? 'active'
+        : filter === 'Hot' ? 'hot'
+        : filter === 'Unassigned' ? 'unassigned'
+        : undefined;
+      const res = await leadsApi.getLeads({ page: pg, pageSize: PAGE_SIZE, search: search || undefined, stage, filter: named, userId: userIdFilter });
+      setLeads(res.data?.items ?? []);
       setTotalPages(res.data?.totalPages ?? 1);
       setTotalCount(res.data?.totalCount ?? 0);
     } catch {
@@ -575,13 +569,28 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
               {' '}— not selectable.
             </Text>
           )}
-          <SelectPicker
-            label="Select User"
-            options={assignOptions}
-            value={selectedFoId}
-            onChange={(v) => setSelectedFoId(v)}
-            accentColor={T.accent}
-          />
+          {/* Inline dropdown — a modal-over-modal SelectPicker was fragile inside
+              this FormModal; the kit Trigger+Dropdown opens in place. */}
+          <Field label="Select User">
+            <Trigger
+              label={
+                selectedFoId !== ''
+                  ? assignOptions.find(o => String(o.value) === String(selectedFoId))?.label || 'Select user'
+                  : 'Select user'
+              }
+              open={assigneeOpen}
+              onPress={() => setAssigneeOpen(o => !o)}
+            />
+            {assigneeOpen && (
+              <Dropdown
+                style={{ width: '100%' }}
+                maxHeight={260}
+                value={selectedFoId !== '' ? String(selectedFoId) : undefined}
+                onSelect={v => { setSelectedFoId(v); setAssigneeOpen(false); }}
+                options={assignOptions.map(o => ({ label: o.label, value: String(o.value) }))}
+              />
+            )}
+          </Field>
         </View>
       </FormModal>
     </SafeAreaView>

@@ -279,14 +279,16 @@ export const FODashboard = ({ navigation }: any) => {
     {
       label: 'Visits This Week', icon: 'Calendar',
       value: String(d?.visitsThisWeek ?? 0),
-      sub: `Target: ${d?.visitsTargetWeekly ?? 15}/week`,
-      bar: pct(d?.visitsThisWeek ?? 0, d?.visitsTargetWeekly ?? 15),
+      // Only show a target (and a progress bar) when the backend actually sends one —
+      // a fabricated fallback invents a denominator and a misleading attainment %.
+      sub: (d?.visitsTargetWeekly ?? 0) > 0 ? `Target: ${d?.visitsTargetWeekly}/week` : 'This week',
+      bar: (d?.visitsTargetWeekly ?? 0) > 0 ? pct(d?.visitsThisWeek ?? 0, d!.visitsTargetWeekly!) : null,
     },
     {
       label: 'Demos This Month', icon: 'Demos',
       value: String(d?.demosThisMonth ?? 0),
-      sub: `Target: ${d?.demosTargetMonthly ?? 8}/month`,
-      bar: pct(d?.demosThisMonth ?? 0, d?.demosTargetMonthly ?? 8),
+      sub: (d?.demosTargetMonthly ?? 0) > 0 ? `Target: ${d?.demosTargetMonthly}/month` : 'This month',
+      bar: (d?.demosTargetMonthly ?? 0) > 0 ? pct(d?.demosThisMonth ?? 0, d!.demosTargetMonthly!) : null,
     },
   ];
 
@@ -302,11 +304,15 @@ export const FODashboard = ({ navigation }: any) => {
   ];
 
   // ── Activity vs target (this month) ──
+  // Targets default to 0 (not a fabricated number): a missing target renders the
+  // actual with no denominator/bar rather than inventing an attainment %. Previously
+  // the "Demos" target defaulted to 28 here but to 8 in the KPI deck — the same metric
+  // contradicting itself.
   const activityRows = [
-    { label: 'Visits', actual: d?.visitsThisMonth ?? 0, target: d?.visitsTargetMonthly ?? 80 },
-    { label: 'Demos', actual: d?.demosThisMonth ?? 0, target: d?.demosTargetMonthly ?? 28 },
-    { label: 'Follow-ups', actual: d?.followUpsThisMonth ?? 0, target: d?.followUpsTargetMonthly ?? 40 },
-    { label: 'Deals Won', actual: d?.dealsWon ?? 0, target: d?.dealsTargetMonthly ?? 5 },
+    { label: 'Visits', actual: d?.visitsThisMonth ?? 0, target: d?.visitsTargetMonthly ?? 0 },
+    { label: 'Demos', actual: d?.demosThisMonth ?? 0, target: d?.demosTargetMonthly ?? 0 },
+    { label: 'Follow-ups', actual: d?.followUpsThisMonth ?? 0, target: d?.followUpsTargetMonthly ?? 0 },
+    { label: 'Deals Won', actual: d?.dealsWon ?? 0, target: d?.dealsTargetMonthly ?? 0 },
   ];
 
   const funnel = d?.conversionFunnel ?? [];
@@ -576,18 +582,22 @@ export const FODashboard = ({ navigation }: any) => {
               {panelHead({ title: 'Activity vs Target (This Month)' })}
               <PanelBody wide={wide} contentStyle={{ gap: listGap + 4 }}>
                 {activityRows.map(a => {
+                  const hasTarget = a.target > 0;
                   const p = pct(a.actual, a.target);
                   return (
                     <View key={a.label}>
                       <View style={styles.between}>
                         <Text numberOfLines={1} style={[styles.rowLbl, styles.flexMin, { color: T.sub }]}>{a.label}</Text>
                         <Text numberOfLines={1} style={[styles.rowVal, styles.noShrink, { color: T.text }]}>
-                          {a.actual} <Text style={{ color: T.dim }}>/ {a.target}</Text>
+                          {a.actual}{hasTarget && <Text style={{ color: T.dim }}> / {a.target}</Text>}
                         </Text>
                       </View>
-                      <View style={[styles.track3, { backgroundColor: T.cardAlt }]}>
-                        <View style={{ width: `${p}%`, height: '100%', borderRadius: 3, backgroundColor: attainColor(p, T) }} />
-                      </View>
+                      {/* No fabricated bar when there's no real target to measure against. */}
+                      {hasTarget && (
+                        <View style={[styles.track3, { backgroundColor: T.cardAlt }]}>
+                          <View style={{ width: `${p}%`, height: '100%', borderRadius: 3, backgroundColor: attainColor(p, T) }} />
+                        </View>
+                      )}
                     </View>
                   );
                 })}

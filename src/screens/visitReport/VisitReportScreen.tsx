@@ -12,7 +12,21 @@ import {
 } from 'lucide-react-native';
 import { visitReportApi } from '../../api/visitReport';
 import { AppHeader } from '../../components/ui';
-import { Btn } from '../../components/crud';
+import { Btn, Trigger, Dropdown } from '../../components/crud';
+
+// Values MUST match the backend enums exactly — the server Enum.TryParse's them and
+// silently defaults to the first value on any mismatch, which is why free text was lost.
+const PURPOSE_OPTIONS = [
+  { label: 'Visit', value: 'Visit' }, { label: 'Meeting', value: 'Meeting' },
+  { label: 'Demo', value: 'Demo' }, { label: 'Follow Up', value: 'FollowUp' },
+  { label: 'Collection', value: 'Collection' }, { label: 'Survey', value: 'Survey' },
+  { label: 'Audit', value: 'Audit' }, { label: 'Other', value: 'Other' },
+];
+const NEXT_ACTION_OPTIONS = [
+  { label: 'Follow Up', value: 'FollowUp' }, { label: 'Demo', value: 'Demo' },
+  { label: 'Proposal', value: 'Proposal' }, { label: 'Contract', value: 'Contract' },
+  { label: 'Escalate', value: 'Escalate' }, { label: 'None', value: 'None' },
+];
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -96,6 +110,7 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
   const [nextAction, setNextAction] = useState('');
   const [nextActionDate, setNextActionDate] = useState('');
   const [nextActionNotes, setNextActionNotes] = useState('');
+  const [openDd, setOpenDd] = useState<'purpose' | 'nextAction' | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [sentiment, setSentiment] = useState<Sentiment | ''>('');
@@ -396,13 +411,23 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
           </View>
 
           <SectionCard label="Visit Details">
-            <Field
-              label="Purpose of Visit *"
-              value={purpose}
-              onChange={setPurpose}
-              placeholder="Why did you visit? (Demo, follow-up, introduction...)"
-              multiline
-            />
+            {/* Purpose is an ENUM on the backend — a picker, not free text, or the
+                typed value is silently coerced to "Visit" and lost. */}
+            <View style={[styles.fieldGroup, { zIndex: 30 }]}>
+              <Text style={[styles.fieldLabel, { color: T.text }]}>Purpose of Visit *</Text>
+              <Trigger
+                label={PURPOSE_OPTIONS.find(o => o.value === purpose)?.label || 'Select a purpose…'}
+                open={openDd === 'purpose'}
+                onPress={() => setOpenDd(openDd === 'purpose' ? null : 'purpose')}
+              />
+              {openDd === 'purpose' && (
+                <Dropdown
+                  value={purpose}
+                  options={PURPOSE_OPTIONS}
+                  onSelect={(v) => { setPurpose(v); setOpenDd(null); }}
+                />
+              )}
+            </View>
             <Field
               label="Visit Outcome *"
               value={outcome}
@@ -535,13 +560,22 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
           </SectionCard>
 
           <SectionCard label="Next Action">
-            <Field
-              label="Next Action *"
-              value={nextAction}
-              onChange={setNextAction}
-              placeholder="What is the next step? (Schedule demo, send proposal...)"
-              multiline
-            />
+            {/* Next Action is an ENUM too — same picker treatment. */}
+            <View style={[styles.fieldGroup, { zIndex: 30 }]}>
+              <Text style={[styles.fieldLabel, { color: T.text }]}>Next Action *</Text>
+              <Trigger
+                label={NEXT_ACTION_OPTIONS.find(o => o.value === nextAction)?.label || 'Select next action…'}
+                open={openDd === 'nextAction'}
+                onPress={() => setOpenDd(openDd === 'nextAction' ? null : 'nextAction')}
+              />
+              {openDd === 'nextAction' && (
+                <Dropdown
+                  value={nextAction}
+                  options={NEXT_ACTION_OPTIONS}
+                  onSelect={(v) => { setNextAction(v); setOpenDd(null); }}
+                />
+              )}
+            </View>
             <Field
               label="Follow-up Date (YYYY-MM-DD)"
               value={nextActionDate}

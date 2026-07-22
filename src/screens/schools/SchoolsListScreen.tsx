@@ -16,7 +16,6 @@ import { dashboardApi } from '../../api/dashboard';
 import { School, SchoolWithPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { DateInput } from '../../components/common/DateInput';
-import { SelectPicker } from '../../components/common/SelectPicker';
 import { Icon, ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, IconBtn, Field, Input, SearchBar, Checkbox, Segmented, Trigger, Dropdown,
@@ -139,6 +138,7 @@ function AssignModal({ onClose }: { onClose: () => void }) {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [allSchools, setAllSchools] = useState<AnySchool[]>([]);
@@ -189,10 +189,26 @@ function AssignModal({ onClose }: { onClose: () => void }) {
     if (selectedIds.length === 0) { Alert.alert('Select Schools', 'Select at least one school.'); return; }
     setAssigning(true);
     try {
+      // bulkAssign WHOLESALE-REPLACES the user's plan for the date, so post the UNION of
+      // their existing schools + the newly-selected ones. Posting only the new ids would
+      // delete everything else already planned for that day. Re-read fresh and FAIL CLOSED
+      // on a short/failed read rather than silently wiping.
+      const existingRes = await schoolAssignmentsApi.getUserAssignments(selectedUserId, assignDate);
+      const existingList: any = Array.isArray(existingRes.data)
+        ? existingRes.data
+        : (existingRes.data as any)?.assignments ?? [];
+      const existing: number[] = existingList.map((a: any) => a.schoolId).filter((x: any) => x != null);
+      if (existing.length !== existingList.length) {
+        Alert.alert('Could not read the current plan', 'Nothing was changed. Please retry.');
+        setAssigning(false);
+        return;
+      }
+      const merged = [...new Set([...existing, ...selectedIds])];
+
       await schoolAssignmentsApi.bulkAssign({
         userId: selectedUserId,
         assignmentDate: assignDate,
-        schoolIds: selectedIds,
+        schoolIds: merged,
         notes: notes.trim() || undefined,
       });
       const name = members.find(m => m.userId === selectedUserId)?.name || 'user';
@@ -237,17 +253,31 @@ function AssignModal({ onClose }: { onClose: () => void }) {
             <Text style={[s.loadTxt, { color: T.dim }]}>Loading team members…</Text>
           </View>
         ) : (
-          <SelectPicker
-            label="Assign To *"
-            placeholder="Select user"
-            options={members.map(m => ({
-              value: m.userId,
-              label: m.name + (m.group ? ` (${m.group})` : '') + (m.role && m.role !== 'FO' ? ` — ${m.role}` : ''),
-            }))}
-            value={selectedUserId ?? undefined}
-            onChange={v => setSelectedUserId(Number(v))}
-            accentColor={T.accent}
-          />
+          // Inline dropdown (not SelectPicker) — a modal-over-modal picker was
+          // fragile inside this FormModal; the kit Trigger+Dropdown opens in place.
+          <Field label="Assign To *">
+            <Trigger
+              label={
+                selectedUserId
+                  ? members.find(m => m.userId === selectedUserId)?.name || 'Select user'
+                  : 'Select user'
+              }
+              open={assigneeOpen}
+              onPress={() => setAssigneeOpen(o => !o)}
+            />
+            {assigneeOpen && (
+              <Dropdown
+                style={{ width: '100%' }}
+                maxHeight={260}
+                value={selectedUserId != null ? String(selectedUserId) : undefined}
+                onSelect={v => { setSelectedUserId(Number(v)); setAssigneeOpen(false); }}
+                options={members.map(m => ({
+                  value: String(m.userId),
+                  label: m.name + (m.group ? ` (${m.group})` : '') + (m.role && m.role !== 'FO' ? ` — ${m.role}` : ''),
+                }))}
+              />
+            )}
+          </Field>
         )}
 
         <View style={wide ? s.row2 : undefined}>
@@ -325,6 +355,7 @@ function ReassignModal({ school, onClose, onSaved }: {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(
     school.assignedToId ? Number(school.assignedToId) : null,
   );
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
   const [saving, setSaving] = useState(false);
 
@@ -387,14 +418,29 @@ function ReassignModal({ school, onClose, onSaved }: {
           )}
         </View>
 
-        <SelectPicker
-          label="Assign To *"
-          placeholder="Select user"
-          options={members.map(m => ({ value: m.userId, label: m.name + (m.group ? ` (${m.group})` : '') }))}
-          value={selectedUserId ?? undefined}
-          onChange={v => setSelectedUserId(Number(v))}
-          accentColor={T.accent}
-        />
+        <Field label="Assign To *">
+          <Trigger
+            label={
+              selectedUserId
+                ? members.find(m => m.userId === selectedUserId)?.name || 'Select user'
+                : 'Select user'
+            }
+            open={assigneeOpen}
+            onPress={() => setAssigneeOpen(o => !o)}
+          />
+          {assigneeOpen && (
+            <Dropdown
+              style={{ width: '100%' }}
+              maxHeight={260}
+              value={selectedUserId != null ? String(selectedUserId) : undefined}
+              onSelect={v => { setSelectedUserId(Number(v)); setAssigneeOpen(false); }}
+              options={members.map(m => ({
+                value: String(m.userId),
+                label: m.name + (m.group ? ` (${m.group})` : ''),
+              }))}
+            />
+          )}
+        </Field>
 
         <Field label="Visit Date *">
           <DateInput value={assignDate} onChange={setAssignDate} accentColor={T.accent} />

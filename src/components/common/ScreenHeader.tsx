@@ -3,8 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StatusBar,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Menu } from 'lucide-react-native';
@@ -29,7 +27,11 @@ export const ScreenHeader = ({
   rightAction,
 }: ScreenHeaderProps) => {
   const insets = useSafeAreaInsets();
-  const pt = insets.top + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0);
+  // insets.top already covers the status bar / notch / Dynamic Island on both platforms.
+  // The status bar is translucent app-wide, so on Android this inset includes the status
+  // bar height — adding StatusBar.currentHeight on top double-counted it and pushed the
+  // header down by an extra ~24-48px.
+  const pt = insets.top;
 
   return (
     <View style={[CS.headerContainer, { paddingTop: pt + 12, backgroundColor: color }]}>

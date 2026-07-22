@@ -22,6 +22,9 @@ interface DateInputProps {
   placeholder?: string;
   accentColor?: string;
   error?: string;
+  /** Inclusive bounds as 'YYYY-MM-DD'. Days outside are non-selectable. */
+  minDate?: string;
+  maxDate?: string;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -37,10 +40,20 @@ export const DateInput = ({
   placeholder = 'Select date',
   accentColor,
   error,
+  minDate,
+  maxDate,
 }: DateInputProps) => {
   const T = useAppTheme();
   const accent = accentColor || T.accent;
   const [open, setOpen] = useState(false);
+
+  // The stored value is a fixed-width 'YYYY-MM-DD' string, so plain string
+  // comparison is a correct (and timezone-proof) date comparison.
+  const iso = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
+  const outOfRange = (y: number, m: number, d: number) => {
+    const s = iso(y, m, d);
+    return (!!minDate && s < minDate) || (!!maxDate && s > maxDate);
+  };
 
   const today = new Date();
   const parsed = value ? new Date(value) : null;
@@ -60,22 +73,24 @@ export const DateInput = ({
     setOpen(true);
   };
 
+  const finalDay = Math.min(day, daysInMonth(year, month));
+  const confirmDisabled = outOfRange(year, month, finalDay);
+
   const confirm = () => {
-    const maxDay = daysInMonth(year, month);
-    const finalDay = Math.min(day, maxDay);
-    onChange(`${year}-${pad(month + 1)}-${pad(finalDay)}`);
+    if (confirmDisabled) return;
+    onChange(iso(year, month, finalDay));
     setOpen(false);
   };
 
-  const prevMonth = () => {
-    if (month === 0) { setMonth(11); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
-  };
+  // A whole month lying entirely before min / after max can't hold a valid day,
+  // so navigating into it is blocked.
+  const prevYM = month === 0 ? { y: year - 1, m: 11 } : { y: year, m: month - 1 };
+  const nextYM = month === 11 ? { y: year + 1, m: 0 } : { y: year, m: month + 1 };
+  const prevDisabled = !!minDate && iso(prevYM.y, prevYM.m, daysInMonth(prevYM.y, prevYM.m)) < minDate;
+  const nextDisabled = !!maxDate && iso(nextYM.y, nextYM.m, 1) > maxDate;
 
-  const nextMonth = () => {
-    if (month === 11) { setMonth(0); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
-  };
+  const prevMonth = () => { if (!prevDisabled) { setMonth(prevYM.m); setYear(prevYM.y); } };
+  const nextMonth = () => { if (!nextDisabled) { setMonth(nextYM.m); setYear(nextYM.y); } };
 
   const totalDays = daysInMonth(year, month);
   const firstDayOfWeek = new Date(year, month, 1).getDay();
@@ -118,12 +133,12 @@ export const DateInput = ({
           <Pressable style={[styles.modal, { backgroundColor: T.card }]} onPress={() => {}}>
             {/* Month/Year Header */}
             <View style={styles.header}>
-              <TouchableOpacity onPress={prevMonth} hitSlop={12}>
-                <ChevronLeft size={20} color={T.text} />
+              <TouchableOpacity onPress={prevMonth} hitSlop={12} disabled={prevDisabled}>
+                <ChevronLeft size={20} color={prevDisabled ? T.dim : T.text} />
               </TouchableOpacity>
               <Text style={[styles.headerTitle, { color: T.text }]}>{MONTHS[month]} {year}</Text>
-              <TouchableOpacity onPress={nextMonth} hitSlop={12}>
-                <ChevronRight size={20} color={T.text} />
+              <TouchableOpacity onPress={nextMonth} hitSlop={12} disabled={nextDisabled}>
+                <ChevronRight size={20} color={nextDisabled ? T.dim : T.text} />
               </TouchableOpacity>
             </View>
 
@@ -150,18 +165,28 @@ export const DateInput = ({
             {/* Calendar Grid */}
             {weeks.map((week, wi) => (
               <View key={wi} style={styles.weekRow}>
-                {week.map((d, di) => (
+                {week.map((d, di) => {
+                  const disabled = !d || outOfRange(year, month, d);
+                  const selected = d === day && !disabled;
+                  return (
                   <TouchableOpacity
                     key={di}
-                    style={[styles.dayCell, d === day && { backgroundColor: accent, borderRadius: 20 }]}
+                    style={[styles.dayCell, selected && { backgroundColor: accent, borderRadius: 20 }]}
                     onPress={() => d && setDay(d)}
-                    disabled={!d}
+                    disabled={disabled}
                   >
-                    <Text style={[styles.dayText, { color: T.text }, d === day && { color: '#FFF', fontWeight: '700' }, !d && { color: 'transparent' }]}>
+                    <Text style={[
+                      styles.dayText,
+                      { color: T.text },
+                      selected && { color: '#FFF', fontWeight: '700' },
+                      !d && { color: 'transparent' },
+                      !!d && disabled && { color: T.dim, opacity: 0.4 },
+                    ]}>
                       {d ?? ''}
                     </Text>
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
             ))}
 
@@ -170,7 +195,11 @@ export const DateInput = ({
               <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: T.cardAlt }]} onPress={() => setOpen(false)}>
                 <Text style={[styles.cancelText, { color: T.text }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: accent }]} onPress={confirm}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: accent }, confirmDisabled && { opacity: 0.4 }]}
+                onPress={confirm}
+                disabled={confirmDisabled}
+              >
                 <Text style={styles.confirmText}>Confirm</Text>
               </TouchableOpacity>
             </View>

@@ -173,7 +173,8 @@ function ApplyModal({ onClose, onSubmit, submitting }: {
     >
       <View style={s.mForm}>
         <Field label="Leave Date *">
-          <DateInput value={leaveDate} onChange={setLeaveDate} accentColor={T.accent} />
+          {/* No past-dated leave — earliest selectable day is today. */}
+          <DateInput value={leaveDate} onChange={setLeaveDate} accentColor={T.accent} minDate={getToday()} />
         </Field>
         {isSameDay && !!leaveDate && (
           <View style={[s.note, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>

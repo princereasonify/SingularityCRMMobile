@@ -5,8 +5,9 @@
 
 import 'react-native-reanimated';
 import React, { useEffect } from 'react';
-import { Alert, DeviceEventEmitter, StatusBar } from 'react-native';
+import { Alert, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import ThemedStatusBar from './src/components/common/ThemedStatusBar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { AuthProvider } from './src/context/AuthContext';
@@ -67,8 +68,9 @@ function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
       <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
         <ThemeProvider>
+          {/* Theme-aware status/notification bar — reads the user's light/dark choice. */}
+          <ThemedStatusBar />
           <LanguageProvider>
             <OfflineProvider>
               <AuthProvider>
