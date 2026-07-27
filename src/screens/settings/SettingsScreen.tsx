@@ -236,12 +236,12 @@ export const SettingsScreen = ({ navigation }: any) => {
               <NavRow
                 icon={<Wallet size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
                 label="Allowance Config"
-                onPress={() => navigation.navigate('AllowanceConfig')}
+                onPress={() => navigation.navigate('AllowanceConfig', { pushed: true })}
               />
               <NavRow
                 icon={<ClipboardList size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
                 label="Visit Field Config"
-                onPress={() => navigation.navigate('VisitFieldConfig')}
+                onPress={() => navigation.navigate('VisitFieldConfig', { pushed: true })}
                 last
               />
             </Card>

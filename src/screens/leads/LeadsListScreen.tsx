@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
   useWindowDimensions, Alert, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, X, Download, UserCheck, Filter, MapPin, Users } from 'lucide-react-native';
 import messaging from '@react-native-firebase/messaging';
 import RNShare from 'react-native-share';
@@ -82,6 +82,7 @@ const initialsOf = (name?: string) =>
 
 export const LeadsListScreen = ({ navigation, route }: any) => {
   const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const role = user?.role || 'FO';
   const isManager = role !== 'FO';
@@ -414,6 +415,10 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* When this screen is stack-pushed (e.g. from a dashboard "see all" or a team
+          drilldown) there's no AppTopbar above it, so pad for the status bar / island.
+          In the drawer path (no `pushed` param) AppTopbar already supplies the inset. */}
+      {route?.params?.pushed && <View style={{ height: insets.top }} />}
       <ScrollView
         contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         keyboardShouldPersistTaps="handled"

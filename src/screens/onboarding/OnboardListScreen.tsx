@@ -23,6 +23,7 @@ import {
   Btn, IconBtn, Field, Input, Segmented, Trigger, Dropdown,
   StatusBadge, Pagination, ListCard, FormModal, ConfirmModal,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
@@ -1128,7 +1129,7 @@ export const OnboardListScreen = ({ navigation }: any) => {
               <Input label="School Phone *" value={pf.schoolPhone} onChangeText={v => setPf(p => ({ ...p, schoolPhone: v }))} placeholder="Phone" keyboardType="phone-pad" containerStyle={{ flex: 1 }} />
               <Input label="School Email *" value={pf.schoolEmail} onChangeText={v => setPf(p => ({ ...p, schoolEmail: v }))} placeholder="Email" keyboardType="email-address" autoCapitalize="none" containerStyle={{ flex: 1 }} />
             </View>
-            <Input label="Zipcode *" value={pf.zipcode} onChangeText={v => setPf(p => ({ ...p, zipcode: v }))} placeholder="Zipcode" keyboardType="number-pad" />
+            <NumField label="Zipcode *" value={pf.zipcode} onChangeText={v => setPf(p => ({ ...p, zipcode: v }))} placeholder="Zipcode" allowDecimal={false} />
 
             {/* File upload — spec's dashed drop tile, then the uploaded .file-row. */}
             <Field label="School Logo">

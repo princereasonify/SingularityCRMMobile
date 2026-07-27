@@ -91,12 +91,10 @@ import { AppTopbar } from '../components/layout/AppTopbar';
 import { GradientBackground } from '../components/common/GradientBackground';
 import { Sunstone } from '../theme';
 import { useAppTheme } from '../theme/useAppTheme';
-import { ScaPaymentsScreen } from '../screens/payments/ScaPaymentsScreen';
 
 // Settings
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { ProfileScreen } from '../screens/settings/ProfileScreen';
-import { DashboardCustomizeScreen } from '../screens/settings/DashboardCustomizeScreen';
 import { UserManualScreen } from '../screens/settings/UserManualScreen';
 import { AllowanceConfigScreen } from '../screens/settings/AllowanceConfigScreen';
 import { VisitFieldConfigScreen } from '../screens/settings/VisitFieldConfigScreen';
@@ -112,7 +110,6 @@ import { WeeklyPlanScreen } from '../screens/weeklyPlan/WeeklyPlanScreen';
 import { LeaveManagementScreen } from '../screens/leaves/LeaveManagementScreen';
 import { AllowancesScreen } from '../screens/allowances/AllowancesScreen';
 import { RegionsZonesScreen } from '../screens/regionsZones/RegionsZonesScreen';
-import { ReportsLibraryScreen } from '../screens/reports/ReportsLibraryScreen';
 import { TeamManagementScreen } from '../screens/team/TeamManagementScreen';
 
 const Stack = createNativeStackNavigator();
@@ -374,64 +371,133 @@ function RHDrawer() {
 }
 
 function SHDrawer() {
-  const C = ROLE_COLORS.SH;
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={SHDashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
-      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
-      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Payments" component={PaymentsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CreditCard) }} />
-      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
-      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
-      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} options={{ drawerIcon: DrawerIcon(FileEdit) }} />
-      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
-      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
-      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Map) }} />
-      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Library) }} />
-      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Team" component={TeamManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Users) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => (
+        <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />
+      )}
+      screenOptions={({ navigation, route }) => ({
+        headerShown: true,
+        header: () => (
+          <AppTopbar
+            title={route.name}
+            onMenu={() => navigation.openDrawer()}
+            onNotifications={() => navigation.navigate('Notifications' as never)}
+            onProfile={() => navigation.navigate('Profile' as never)}
+            onSettings={() => navigation.navigate('Settings' as never)}
+          />
+        ),
+        drawerType: permanent ? 'permanent' : 'front',
+        drawerStyle: {
+          width: permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : SIDEBAR_PHONE_W,
+          borderRightWidth: 0,
+        },
+        overlayColor: 'rgba(0,0,0,0.4)',
+        sceneContainerStyle: { backgroundColor: T.bg },
+        swipeEnabled: !permanent,
+      })}
+    >
+      {/* Order + membership mirror web's Sidebar.jsx SH array, plus Team (backend supports
+          it for SH). Migrated from the legacy drawer to the AppSidebar/AppTopbar shell so
+          SH now gets the topbar Profile/Notifications/Settings like FO/ZH/RH. */}
+      <Drawer.Screen name="Dashboard" component={SHDashboard} />
+      <Drawer.Screen name="Team" component={TeamManagementScreen} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} />
+      <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} />
+      <Drawer.Screen name="Payment Integration" component={PaymentsScreen} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} />
+      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} />
+      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
+
+      {/* Reached from the topbar profile menu, not the sidebar — same as FO/ZH/RH. */}
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
   );
 }
 
 // ─── SCA Drawer Navigator ─────────────────────────────────────────────────────
 function SCADrawer() {
-  const C = ROLE_COLORS.SCA;
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+
   return (
-    <Drawer.Navigator screenOptions={withDrawerHeader(C.primary)} drawerContent={CustomDrawerContent} initialRouteName="Dashboard">
-      <Drawer.Screen name="Dashboard" component={SCADashboard} options={{ drawerIcon: DrawerIcon(LayoutDashboard) }} />
-      <Drawer.Screen name="Schools" component={SchoolsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Building2) }} />
-      <Drawer.Screen name="All Leads" component={LeadsListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Contact2) }} />
-      <Drawer.Screen name="Pipeline" component={PipelineScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(GitBranch) }} />
-      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} options={{ drawerIcon: DrawerIcon(Calculator) }} />
-      <Drawer.Screen name="Create Deal" component={CreateDealScreen} options={{ drawerIcon: DrawerIcon(Briefcase) }} />
-      <Drawer.Screen name="Demo Management" component={DemoListScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Monitor) }} />
-      <Drawer.Screen name="Onboarding" component={OnboardListScreen} options={{ drawerIcon: DrawerIcon(ClipboardList) }} />
-      <Drawer.Screen name="Calendar" component={CalendarScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarDays) }} />
-      <Drawer.Screen name="Reports" component={ReportsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(BarChart3) }} />
-      <Drawer.Screen name="Deal Payments" component={ScaPaymentsScreen} options={{ drawerIcon: DrawerIcon(CreditCard) }} />
-      <Drawer.Screen name="Targets" component={TargetsScreen} options={{ drawerIcon: DrawerIcon(Target) }} />
-      <Drawer.Screen name="Performance" component={PerformanceScreen} options={{ drawerIcon: DrawerIcon(TrendingUp) }} />
-      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} options={{ drawerIcon: DrawerIcon(MapPin) }} />
-      <Drawer.Screen name="Home Location" component={HomeLocationScreen} options={{ drawerIcon: DrawerIcon(Home) }} />
-      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarClock) }} />
-      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(CalendarOff) }} />
-      <Drawer.Screen name="Allowances" component={AllowancesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Wallet) }} />
-      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} options={{ drawerIcon: DrawerIcon(DollarSign) }} />
-      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Map) }} />
-      <Drawer.Screen name="Manage Users" component={UserManagementScreen} options={{ drawerIcon: DrawerIcon(UserPlus) }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ ...withHeader, drawerIcon: DrawerIcon(Settings) }} />
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => (
+        <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />
+      )}
+      screenOptions={({ navigation, route }) => ({
+        headerShown: true,
+        header: () => (
+          <AppTopbar
+            title={route.name}
+            onMenu={() => navigation.openDrawer()}
+            onNotifications={() => navigation.navigate('Notifications' as never)}
+            onProfile={() => navigation.navigate('Profile' as never)}
+            onSettings={() => navigation.navigate('Settings' as never)}
+          />
+        ),
+        drawerType: permanent ? 'permanent' : 'front',
+        drawerStyle: {
+          width: permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : SIDEBAR_PHONE_W,
+          borderRightWidth: 0,
+        },
+        overlayColor: 'rgba(0,0,0,0.4)',
+        sceneContainerStyle: { backgroundColor: T.bg },
+        swipeEnabled: !permanent,
+      })}
+    >
+      {/* Order + membership mirror web's Sidebar.jsx SCA array. Payment Integration is the
+          real gateway screen (the old "Deal Payments" direct-payment screen called
+          endpoints the backend never served). Migrated to the AppSidebar/AppTopbar shell. */}
+      <Drawer.Screen name="Dashboard" component={SCADashboard} />
+      <Drawer.Screen name="Schools" component={SchoolsListScreen} />
+      <Drawer.Screen name="All Leads" component={LeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={PipelineScreen} />
+      <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
+      <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Demo Management" component={DemoListScreen} />
+      <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
+      <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
+      <Drawer.Screen name="Calendar" component={CalendarScreen} />
+      <Drawer.Screen name="Live Tracking" component={LiveTrackingScreen} />
+      <Drawer.Screen name="Home Location" component={HomeLocationScreen} />
+      <Drawer.Screen name="Weekly Plan" component={WeeklyPlanScreen} />
+      <Drawer.Screen name="Payment Integration" component={PaymentsScreen} />
+      <Drawer.Screen name="Targets" component={TargetsScreen} />
+      <Drawer.Screen name="Performance" component={PerformanceScreen} />
+      <Drawer.Screen name="Allowances" component={AllowancesScreen} />
+      <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
+      <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} />
+      <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} />
+      <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
+
+      {/* Reached from the topbar profile menu, not the sidebar — same as FO/ZH/RH. */}
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
   );
 }
@@ -592,7 +658,6 @@ export const AppNavigator = () => {
             <Stack.Screen name="VisitFieldConfig" component={VisitFieldConfigScreen} options={{ animation: 'slide_from_right' }} />
 
             {/* Settings & Audit */}
-            <Stack.Screen name="DashboardCustomize" component={DashboardCustomizeScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="UserManual" component={UserManualScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="AuditHistory" component={AuditHistoryScreen} options={{ animation: 'slide_from_right' }} />
 
@@ -610,7 +675,6 @@ export const AppNavigator = () => {
             <Stack.Screen name="LeaveManagement" component={LeaveManagementScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="AllowancesScreen" component={AllowancesScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="RegionsZones" component={RegionsZonesScreen} options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="ReportsLibrary" component={ReportsLibraryScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="TeamManagement" component={TeamManagementScreen} options={{ animation: 'slide_from_right' }} />
           </>
         )}

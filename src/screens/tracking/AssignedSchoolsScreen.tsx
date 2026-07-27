@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Linking, ActivityIndicator, Platform, PermissionsAndroid,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
 import { ArrowLeft, Navigation, CheckCircle, ExternalLink } from 'lucide-react-native';
@@ -73,6 +73,7 @@ const todayISO = (): string => {
 
 export const AssignedSchoolsScreen = ({ navigation }: any) => {
   const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
 
   const [assignments, setAssignments] = useState<SchoolAssignment[]>([]);
@@ -303,7 +304,7 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
       </View>
 
       {/* ── Bottom panel ────────────────────────────────────────────────── */}
-      <View style={[styles.bottomPanel, { backgroundColor: T.card, borderTopColor: T.line }]}>
+      <View style={[styles.bottomPanel, { backgroundColor: T.card, borderTopColor: T.line, paddingBottom: insets.bottom }]}>
         {/* Google Maps button — opens native navigation with all schools as stops */}
         <GradientButton
           label="Open Route in Google Maps"

@@ -13,8 +13,9 @@ import { OnboardAssignment, parseModules } from '../../types';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge, FilterChip,
+  Btn, IconBtn, Field, Trigger, Dropdown, StatusBadge, FilterChip,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
@@ -100,7 +101,7 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['top', 'bottom']}>
         <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
       </SafeAreaView>
     );
@@ -108,7 +109,7 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
 
   if (!item) {
     return (
-      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={[s.scroll, wide && s.scrollWide]}>
           <View style={s.head}>
             {backBtn}
@@ -141,7 +142,7 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
   ];
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         keyboardShouldPersistTaps="handled"
@@ -212,13 +213,12 @@ export const OnboardDetailScreen = ({ navigation, route }: any) => {
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <Text style={[s.sectionTitle, { color: T.text }]}>Update Progress</Text>
           <View style={s.pctRow}>
-            <Input
+            <NumField
               label="Completion"
               value={progressInput}
               onChangeText={setProgressInput}
-              keyboardType="numeric"
               placeholder="0–100"
-              containerStyle={{ width: 130 }}
+              style={{ width: 130 }}
             />
             <Text style={[s.pctSym, { color: T.sub }]}>%</Text>
           </View>

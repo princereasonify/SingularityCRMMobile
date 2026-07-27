@@ -17,6 +17,7 @@ import {
   Btn, IconBtn, Field, Input, Trigger, Dropdown, StatusBadge, FilterChip,
   Pagination, ListCard, FormModal, ConfirmModal,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha } from '../../theme';
@@ -813,13 +814,13 @@ export const ActivityLogScreen = ({ route }: any) => {
                   />
                 </View>
                 <View style={s.row2}>
-                  <Input
+                  <NumField
                     label="Attendees"
                     value={form.attendees}
                     onChangeText={v => set('attendees', v)}
                     placeholder="Count"
-                    keyboardType="numeric"
-                    containerStyle={{ flex: 1 }}
+                    allowDecimal={false}
+                    style={{ flex: 1 }}
                   />
                   <Input
                     label="Feedback"

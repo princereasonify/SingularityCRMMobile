@@ -5,7 +5,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calculator, Info } from 'lucide-react-native';
 import { Screen, AppHeader, Card } from '../../components/ui';
-import { Field, Input, Trigger, Dropdown, StatusBadge } from '../../components/crud';
+import { Field, Trigger, Dropdown, StatusBadge } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
@@ -123,29 +124,24 @@ export const DealEstimateScreen = ({ navigation }: any) => {
       </View>
 
       <View style={s.fields}>
-        <Input
+        <NumField
           label="Base Price (₹ per login) *"
           value={basePrice}
           onChangeText={setBasePrice}
           placeholder="e.g. 1000"
-          keyboardType="numeric"
-          error={bpErr}
         />
-        <Input
+        <NumField
           label="Total Logins (Teachers) *"
           value={totalLogins}
           onChangeText={setTotalLogins}
           placeholder="e.g. 50"
-          keyboardType="numeric"
-          error={tlErr}
+          allowDecimal={false}
         />
-        <Input
+        <NumField
           label="Discount %"
           value={discount}
           onChangeText={setDiscount}
           placeholder={`0 – ${DISCOUNT_MAX}`}
-          keyboardType="numeric"
-          error={discErr}
         />
         <Field label="Billing Frequency">
           <Trigger

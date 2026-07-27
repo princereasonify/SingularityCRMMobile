@@ -19,12 +19,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
-  ArrowLeft, Mail, Phone, MapPin, Building2, Users, ShieldCheck, ChevronRight, Home, Camera,
+  ArrowLeft, Mail, Phone, MapPin, Building2, Users, ShieldCheck, ChevronRight, Home, Camera, AlertTriangle,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { authApi } from '../../api/auth';
 import { Card } from '../../components/ui';
-import { IconBtn, StatusBadge } from '../../components/crud';
+import { IconBtn, StatusBadge, ConfirmModal } from '../../components/crud';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -68,6 +68,7 @@ export const ProfileScreen = ({ navigation }: any) => {
     isImageSrc(user?.avatar) ? (user?.avatar as string) : null,
   );
   const [uploading, setUploading] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   const pickAvatar = async () => {
     const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
@@ -95,29 +96,23 @@ export const ProfileScreen = ({ navigation }: any) => {
     }
   };
 
-  const removeAvatar = () => {
-    Alert.alert('Remove photo', 'Remove your profile picture? Your initials will show instead.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          const previous = avatar;
-          setAvatar(null); // optimistic — fall back to initials immediately
-          setUploading(true);
-          try {
-            await authApi.removeAvatar();
-            // Persist the initials the server now stores, so it survives navigation.
-            await updateUser({ avatar: initials });
-          } catch (err: any) {
-            setAvatar(previous);
-            Alert.alert('Remove failed', err?.response?.data?.message || 'Could not remove your picture.');
-          } finally {
-            setUploading(false);
-          }
-        },
-      },
-    ]);
+  const removeAvatar = () => setShowRemoveConfirm(true);
+
+  const doRemoveAvatar = async () => {
+    setShowRemoveConfirm(false);
+    const previous = avatar;
+    setAvatar(null); // optimistic — fall back to initials immediately
+    setUploading(true);
+    try {
+      await authApi.removeAvatar();
+      // Persist the initials the server now stores, so it survives navigation.
+      await updateUser({ avatar: initials });
+    } catch (err: any) {
+      setAvatar(previous);
+      Alert.alert('Remove failed', err?.response?.data?.message || 'Could not remove your picture.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   // `last` drops the divider on the final row of a section — otherwise every card
@@ -246,6 +241,17 @@ export const ProfileScreen = ({ navigation }: any) => {
           </View>
         </View>
       </ScrollView>
+
+      <ConfirmModal
+        visible={showRemoveConfirm}
+        title="Remove photo"
+        message="Remove your profile picture? Your initials will show instead."
+        icon={<AlertTriangle size={22} color={T.danger} strokeWidth={ICON_STROKE} />}
+        tone="danger"
+        confirmLabel="Remove"
+        onConfirm={doRemoveAvatar}
+        onCancel={() => setShowRemoveConfirm(false)}
+      />
     </View>
   );
 };

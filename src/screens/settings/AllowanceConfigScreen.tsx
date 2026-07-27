@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X, Edit2, Trash2, IndianRupee, ArrowLeft } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Plus, Edit2, Trash2, AlertTriangle } from 'lucide-react-native';
 import { allowanceConfigApi } from '../../api/allowanceConfig';
 import { dashboardApi } from '../../api/dashboard';
-import { useAuth } from '../../context/AuthContext';
-import { SelectPicker } from '../../components/common/SelectPicker';
 import { DateInput } from '../../components/common/DateInput';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
+import { Btn, Field, Trigger, Dropdown, FormModal, ConfirmModal, StatusBadge } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
+import { Card } from '../../components/common/Card';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+import { ICON_STROKE } from '../../components/common/Icon';
 import { rf } from '../../utils/responsive';
 
 const ROLES = ['FO', 'ZH', 'RH', 'SH', 'SCA'];
-
-// Two scopes only: Global (everyone) or User (a specific person).
 const SCOPES = ['Global', 'User'] as const;
 
 const VEHICLE_OPTIONS = [
@@ -26,14 +26,6 @@ const VEHICLE_OPTIONS = [
   { value: 'PublicTransport', label: 'Public Transport' },
   { value: 'Other', label: 'Other' },
 ];
-
-const SCOPE_COLORS: Record<string, { bg: string; text: string }> = {
-  Global: { bg: '#EDE9FE', text: '#7C3AED' },
-  Region: { bg: '#DBEAFE', text: '#2563EB' },
-  Zone:   { bg: '#CCFBF1', text: '#0D9488' },
-  User:   { bg: '#FEF3C7', text: '#D97706' },
-  Role:   { bg: '#D1FAE5', text: '#059669' },
-};
 
 function fmtCurrency(v: number) { return `₹${Number(v || 0).toFixed(2)}`; }
 function fmtDate(d: string) {
@@ -53,20 +45,25 @@ const blankForm = {
   effectiveTo: '',
 };
 
-export const AllowanceConfigScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'SH') as keyof typeof ROLE_COLORS];
+type Dd = 'scope' | 'role' | 'user' | 'vehicle' | null;
+
+export const AllowanceConfigScreen = ({ route }: any) => {
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editConfigId, setEditConfigId] = useState<number | null>(null);
+  const [openDd, setOpenDd] = useState<Dd>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ visible: boolean; id: number }>({ visible: false, id: -1 });
 
   const [form, setForm] = useState(blankForm);
-
-  // For User scope: list of reportable users filtered by targetRole
   const [reportableUsers, setReportableUsers] = useState<any[]>([]);
+
+  const scopeTone = (scope?: string) =>
+    scope === 'User' ? T.warning : scope === 'Zone' ? T.success : scope === 'Region' ? T.info : T.accent;
 
   const fetchConfigs = useCallback(async () => {
     setLoading(true);
@@ -104,11 +101,9 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
     });
   };
 
-  const closeForm = () => {
-    setShowForm(false);
-    setEditConfigId(null);
-    setForm(blankForm);
-  };
+  const openCreate = () => { setEditConfigId(null); setForm(blankForm); setOpenDd(null); setShowForm(true); };
+
+  const closeForm = () => { setShowForm(false); setEditConfigId(null); setForm(blankForm); setOpenDd(null); };
 
   const startFullEdit = (c: any) => {
     setEditConfigId(c.id);
@@ -123,18 +118,15 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
       effectiveFrom: c.effectiveFrom ? new Date(c.effectiveFrom).toISOString().split('T')[0] : '',
       effectiveTo: c.effectiveTo ? new Date(c.effectiveTo).toISOString().split('T')[0] : '',
     });
+    setOpenDd(null);
     setShowForm(true);
   };
 
   const handleSubmit = async () => {
-    if (!form.ratePerKm.trim() || isNaN(parseFloat(form.ratePerKm))) {
-      Alert.alert('Error', 'Rate per km is required'); return;
-    }
-
+    if (!form.ratePerKm.trim() || isNaN(parseFloat(form.ratePerKm))) { Alert.alert('Error', 'Rate per km is required'); return; }
     setSubmitting(true);
     try {
       if (editConfigId != null) {
-        // Edit mode: only update rate/limits/vehicle/dates
         await allowanceConfigApi.update(editConfigId, {
           ratePerKm: parseFloat(form.ratePerKm),
           maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : undefined,
@@ -144,10 +136,8 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
           effectiveTo: form.effectiveTo || undefined,
         });
       } else {
-        // Create mode: validate scope identity
         if (form.scope === 'User' && !form.scopeId) { Alert.alert('Error', 'Select a user'); setSubmitting(false); return; }
         const resolvedScopeId = form.scope === 'User' && form.scopeId ? parseInt(form.scopeId) : undefined;
-
         await allowanceConfigApi.create({
           scope: form.scope,
           scopeId: resolvedScopeId,
@@ -169,284 +159,240 @@ export const AllowanceConfigScreen = ({ navigation }: any) => {
     }
   };
 
-  const handleDelete = (id: number) => {
-    Alert.alert('Delete Config', 'Delete this allowance config?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
-            await allowanceConfigApi.delete(id);
-            fetchConfigs();
-          } catch (err: any) {
-            Alert.alert('Error', err?.response?.data?.message || 'Delete failed');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async (id: number) => {
+    try {
+      await allowanceConfigApi.delete(id);
+      fetchConfigs();
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Delete failed');
+    }
   };
 
   const renderConfig = ({ item: c }: { item: any }) => {
-    const sc = SCOPE_COLORS[c.scope] || SCOPE_COLORS.Global;
+    const st = scopeTone(c.scope);
     const vehicleLabel = VEHICLE_OPTIONS.find(v => v.value === c.vehicleType)?.label;
     return (
-      <View style={s.configCard}>
-        {/* Top row: scope badge + target + actions */}
+      <Card style={s.configCard}>
         <View style={s.configTop}>
           <View style={s.configLeft}>
-            <View style={[s.scopeBadge, { backgroundColor: sc.bg }]}>
-              <Text style={[s.scopeText, { color: sc.text }]}>{c.scope}</Text>
-            </View>
+            <StatusBadge label={c.scope} color={st} />
             {(c.scopeName || c.scopeId != null) && (
-              <Text style={s.scopeTarget}>{c.scopeName || `#${c.scopeId}`}</Text>
+              <Text numberOfLines={1} style={[s.scopeTarget, { color: T.sub }]}>{c.scopeName || `#${c.scopeId}`}</Text>
             )}
-            {c.targetRole ? (
-              <View style={s.roleBadge}>
-                <Text style={s.roleBadgeText}>{c.targetRole}</Text>
-              </View>
-            ) : null}
+            {c.targetRole ? <StatusBadge label={c.targetRole} color={T.info} /> : null}
           </View>
           <View style={s.configActions}>
-            <TouchableOpacity style={s.editBtn} onPress={() => startFullEdit(c)}>
-              <Edit2 size={14} color="#2563EB" />
+            <TouchableOpacity style={s.actionBtn} hitSlop={8} onPress={() => startFullEdit(c)}>
+              <Edit2 size={16} color={T.accent} strokeWidth={ICON_STROKE} />
             </TouchableOpacity>
-            <TouchableOpacity style={s.deleteBtn} onPress={() => handleDelete(c.id)}>
-              <Trash2 size={14} color="#DC2626" />
+            <TouchableOpacity style={s.actionBtn} hitSlop={8} onPress={() => setDeleteConfirm({ visible: true, id: c.id })}>
+              <Trash2 size={16} color={T.danger} strokeWidth={ICON_STROKE} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Vehicle + Rate row */}
         <View style={s.metricsRow}>
-          <View style={s.metricChip}>
-            <IndianRupee size={13} color={COLOR.primary} />
-            <Text style={[s.metricVal, { color: COLOR.primary }]}>{fmtCurrency(c.ratePerKm)}/km</Text>
+          <View style={[s.metricChip, { backgroundColor: withAlpha(T.accent, SOFT_TINT) }]}>
+            <Text style={[s.metricVal, { color: T.accent }]}>{fmtCurrency(c.ratePerKm)}/km</Text>
           </View>
-          {vehicleLabel && vehicleLabel !== 'All Vehicles' ? (
-            <View style={[s.metricChip, { backgroundColor: '#EFF6FF' }]}>
-              <Text style={[s.metricVal, { color: '#2563EB' }]}>{vehicleLabel}</Text>
-            </View>
-          ) : (
-            <View style={[s.metricChip, { backgroundColor: '#F9FAFB' }]}>
-              <Text style={[s.metricVal, { color: '#9CA3AF' }]}>All Vehicles</Text>
-            </View>
-          )}
+          <View style={[s.metricChip, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
+            <Text style={[s.metricVal, { color: T.info }]}>{vehicleLabel && vehicleLabel !== 'All Vehicles' ? vehicleLabel : 'All Vehicles'}</Text>
+          </View>
           {c.maxDailyAllowance != null && (
-            <View style={[s.metricChip, { backgroundColor: '#FEF3C7' }]}>
-              <Text style={[s.metricVal, { color: '#D97706' }]}>Max {fmtCurrency(c.maxDailyAllowance)}/day</Text>
+            <View style={[s.metricChip, { backgroundColor: withAlpha(T.warning, SOFT_TINT) }]}>
+              <Text style={[s.metricVal, { color: T.warning }]}>Max {fmtCurrency(c.maxDailyAllowance)}/day</Text>
             </View>
           )}
           {c.minDistanceKm != null && (
-            <View style={[s.metricChip, { backgroundColor: '#F0FDF4' }]}>
-              <Text style={[s.metricVal, { color: '#16A34A' }]}>Min {c.minDistanceKm} km</Text>
+            <View style={[s.metricChip, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
+              <Text style={[s.metricVal, { color: T.success }]}>Min {c.minDistanceKm} km</Text>
             </View>
           )}
         </View>
 
-        {/* Dates + set by */}
-        <View style={s.configFooter}>
-          <Text style={s.dateText}>
+        <View style={[s.configFooter, { borderTopColor: T.line }]}>
+          <Text style={[s.dateText, { color: T.sub }]}>
             {fmtDate(c.effectiveFrom)} → {c.effectiveTo ? fmtDate(c.effectiveTo) : 'Ongoing'}
           </Text>
-          {c.setByName ? <Text style={s.setBy}>Set by {c.setByName}</Text> : null}
+          {c.setByName ? <Text style={[s.setBy, { color: T.dim }]}>Set by {c.setByName}</Text> : null}
         </View>
-      </View>
+      </Card>
     );
   };
 
   return (
-    <SafeAreaView style={s.safe} edges={['bottom']}>
-      {/* Header */}
-      <View style={s.header}>
-        <View style={s.headerLeft}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
-            <ArrowLeft size={20} color="#111827" />
-          </TouchableOpacity>
-          <View>
-            <Text style={s.pageTitle}>Allowance Config</Text>
-            <Text style={s.pageSub}>Set per-km rates per role or user. Default: ₹10/km.</Text>
-          </View>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* Stack-pushed from Settings → no AppTopbar; pad for the island. Drawer path (SH/SCA
+          sidebar) has no `pushed` param and already gets the inset from AppTopbar. */}
+      {route?.params?.pushed && <View style={{ height: insets.top }} />}
+      <View style={[s.toolbar, { borderBottomColor: T.line }]}>
+        <View style={s.flexMin}>
+          <Text style={[s.toolbarTitle, { color: T.text }]}>Allowance Config</Text>
+          <Text numberOfLines={1} style={[s.toolbarSub, { color: T.dim }]}>Per-km rates by role or user · default ₹10/km</Text>
         </View>
-        <TouchableOpacity
-          style={[s.addBtn, { backgroundColor: COLOR.primary }]}
-          onPress={() => { setEditConfigId(null); setForm(blankForm); setShowForm(true); }}
-        >
-          <Plus size={18} color="#FFF" />
-          <Text style={s.addBtnText}>Add Config</Text>
-        </TouchableOpacity>
+        <Btn label="Add" onPress={openCreate} small icon={<Plus size={14} color={T.onAccent} strokeWidth={ICON_STROKE} />} />
       </View>
 
       {loading ? (
-        <LoadingSpinner fullScreen color={COLOR.primary} message="Loading config..." />
+        <LoadingSpinner fullScreen color={T.accent} message="Loading config..." />
       ) : (
         <FlatList
           data={configs}
           keyExtractor={item => String(item.id)}
           renderItem={renderConfig}
-          contentContainerStyle={[s.list, configs.length === 0 && { flex: 1 }]}
+          contentContainerStyle={[s.list, configs.length === 0 && s.listEmpty]}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <EmptyState title="No configs set" subtitle="Add an allowance configuration for your team" icon="⚙️" />
           }
         />
       )}
 
-      {/* Create / Edit Form Modal */}
-      <Modal visible={showForm} transparent animationType="slide" onRequestClose={closeForm}>
-        <View style={s.modalOverlay}>
-          <View style={s.modalSheet}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>{editConfigId != null ? 'Edit Config' : 'New Allowance Config'}</Text>
-              <TouchableOpacity onPress={closeForm} hitSlop={8}>
-                <X size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {editConfigId != null && (
-                <View style={s.editNotice}>
-                  <Text style={s.editNoticeText}>
-                    Editing config #{editConfigId}. Scope and target are locked — to change them, delete and add a new one.
-                  </Text>
-                </View>
-              )}
-
-              {/* Scope */}
-              <SelectPicker
-                label="Scope *"
-                placeholder="Select scope"
-                options={SCOPES.map(s => ({ value: s, label: s }))}
-                value={form.scope}
-                onChange={v => setField('scope', String(v))}
-                accentColor={COLOR.primary}
-              />
-
-              {/* Role filter + User picker — when scope = User */}
-              {form.scope === 'User' && (
-                <>
-                  <SelectPicker
-                    label="Role *"
-                    placeholder="Select role"
-                    options={ROLES.map(r => ({ value: r, label: r }))}
-                    value={form.targetRole}
-                    onChange={v => setField('targetRole', String(v))}
-                    accentColor={COLOR.primary}
-                  />
-                  <SelectPicker
-                    label="User *"
-                    placeholder={form.targetRole ? `Select ${form.targetRole}` : 'Pick role first'}
-                    options={usersForRole.map((u: any) => ({
-                      value: u.id,
-                      label: `${u.name}${u.zone ? ` — ${u.zone}` : u.region ? ` — ${u.region}` : ''}`,
-                    }))}
-                    value={form.scopeId ? Number(form.scopeId) : undefined}
-                    onChange={v => setField('scopeId', String(v))}
-                    accentColor={COLOR.primary}
-                  />
-                </>
-              )}
-
-              {/* Vehicle Type */}
-              <SelectPicker
-                label="Vehicle Type"
-                placeholder="All Vehicles"
-                options={VEHICLE_OPTIONS}
-                value={form.vehicleType}
-                onChange={v => setField('vehicleType', String(v))}
-                accentColor={COLOR.primary}
-              />
-
-              {/* Rate / Max Daily / Min Distance */}
-              <Field label="Rate per km (₹) *" value={form.ratePerKm} onChange={v => setField('ratePerKm', v)} placeholder="e.g. 8.5" keyboardType="decimal-pad" />
-              <Field label="Max Daily Allowance (₹)" value={form.maxDailyAllowance} onChange={v => setField('maxDailyAllowance', v)} placeholder="No limit" keyboardType="decimal-pad" />
-              <Field label="Min Distance (km)" value={form.minDistanceKm} onChange={v => setField('minDistanceKm', v)} placeholder="0" keyboardType="decimal-pad" />
-
-              {/* Dates */}
-              <DateInput label="Effective From *" value={form.effectiveFrom} onChange={v => setField('effectiveFrom', v)} accentColor={COLOR.primary} />
-              <DateInput label="Effective To (blank = ongoing)" value={form.effectiveTo} onChange={v => setField('effectiveTo', v)} accentColor={COLOR.primary} />
-
-              {/* Submit */}
-              <View style={s.formBtns}>
-                <TouchableOpacity
-                  style={[s.submitBtn, { backgroundColor: COLOR.primary }, submitting && { opacity: 0.7 }]}
-                  onPress={handleSubmit}
-                  disabled={submitting}
-                >
-                  {submitting
-                    ? <ActivityIndicator color="#FFF" size="small" />
-                    : <Text style={s.submitBtnText}>{editConfigId != null ? 'Update' : 'Save Config'}</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity style={s.cancelBtn} onPress={closeForm}>
-                  <Text style={s.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={{ height: 20 }} />
-            </ScrollView>
+      <FormModal
+        visible={showForm}
+        title={editConfigId != null ? 'Edit Config' : 'New Allowance Config'}
+        onClose={closeForm}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={closeForm} small />
+            <Btn label={editConfigId != null ? 'Update' : 'Save'} onPress={handleSubmit} loading={submitting} small />
+          </>
+        }
+      >
+        {editConfigId != null && (
+          <View style={[s.notice, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
+            <Text style={[s.noticeTxt, { color: T.info }]}>
+              Scope and target are locked while editing — to change them, delete and add a new one.
+            </Text>
           </View>
-        </View>
-      </Modal>
+        )}
+
+        {/* Scope */}
+        <Field label="Scope *">
+          <Trigger label={form.scope} open={openDd === 'scope'} onPress={() => setOpenDd(o => o === 'scope' ? null : 'scope')} />
+          {openDd === 'scope' && (
+            <Dropdown
+              style={{ width: '100%' }}
+              value={form.scope}
+              onSelect={v => { setField('scope', v); setOpenDd(null); }}
+              options={SCOPES.map(sc => ({ label: sc, value: sc }))}
+            />
+          )}
+        </Field>
+
+        {form.scope === 'User' && (
+          <>
+            <Field label="Role *">
+              <Trigger label={form.targetRole || 'Select role'} open={openDd === 'role'} onPress={() => setOpenDd(o => o === 'role' ? null : 'role')} />
+              {openDd === 'role' && (
+                <Dropdown
+                  style={{ width: '100%' }}
+                  value={form.targetRole}
+                  onSelect={v => { setField('targetRole', v); setOpenDd(null); }}
+                  options={ROLES.map(r => ({ label: r, value: r }))}
+                />
+              )}
+            </Field>
+            <Field label="User *">
+              <Trigger
+                label={
+                  form.scopeId
+                    ? usersForRole.find((u: any) => String(u.id) === form.scopeId)?.name || 'Select user'
+                    : form.targetRole ? `Select ${form.targetRole}` : 'Pick role first'
+                }
+                open={openDd === 'user'}
+                onPress={() => setOpenDd(o => o === 'user' ? null : 'user')}
+              />
+              {openDd === 'user' && (
+                <Dropdown
+                  style={{ width: '100%' }}
+                  maxHeight={240}
+                  value={form.scopeId || undefined}
+                  onSelect={v => { setField('scopeId', v); setOpenDd(null); }}
+                  options={usersForRole.map((u: any) => ({
+                    value: String(u.id),
+                    label: `${u.name}${u.zone ? ` — ${u.zone}` : u.region ? ` — ${u.region}` : ''}`,
+                  }))}
+                />
+              )}
+            </Field>
+          </>
+        )}
+
+        {/* Vehicle */}
+        <Field label="Vehicle Type">
+          <Trigger
+            label={VEHICLE_OPTIONS.find(v => v.value === form.vehicleType)?.label || 'All Vehicles'}
+            open={openDd === 'vehicle'}
+            onPress={() => setOpenDd(o => o === 'vehicle' ? null : 'vehicle')}
+          />
+          {openDd === 'vehicle' && (
+            <Dropdown
+              style={{ width: '100%' }}
+              value={form.vehicleType}
+              onSelect={v => { setField('vehicleType', v); setOpenDd(null); }}
+              options={VEHICLE_OPTIONS}
+            />
+          )}
+        </Field>
+
+        <Field label="Rate per km (₹) *">
+          <NumField value={form.ratePerKm} onChangeText={v => setField('ratePerKm', v)} placeholder="e.g. 8.5" label="Rate per km (₹)" />
+        </Field>
+        <Field label="Max Daily Allowance (₹)">
+          <NumField value={form.maxDailyAllowance} onChangeText={v => setField('maxDailyAllowance', v)} placeholder="No limit" label="Max Daily Allowance (₹)" />
+        </Field>
+        <Field label="Min Distance (km)">
+          <NumField value={form.minDistanceKm} onChangeText={v => setField('minDistanceKm', v)} placeholder="0" label="Min Distance (km)" />
+        </Field>
+
+        <Field label="Effective From *">
+          <DateInput value={form.effectiveFrom} onChange={v => setField('effectiveFrom', v)} accentColor={T.accent} />
+        </Field>
+        <Field label="Effective To (blank = ongoing)">
+          <DateInput value={form.effectiveTo} onChange={v => setField('effectiveTo', v)} accentColor={T.accent} minDate={form.effectiveFrom} />
+        </Field>
+      </FormModal>
+
+      <ConfirmModal
+        visible={deleteConfirm.visible}
+        title="Delete Config"
+        message="Delete this allowance configuration? This cannot be undone."
+        icon={<AlertTriangle size={22} color={T.danger} strokeWidth={ICON_STROKE} />}
+        tone="danger"
+        confirmLabel="Delete"
+        onConfirm={() => { handleDelete(deleteConfirm.id); setDeleteConfirm({ visible: false, id: -1 }); }}
+        onCancel={() => setDeleteConfirm({ visible: false, id: -1 })}
+      />
     </SafeAreaView>
   );
 };
 
-// ── Small reusable field ──
-const Field = ({ label, value, onChange, placeholder, keyboardType }: {
-  label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; keyboardType?: any;
-}) => (
-  <View style={s.fieldGroup}>
-    <Text style={s.fieldLabel}>{label}</Text>
-    <TextInput
-      style={s.input}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#9CA3AF"
-      keyboardType={keyboardType || 'default'}
-    />
-  </View>
-);
-
-// ── Styles ──
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
-  pageTitle: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
-  pageSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2, maxWidth: 220 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
-  addBtnText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
-  list: { padding: 14, gap: 10 },
+  safe: { flex: 1 },
+  toolbar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  toolbarTitle: { fontSize: rf(14), fontWeight: '800' },
+  toolbarSub: { fontSize: rf(11), marginTop: 1 },
+  flexMin: { flex: 1, minWidth: 0 },
+  list: { padding: 12, gap: 10 },
+  listEmpty: { flex: 1 },
 
-  configCard: { backgroundColor: '#FFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1 },
-  configTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
-  configLeft: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, flex: 1 },
-  scopeBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 100 },
-  scopeText: { fontSize: rf(12), fontWeight: '700' },
-  scopeTarget: { fontSize: rf(12), color: '#374151', fontWeight: '500' },
-  roleBadge: { backgroundColor: '#EDE9FE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  roleBadgeText: { fontSize: rf(11), fontWeight: '700', color: '#7C3AED' },
-  configActions: { flexDirection: 'row', gap: 4 },
-  editBtn: { padding: 7, backgroundColor: '#DBEAFE', borderRadius: 8 },
-  deleteBtn: { padding: 7, backgroundColor: '#FEE2E2', borderRadius: 8 },
+  configCard: { padding: 14 },
+  configTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
+  configLeft: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, flex: 1, minWidth: 0 },
+  scopeTarget: { fontSize: rf(12), fontWeight: '500', flexShrink: 1, minWidth: 0 },
+  configActions: { flexDirection: 'row', gap: 2, flexShrink: 0 },
+  actionBtn: { padding: 6 },
   metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  metricChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
+  metricChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
   metricVal: { fontSize: rf(12), fontWeight: '700' },
-  configFooter: { borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 8, gap: 2 },
-  dateText: { fontSize: rf(12), color: '#6B7280' },
-  setBy: { fontSize: rf(11), color: '#9CA3AF' },
+  configFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, gap: 2 },
+  dateText: { fontSize: rf(12) },
+  setBy: { fontSize: rf(11) },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '92%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
-  editNotice: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 12, padding: 12, marginBottom: 14 },
-  editNoticeText: { fontSize: rf(12), color: '#1D4ED8', lineHeight: 18 },
-  fieldGroup: { marginBottom: 14 },
-  fieldLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(14), color: '#111827', backgroundColor: '#FAFAFA' },
-  formBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  submitBtn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitBtnText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
-  cancelBtn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center', backgroundColor: '#F3F4F6' },
-  cancelBtnText: { color: '#374151', fontSize: rf(15), fontWeight: '600' },
+  notice: { borderRadius: 12, padding: 12, marginBottom: 14 },
+  noticeTxt: { fontSize: rf(12), lineHeight: 18 },
 });

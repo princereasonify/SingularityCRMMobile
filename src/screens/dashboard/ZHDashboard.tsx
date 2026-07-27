@@ -8,7 +8,7 @@ import { CheckCircle, XCircle, ChevronRight, RotateCw, AlertCircle } from 'lucid
 import { Icon, IconName, ICON_STROKE } from '../../components/common/Icon';
 import { GradientBackground } from '../../components/common/GradientBackground';
 import { Card } from '../../components/ui';
-import { Btn, Segmented, StatusBadge, Avatar, FormModal, Input } from '../../components/crud';
+import { Btn, Segmented, StatusBadge, Avatar, FormModal, Input, ConfirmModal } from '../../components/crud';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { dashboardApi } from '../../api/dashboard';
@@ -98,6 +98,7 @@ export const ZHDashboard = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [approving, setApproving] = useState<number | null>(null);
+  const [approveId, setApproveId] = useState<number | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
@@ -122,22 +123,23 @@ export const ZHDashboard = ({ navigation }: any) => {
 
   useEffect(() => { fetch(period); }, [period]);
 
+  const doApprove = async () => {
+    if (approveId == null) return;
+    const dealId = approveId;
+    setApproveId(null);
+    setApproving(dealId);
+    try {
+      await dealsApi.approveDeal(dealId, true, 'Approved');
+      fetch();
+    } catch { Alert.alert('Error', 'Failed to approve deal'); }
+    setApproving(null);
+  };
+
   const handleApprove = async (dealId: number, approved: boolean) => {
     if (approved) {
-      Alert.alert('Approve Deal', 'Confirm approval?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve',
-          onPress: async () => {
-            setApproving(dealId);
-            try {
-              await dealsApi.approveDeal(dealId, true, 'Approved');
-              fetch();
-            } catch { Alert.alert('Error', 'Failed to approve deal'); }
-            setApproving(null);
-          },
-        },
-      ]);
+      // Themed confirm dialog (matches the reject flow + RH/SH dashboards) rather than
+      // the OS Alert.
+      setApproveId(dealId);
     } else {
       // Alert.prompt is iOS-only — on Android it is undefined, so this used to
       // silently do nothing. A themed FormModal works on both platforms.
@@ -634,6 +636,17 @@ export const ZHDashboard = ({ navigation }: any) => {
         {rowA.length > 0 && panelRow(rowA)}
         {rowB.length > 0 && panelRow(rowB)}
       </Body>
+
+      <ConfirmModal
+        visible={approveId != null}
+        title="Approve Deal"
+        message="Approve this deal? The field officer will be notified and the deal moves forward."
+        icon={<CheckCircle size={22} color={T.success} strokeWidth={ICON_STROKE} />}
+        tone="success"
+        confirmLabel="Approve"
+        onConfirm={doApprove}
+        onCancel={() => setApproveId(null)}
+      />
 
       <FormModal
         visible={rejectId != null}

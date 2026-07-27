@@ -9,6 +9,7 @@ import {
   ViewStyle,
   Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronDown, Check, X } from 'lucide-react-native';
 import { rf } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -54,6 +55,7 @@ export const SelectPicker = ({
   error,
 }: SelectPickerProps) => {
   const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const accent = accentColor || T.accent;
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
@@ -85,7 +87,7 @@ export const SelectPicker = ({
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <Pressable style={[styles.sheet, { backgroundColor: T.card }]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { backgroundColor: T.card, paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
             <View style={[styles.sheetHeader, { borderBottomColor: T.line }]}>
               <Text style={[styles.sheetTitle, { color: T.text }]}>{label || 'Select'}</Text>
               <TouchableOpacity onPress={() => setOpen(false)} hitSlop={10}>

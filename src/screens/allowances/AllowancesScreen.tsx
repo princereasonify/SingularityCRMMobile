@@ -22,6 +22,7 @@ import {
   Btn, IconBtn, Field, Checkbox, Segmented, Trigger, Dropdown,
   StatusBadge, FilterChip, Pagination, ListCard, Avatar, FormModal, ConfirmModal,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import type { AppTheme } from '../../theme';
@@ -349,16 +350,12 @@ function ExpenseFormModal({ onClose, onSubmit, submitting }: {
         </View>
 
         <Field label="Amount (₹) *">
-          <View style={[s.inputBox, { backgroundColor: T.card, borderColor: T.line }]}>
-            <TextInput
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0"
-              placeholderTextColor={T.dim}
-              keyboardType="numeric"
-              style={[s.inputTxt, { color: T.text }]}
-            />
-          </View>
+          <NumField
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0"
+            label="Amount (₹)"
+          />
         </Field>
 
         {/* Kit Input hard-codes height 46 — a multiline field needs Field + TextInput. */}

@@ -15,9 +15,10 @@ import { DateInput } from '../../components/common/DateInput';
 import { SelectPicker } from '../../components/common/SelectPicker';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, IconBtn, Field, Input, Segmented, StatusBadge,
+  Btn, IconBtn, Field, Segmented, StatusBadge,
   Pagination, ListCard, Avatar, FormModal,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
@@ -230,13 +231,12 @@ function CreateLinkModal({ schools, onClose, onCreated }: {
         )}
 
         <View style={wide ? s.row2 : s.col2}>
-          <Input
+          <NumField
             label="Amount (₹) *"
             value={amount}
             onChangeText={setAmount}
             placeholder="0.00"
-            keyboardType="decimal-pad"
-            containerStyle={wide ? { flex: 1 } : undefined}
+            style={wide ? { flex: 1 } : undefined}
           />
           <Field label="Due Date *" style={wide ? { flex: 1 } : undefined}>
             <DateInput value={dueDate} onChange={setDueDate} accentColor={T.accent} />

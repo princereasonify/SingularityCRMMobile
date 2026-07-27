@@ -510,7 +510,15 @@ export const UserManagementScreen = (_props: any) => {
   const needsZone = ['FO', 'ZH'].includes(form.role);
   const needsRegion = ['ZH', 'RH', 'FO'].includes(form.role);
 
-  const roleOptions = (CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }));
+  const roleOptions = (() => {
+    const opts = (CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }));
+    // When editing, keep the user's CURRENT role selectable even if it isn't in the
+    // creator's creatable set — otherwise the dropdown can't display the real value.
+    if (editingUser && form.role && !opts.some((o) => o.value === form.role)) {
+      opts.unshift({ label: form.role, value: form.role });
+    }
+    return opts;
+  })();
   const regionOptions = regions.map((r) => ({ label: r.name, value: String(r.id) }));
   const zoneOptions = filteredZones.map((z) => ({ label: z.name, value: String(z.id) }));
 

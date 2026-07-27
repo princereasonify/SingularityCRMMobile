@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, ActivityIndicator, Platform, FlatList, Alert, useWindowDimensions,
+  ActivityIndicator, Platform, FlatList, Alert, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
-import { AlertTriangle, ExternalLink, X, MapPin, Search, CheckCircle, Upload } from 'lucide-react-native';
+import { AlertTriangle, ExternalLink, MapPin, Search, CheckCircle, Upload } from 'lucide-react-native';
 import { pick, types } from '@react-native-documents/picker';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
@@ -13,7 +13,8 @@ import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { School, DuplicateMatch, UserDto, BulkSchoolRow } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AppHeader } from '../../components/ui';
-import { Btn, Field, Trigger, Dropdown, Segmented } from '../../components/crud';
+import { Btn, Field, Input, Trigger, Dropdown, Segmented, FormModal } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -469,7 +470,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
       issues.every(r => r.error === 'Google Maps link is required');
 
     return (
-      <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <AppHeader
           title="Bulk Upload"
           subtitle={`${bulkRows.length} row${bulkRows.length === 1 ? '' : 's'} read from your file`}
@@ -599,7 +600,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <AppHeader
         title={isEdit ? 'Edit School' : 'Add School'}
         subtitle={isEdit ? 'Update this school’s record' : 'Pin the location, then fill in the details'}
@@ -654,7 +655,7 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         {/* ── Column 1 · School Name & Location ─────────────────────── */}
         <View style={styles.col}>
         <SectionCard label="School Name & Location">
-          <FormField label="School Name *" value={name} onChange={setName} placeholder="e.g. St Kabir School" />
+          <Field label="School Name *"><Input value={name} onChangeText={setName} placeholder="e.g. St Kabir School" /></Field>
 
           {/* Address search with autocomplete */}
           <View style={styles.fieldGroup}>
@@ -768,13 +769,13 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               abreast is unreadable at iPhone width, so pincode gets its own row. */}
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
-              <FormField label="City" value={city} onChange={setCity} placeholder="Auto-filled" />
+              <Field label="City"><Input value={city} onChangeText={setCity} placeholder="Auto-filled" /></Field>
             </View>
             <View style={{ flex: 1 }}>
-              <FormField label="State" value={state} onChange={setState} placeholder="Auto-filled" />
+              <Field label="State"><Input value={state} onChangeText={setState} placeholder="Auto-filled" /></Field>
             </View>
           </View>
-          <FormField label="Pincode" value={pincode} onChange={setPincode} placeholder="Auto-filled" keyboardType="numeric" />
+          <Field label="Pincode"><NumField value={pincode} onChangeText={setPincode} placeholder="Auto-filled" label="Pincode" allowDecimal={false} /></Field>
         </SectionCard>
         </View>
 
@@ -817,10 +818,10 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           </View>
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
-              <FormField label="Student Count" value={studentCount} onChange={setStudentCount} placeholder="0" keyboardType="numeric" />
+              <Field label="Student Count"><NumField value={studentCount} onChangeText={setStudentCount} placeholder="0" label="Student Count" allowDecimal={false} /></Field>
             </View>
             <View style={{ flex: 1 }}>
-              <FormField label="Staff Count" value={staffCount} onChange={setStaffCount} placeholder="0" keyboardType="numeric" />
+              <Field label="Staff Count"><NumField value={staffCount} onChangeText={setStaffCount} placeholder="0" label="Staff Count" allowDecimal={false} /></Field>
             </View>
           </View>
         </SectionCard>
@@ -829,18 +830,18 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         <SectionCard label="Contact Information">
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
-              <FormField label="Phone" value={phone} onChange={setPhone} placeholder="School phone" keyboardType="phone-pad" />
+              <Field label="Phone"><Input value={phone} onChangeText={setPhone} placeholder="School phone" keyboardType="phone-pad" /></Field>
             </View>
             <View style={{ flex: 1 }}>
-              <FormField label="Email" value={email} onChange={setEmail} placeholder="School email" keyboardType="email-address" autoCapitalize="none" />
+              <Field label="Email"><Input value={email} onChangeText={setEmail} placeholder="School email" keyboardType="email-address" autoCapitalize="none" /></Field>
             </View>
           </View>
           <View style={styles.dualRow}>
             <View style={{ flex: 1 }}>
-              <FormField label="Principal Name" value={principalName} onChange={setPrincipalName} placeholder="Name" />
+              <Field label="Principal Name"><Input value={principalName} onChangeText={setPrincipalName} placeholder="Name" /></Field>
             </View>
             <View style={{ flex: 1 }}>
-              <FormField label="Principal Phone" value={principalPhone} onChange={setPrincipalPhone} placeholder="Phone" keyboardType="phone-pad" />
+              <Field label="Principal Phone"><Input value={principalPhone} onChangeText={setPrincipalPhone} placeholder="Phone" keyboardType="phone-pad" /></Field>
             </View>
           </View>
         </SectionCard>
@@ -895,12 +896,13 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
               </Field>
             )}
 
-            <FormField
-              label="Visit Date"
-              value={visitDate}
-              onChange={setVisitDate}
-              placeholder="YYYY-MM-DD"
-            />
+            <Field label="Visit Date">
+              <Input
+                value={visitDate}
+                onChangeText={setVisitDate}
+                placeholder="YYYY-MM-DD"
+              />
+            </Field>
           </SectionCard>
         )}
 
@@ -926,71 +928,46 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
       </ScrollView>
 
       {/* ── Duplicate warning modal ────────────────────────────────── */}
-      <Modal visible={showDupModal} transparent animationType="slide" onRequestClose={() => setShowDupModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <AlertTriangle size={18} color={T.warning} />
-                <Text style={styles.modalTitle}>Possible Duplicate</Text>
+      {/* Kept as a FormModal (not ConfirmModal) because it renders a list of
+          matched schools with per-row detail + a "View Existing" link — content
+          ConfirmModal's single `message` string can't hold. */}
+      <FormModal
+        visible={showDupModal}
+        title="Possible Duplicate"
+        onClose={() => setShowDupModal(false)}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowDupModal(false)} style={styles.actionBtn} />
+            <Btn label="Create Anyway" onPress={doSave} loading={submitting} disabled={submitting} style={styles.actionBtn} />
+          </>
+        }
+      >
+        {duplicates.map(d => (
+          <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || T.sub }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={styles.dupName}>{d.matchedEntityName}</Text>
+              <View style={[styles.matchBadge, { backgroundColor: withAlpha((DUP_COLORS[d.matchType] || T.sub), 0.13) }]}>
+                <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || T.sub }]}>{d.matchType}</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowDupModal(false)}>
-                <X size={20} color={T.sub} />
-              </TouchableOpacity>
             </View>
-            {duplicates.map(d => (
-              <View key={d.matchedEntityId} style={[styles.dupCard, { borderLeftColor: DUP_COLORS[d.matchType] || T.sub }]}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={styles.dupName}>{d.matchedEntityName}</Text>
-                  <View style={[styles.matchBadge, { backgroundColor: withAlpha((DUP_COLORS[d.matchType] || T.sub), 0.13) }]}>
-                    <Text style={[styles.matchBadgeText, { color: DUP_COLORS[d.matchType] || T.sub }]}>{d.matchType}</Text>
-                  </View>
-                </View>
-                <Text style={styles.dupReason}>{d.matchReason}</Text>
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
-                  onPress={() => { setShowDupModal(false); navigation.navigate('SchoolDetail', { schoolId: d.matchedEntityId }); }}
-                >
-                  <ExternalLink size={12} color={T.accent} />
-                  <Text style={[styles.viewExistingText, { color: T.accent }]}>View Existing</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            <View style={styles.modalActions}>
-              <Btn label="Cancel" variant="secondary" onPress={() => setShowDupModal(false)} style={styles.actionBtn} />
-              <Btn label="Create Anyway" onPress={doSave} loading={submitting} disabled={submitting} style={styles.actionBtn} />
-            </View>
+            <Text style={styles.dupReason}>{d.matchReason}</Text>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
+              onPress={() => { setShowDupModal(false); navigation.navigate('SchoolDetail', { schoolId: d.matchedEntityId }); }}
+            >
+              <ExternalLink size={12} color={T.accent} />
+              <Text style={[styles.viewExistingText, { color: T.accent }]}>View Existing</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+        ))}
+      </FormModal>
     </SafeAreaView>
   );
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const FormField = ({ label, value, onChange, placeholder, keyboardType, multiline, autoCapitalize }: any) => {
-  const T = useAppTheme();
-  const styles = makeStyles(T);
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={[styles.input, multiline && styles.inputMulti]}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={T.dim}
-        keyboardType={keyboardType || 'default'}
-        multiline={multiline}
-        numberOfLines={multiline ? 3 : 1}
-        autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
-      />
-    </View>
-  );
-};
-
-const SectionCard = ({ label, children }: { label: string; children: React.ReactNode }) => {
+const SectionCard =({ label, children }: { label: string; children: React.ReactNode }) => {
   const T = useAppTheme();
   const styles = makeStyles(T);
   return (
@@ -1076,12 +1053,6 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
 
   fieldGroup:  { marginBottom: 14 },
   fieldLabel:  { fontWeight: '600', fontSize: rf(13), color: T.text, marginBottom: 6 },
-  input: {
-    borderWidth: 1, borderColor: T.line, borderRadius: 14,
-    paddingHorizontal: 12, paddingVertical: 10,
-    fontWeight: '400', fontSize: rf(14), color: T.text, backgroundColor: T.fieldBg,
-  },
-  inputMulti: { height: 80, textAlignVertical: 'top' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
@@ -1164,13 +1135,6 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
   },
   dupBannerText: { flex: 1, fontWeight: '600', fontSize: rf(13), color: T.warning },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: T.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 20, paddingBottom: 40,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle:  { fontWeight: '700', fontSize: rf(16), color: T.text },
   dupCard: {
     borderLeftWidth: 4, backgroundColor: T.cardAlt, borderRadius: 14,
     padding: 12, marginBottom: 10,
@@ -1180,5 +1144,4 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
   matchBadgeText: { fontWeight: '700', fontSize: rf(11) },
   dupReason:      { fontWeight: '400', fontSize: rf(12), color: T.sub },
   viewExistingText:{ fontWeight: '600', fontSize: rf(13) },
-  modalActions:   { flexDirection: 'row', gap: 10, marginTop: 16 },
 });

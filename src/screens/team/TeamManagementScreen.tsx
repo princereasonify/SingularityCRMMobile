@@ -104,9 +104,9 @@ export const TeamManagementScreen = ({ navigation }: any) => {
   useEffect(() => { load(); }, [load]);
 
   const goSchools = (fo: FoPerformanceDto) =>
-    navigation?.navigate('SchoolsList', { assignedTo: fo.foId });
+    navigation?.navigate('SchoolsList', { assignedTo: fo.foId, pushed: true });
   const goLeads = (fo: FoPerformanceDto) =>
-    navigation?.navigate('LeadsList', { foId: fo.foId });
+    navigation?.navigate('LeadsList', { foId: fo.foId, pushed: true });
 
   // ── iPad table ──────────────────────────────────────────────────────────────
   /**

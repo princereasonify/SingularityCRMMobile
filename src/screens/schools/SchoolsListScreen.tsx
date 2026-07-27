@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
   useWindowDimensions, Alert, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Callout, Circle } from 'react-native-maps';
 import {
   Plus, Navigation, Filter, List as ListIcon, Map as MapIcon,
@@ -454,6 +454,7 @@ function ReassignModal({ school, onClose, onSaved }: {
 export const SchoolsListScreen = ({ navigation, route }: any) => {
   const { user } = useAuth();
   const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
   /** iPad always gets the table — never a card grid. Phones get list rows. */
@@ -790,6 +791,9 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* Stack-pushed (e.g. team drilldown) → no AppTopbar above, so pad for the island.
+          Drawer path (no `pushed` param) already gets the inset from AppTopbar. */}
+      {route?.params?.pushed && <View style={{ height: insets.top }} />}
       <ScrollView
         contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         keyboardShouldPersistTaps="handled"

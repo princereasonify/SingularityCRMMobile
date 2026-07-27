@@ -1,706 +1,620 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl,
-  useWindowDimensions, TouchableOpacity, Modal, TextInput, Alert,
-  ActivityIndicator,
+  useWindowDimensions, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  LogOut, TrendingUp, Building2, DollarSign,
-  Users, Zap, Plus, X, MapPin, CreditCard,
-} from 'lucide-react-native';
-import { DrawerMenuButton } from '../../components/common/DrawerMenuButton';
-import { NotificationBell } from '../../components/common/NotificationBell';
-import { LogoutModal } from '../../components/common/LogoutModal';
-import { dashboardApi } from '../../api/dashboard';
-import { paymentsApi } from '../../api/payments';
-import { aiApi } from '../../api/ai';
-import { ScaDashboardDto, DirectPayment } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { Card } from '../../components/common/Card';
-import { KPICard } from '../../components/common/KPICard';
-import { Badge } from '../../components/common/Badge';
-import { Avatar } from '../../components/common/Avatar';
-import { Button } from '../../components/common/Button';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronRight, RotateCw, AlertCircle, Sparkles } from 'lucide-react-native';
+import { Icon, IconName, ICON_STROKE } from '../../components/common/Icon';
+import { GradientBackground } from '../../components/common/GradientBackground';
+import { Card } from '../../components/ui';
+import { Segmented, StatusBadge, Btn } from '../../components/crud';
+import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS, getStatusColor, getProgressColor } from '../../utils/constants';
-import { formatCurrency, formatDate } from '../../utils/formatting';
-import { rf, getCardWidth } from '../../utils/responsive';
+import { dashboardApi } from '../../api/dashboard';
+import { aiApi } from '../../api/ai';
+import { ScaDashboardDto } from '../../types';
+import { formatCurrency } from '../../utils/formatting';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
+import { rf, isTabletDevice } from '../../utils/responsive';
 
-const COLOR = ROLE_COLORS.SCA;
+/**
+ * SuperSale Admin (org-wide) dashboard — the SCA counterpart of SHDashboard, on the
+ * same Sunstone system so it matches FO/ZH/RH/SH exactly: grid KPI decks, equal-height
+ * cards, the same panels, period bar, dark/light. ScaDashboardDto extends the national
+ * DTO, so the structure is the national dashboard plus admin metrics (users) and the
+ * AI report-generation actions. The drawer's AppTopbar owns the header row.
+ */
 
-const RISK_COLORS: Record<string, string> = {
-  HIGH: '#EF4444',
-  MEDIUM: '#F59E0B',
-  LOW: '#22C55E',
+const attainColor = (T: AppTheme, p: number) =>
+  p >= 70 ? T.success : p >= 40 ? T.warning : T.danger;
+
+const riskColor = (T: AppTheme, r: string) =>
+  r === 'HIGH' ? T.danger : r === 'MEDIUM' ? T.warning : T.success;
+
+const healthColor = (T: AppTheme, st?: string) => {
+  switch (st) {
+    case 'On Track':
+    case 'Strong':
+    case 'Healthy':
+    case 'Excellent':       return T.success;
+    case 'Good':            return T.info;
+    case 'At Risk':
+    case 'Watch':           return T.warning;
+    case 'Weak':
+    case 'Critical':
+    case 'Underperforming': return T.danger;
+    default:                return T.sub;
+  }
 };
 
+const PanelBody = ({
+  wide, contentStyle, children,
+}: { wide?: boolean; contentStyle?: any; children: React.ReactNode }) =>
+  wide ? (
+    <ScrollView style={s.panelScroll} contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={contentStyle}>{children}</View>
+  );
+
 export const SCADashboard = ({ navigation }: any) => {
-  const { user, logout } = useAuth();
-  const { width } = useWindowDimensions();
-  const tablet = width >= 768;
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const wide = isTabletDevice && width > height;
 
   const [data, setData] = useState<ScaDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showLogout, setShowLogout] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
-  const [directPayments, setDirectPayments] = useState<DirectPayment[]>([]);
-
-  // Direct payment modal
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [dpUserId, setDpUserId] = useState('');
-  const [dpType, setDpType] = useState<'Bonus' | 'Allowance' | 'Incentive'>('Bonus');
-  const [dpAmount, setDpAmount] = useState('');
-  const [dpDescription, setDpDescription] = useState('');
-  const [dpSaving, setDpSaving] = useState(false);
-
-  // AI generation
+  const [loadFailed, setLoadFailed] = useState(false);
   const [generatingAi, setGeneratingAi] = useState<'daily' | 'management' | null>(null);
 
-  const fetchData = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
-    const [dashRes, paymentsRes] = await Promise.allSettled([
-      dashboardApi.getScaDashboard(p),
-      paymentsApi.getDirectPayments(),
-    ]);
-    setData(dashRes.status === 'fulfilled' ? dashRes.value.data : DEMO_DATA);
-    if (paymentsRes.status === 'fulfilled') {
-      const d = paymentsRes.value.data as any;
-      setDirectPayments(Array.isArray(d) ? d : d?.items ?? []);
+  const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
+    try {
+      const res = await dashboardApi.getScaDashboard(p);
+      setData(res.data);
+      setLoadFailed(false);
+    } catch {
+      setData(null);
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
+  }, [period]);
 
-  useEffect(() => { fetchData(period); }, [period]);
+  useEffect(() => { fetch(period); }, [period]);
+
+  const onRefresh = useCallback(() => { setRefreshing(true); fetch(period); }, [fetch, period]);
+  const reload = useCallback(() => { setLoading(true); fetch(period); }, [fetch, period]);
 
   const handleGenerateAi = (type: 'daily' | 'management') => {
-    const title = type === 'daily' ? 'Generate Daily Reports' : 'Generate Management Reports';
-    const msg = type === 'daily'
-      ? 'This will trigger AI daily report generation for all FOs. Continue?'
-      : 'This will trigger management bi-weekly report generation. Continue?';
-    Alert.alert(title, msg, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Generate',
-        onPress: async () => {
-          setGeneratingAi(type);
-          try {
-            if (type === 'daily') await aiApi.generateDailyReports();
-            else await aiApi.generateManagementReports();
-            Alert.alert('Success', 'Report generation triggered successfully.');
-          } catch {
-            Alert.alert('Error', 'Failed to trigger report generation.');
-          } finally {
-            setGeneratingAi(null);
-          }
+    Alert.alert(
+      type === 'daily' ? 'Generate Daily Reports' : 'Generate Management Reports',
+      type === 'daily'
+        ? 'This will trigger AI daily report generation for all FOs. Continue?'
+        : 'This will trigger management bi-weekly report generation. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Generate',
+          onPress: async () => {
+            setGeneratingAi(type);
+            try {
+              if (type === 'daily') await aiApi.generateDailyReports();
+              else await aiApi.generateManagementReports();
+              Alert.alert('Success', 'Report generation triggered successfully.');
+            } catch {
+              Alert.alert('Error', 'Failed to trigger report generation.');
+            } finally {
+              setGeneratingAi(null);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
-  const handleCreateDirectPayment = async () => {
-    if (!dpUserId || !dpAmount) {
-      Alert.alert('Validation', 'User ID and amount are required.');
-      return;
-    }
-    const amt = parseFloat(dpAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert('Validation', 'Enter a valid amount.');
-      return;
-    }
-    setDpSaving(true);
-    try {
-      await paymentsApi.createDirectPayment({
-        userId: parseInt(dpUserId, 10),
-        type: dpType,
-        amount: amt,
-        description: dpDescription || undefined,
-      });
-      setShowPaymentModal(false);
-      setDpUserId(''); setDpAmount(''); setDpDescription(''); setDpType('Bonus');
-      fetchData();
-      Alert.alert('Success', 'Direct payment created.');
-    } catch {
-      Alert.alert('Error', 'Failed to create direct payment.');
-    } finally {
-      setDpSaving(false);
-    }
-  };
+  const periodBar = (
+    <View style={[s.periodBar, { borderBottomColor: T.line }]}>
+      <Text numberOfLines={1} style={[s.scopeName, { color: T.sub }]}>Organization</Text>
+      <View style={s.spacer} />
+      <Segmented<'today' | 'week' | 'month'>
+        value={period}
+        onChange={setPeriod}
+        style={s.segment}
+        options={[
+          { label: 'Today', value: 'today' },
+          { label: 'This Week', value: 'week' },
+          { label: 'This Month', value: 'month' },
+        ]}
+      />
+      {wide && (
+        <TouchableOpacity onPress={reload} activeOpacity={0.8} style={[s.refreshBtn, { borderColor: T.lineStrong }]}>
+          <RotateCw size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+          <Text style={[s.refreshTxt, { color: T.accent }]}>Refresh</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading SCA dashboard..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading admin dashboard..." />;
 
-  const cols = tablet ? 4 : 2;
-  const cardW = getCardWidth(cols, tablet ? 48 + (cols - 1) * 12 : 32 + 12);
-
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { backgroundColor: COLOR.primary }]}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <DrawerMenuButton />
-            <Avatar initials={user?.avatar || 'SA'} color="#FFF" size={42} />
-            <View>
-              <Text style={styles.greeting}>SuperSale Admin</Text>
-              <Text style={styles.userName}>{user?.name}</Text>
-            </View>
-          </View>
-          <View style={styles.headerRight}>
-            <NotificationBell style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')} />
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLogout(true)}>
-              <LogOut size={20} color="#FFF" />
+  if (loadFailed || !data) {
+    return (
+      <View style={[s.root, { backgroundColor: T.bg }]}>
+        {periodBar}
+        <View style={s.errWrap}>
+          <View style={[s.errCard, { backgroundColor: T.card, borderColor: T.line }]}>
+            <AlertCircle size={34} color={T.danger} strokeWidth={ICON_STROKE} />
+            <Text style={[s.errTitle, { color: T.text }]}>Couldn't load admin dashboard</Text>
+            <Text style={[s.errTxt, { color: T.dim }]}>
+              Check your connection and try again. No figures are shown because none could be read.
+            </Text>
+            <TouchableOpacity onPress={reload} activeOpacity={0.85} style={[s.retryBtn, { borderColor: T.lineStrong }]}>
+              <RotateCw size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+              <Text style={[s.retryTxt, { color: T.accent }]}>Retry</Text>
             </TouchableOpacity>
           </View>
-        </View>
-        <View style={styles.periodRow}>
-          {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month']] as const).map(([p, label]) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodBtn, period === p && styles.periodBtnActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[styles.periodText, period === p && { color: COLOR.primary }]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
         </View>
       </View>
+    );
+  }
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, tablet && { padding: 24, gap: 20 }]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchData(period); }}
-            colors={[COLOR.primary]}
-          />
-        }
-      >
-        {/* ── KPI Grid ────────────────────────────────────────────────────── */}
-        <View style={styles.kpiGrid}>
-          <KPICard
-            title="Revenue MTD"
-            value={formatCurrency(data?.revenueMTD ?? 0)}
-            subtitle={`${data?.targetPct ?? 0}% of target`}
-            progress={data?.targetPct ?? 0}
-            progressColor={COLOR.primary}
-            icon={<DollarSign size={16} color={COLOR.primary} />}
-            iconBg={COLOR.light}
-            style={{ width: cardW }}
-          />
-          <KPICard
-            title="Schools Won"
-            value={String(data?.schoolsWon ?? 0)}
-            subtitle="This period"
-            icon={<Building2 size={16} color="#22C55E" />}
-            iconBg="#F0FDF4"
-            style={{ width: cardW }}
-          />
-          <KPICard
-            title="Total Users"
-            value={String(data?.totalUsers ?? '—')}
-            subtitle={`${data?.activeUsers ?? 0} active`}
-            icon={<Users size={16} color="#8B5CF6" />}
-            iconBg="#F5F3FF"
-            style={{ width: cardW }}
-          />
-          <KPICard
-            title="Regions / Zones"
-            value={String(data?.totalRegions ?? '—')}
-            subtitle={`${data?.totalZones ?? 0} zones`}
-            icon={<MapPin size={16} color="#F59E0B" />}
-            iconBg="#FFFBEB"
-            style={{ width: cardW }}
-          />
+  type Kpi = {
+    label: string; value: string; sub: string; icon: IconName;
+    bar?: number | null; tone?: string; valueColor?: string;
+  };
+
+  const headline: Kpi[] = [
+    {
+      label: 'Revenue MTD', icon: 'Performance',
+      value: formatCurrency(data?.revenueMTD || 0),
+      sub: `${data?.targetPct || 0}% of ${formatCurrency(data?.revenueTarget || 0)}`,
+      bar: data?.targetPct || 0,
+    },
+    {
+      label: 'Pipeline Value', icon: 'Pipeline',
+      value: formatCurrency(data?.pipelineValue || 0),
+      sub: `${data?.activeLeads || 0} active leads`,
+      tone: T.info,
+    },
+    {
+      label: 'Schools Won', icon: 'Targets',
+      value: String(data?.schoolsWon || 0),
+      sub: `${data?.winRate || 0}% win rate`,
+      bar: data?.winRate || 0,
+      tone: T.success,
+    },
+    {
+      label: 'Total Users', icon: 'Users',
+      value: String(data?.totalUsers ?? 0),
+      sub: `${data?.activeUsers ?? 0} active`,
+      tone: T.info,
+    },
+  ];
+
+  const activity: Kpi[] = [
+    {
+      label: 'Pending Approvals', icon: 'Deal',
+      value: String(data?.pendingApprovals || 0),
+      sub: data?.pendingApprovals ? 'Action required' : 'All clear',
+      tone: T.warning,
+      valueColor: data?.pendingApprovals ? T.warning : T.text,
+    },
+    {
+      label: 'Visits This Month', icon: 'Tracking',
+      value: String(data?.visitsThisMonth || 0),
+      sub: 'Nationwide', tone: T.info,
+    },
+    {
+      label: 'Demos This Month', icon: 'Demos',
+      value: String(data?.demosThisMonth || 0),
+      sub: 'Nationwide', tone: T.warning,
+    },
+    {
+      label: 'Total FOs', icon: 'Users',
+      value: String(data?.totalFOs || 0),
+      sub: `${data?.totalRegions || 0} regions · ${data?.totalZones || 0} zones`,
+      tone: T.success,
+    },
+    {
+      label: 'Deals Lost', icon: 'Reports',
+      value: String(data?.dealsLost || 0),
+      sub: 'Stage = Lost', tone: T.danger, valueColor: T.danger,
+    },
+  ];
+
+  const showActivity = data?.visitsThisMonth !== undefined || data?.demosThisMonth !== undefined;
+
+  const regions = data?.regions || [];
+  const agingDeals = data?.agingDeals || [];
+  const revenueChart = data?.revenueChart || [];
+  const lossReasons = data?.lossReasons || [];
+  const topPerformers = data?.topPerformers || [];
+  const funnel: { stage: string; count: number }[] =
+    data?.conversionFunnel?.length ? data.conversionFunnel : [];
+  const maxFunnel = Math.max(1, ...funnel.map(f => f.count));
+  const maxRevenue = Math.max(1, ...revenueChart.map(p => p.value));
+  const totalLoss = lossReasons.reduce((sum, r) => sum + r.count, 0);
+
+  const cellPad = 5;
+  const panelPad = 13;
+  const listGap = 6;
+  const rowPad = 9;
+  const iconBox = 32;
+
+  const Body: any = wide ? View : ScrollView;
+  const bodyProps: any = wide
+    ? { style: s.bodyWide }
+    : {
+        style: s.scroll,
+        contentContainerStyle: { padding: 12, paddingBottom: insets.bottom + 16 },
+        showsVerticalScrollIndicator: false,
+        refreshControl: (
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accent} colors={[T.accent]} />
+        ),
+      };
+
+  const empty = (msg: string) => <Text style={[s.empty, { color: T.dim }]}>{msg}</Text>;
+
+  const panelHead = ({
+    title, count, onAction, actionLabel,
+  }: { title: string; count?: number; onAction?: () => void; actionLabel?: string }) => (
+    <View style={s.panelHead}>
+      <Text numberOfLines={1} style={[s.h3, { color: T.text }]}>{title}</Text>
+      {count != null && count > 0 && (
+        <View style={[s.countChip, { backgroundColor: T.cardAlt }]}>
+          <Text style={[s.countTxt, { color: T.sub }]}>{count}</Text>
         </View>
+      )}
+      <View style={s.spacer} />
+      {!!onAction && (
+        <TouchableOpacity onPress={onAction} activeOpacity={0.8} hitSlop={8} style={s.linkBtn}>
+          <Text style={[s.link, { color: T.accent }]}>{actionLabel ?? 'View all'}</Text>
+          <ChevronRight size={12} color={T.accent} strokeWidth={ICON_STROKE} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
-        {(data?.activeLeads !== undefined || data?.visitsThisMonth !== undefined) && (
-          <View style={styles.kpiGrid}>
-            <KPICard
-              title="Active Leads"
-              value={String(data?.activeLeads || 0)}
-              subtitle="Nationwide"
-              icon={<TrendingUp size={16} color="#3B82F6" />}
-              iconBg="#EFF6FF"
-              style={{ width: cardW }}
-            />
-            <KPICard
-              title="Visits This Month"
-              value={String(data?.visitsThisMonth || 0)}
-              subtitle="All FOs"
-              icon={<MapPin size={16} color="#8B5CF6" />}
-              iconBg="#F5F3FF"
-              style={{ width: cardW }}
-            />
-            <KPICard
-              title="Demos This Month"
-              value={String(data?.demosThisMonth || 0)}
-              subtitle="All FOs"
-              icon={<Zap size={16} color="#F59E0B" />}
-              iconBg="#FFFBEB"
-              style={{ width: cardW }}
-            />
-            <KPICard
-              title="Deals Lost"
-              value={String(data?.dealsLost || 0)}
-              subtitle="Stage = Lost"
-              icon={<MapPin size={16} color="#EF4444" />}
-              iconBg="#FEF2F2"
-              valueColor="#EF4444"
-              style={{ width: cardW }}
-            />
-            <KPICard
-              title="Direct Payments"
-              value={formatCurrency(data?.directPaymentsTotal || 0)}
-              subtitle={`${data?.pendingAllowances || 0} pending`}
-              icon={<CreditCard size={16} color="#22C55E" />}
-              iconBg="#F0FDF4"
-              style={{ width: cardW }}
-            />
-          </View>
-        )}
-
-        {/* ── AI Report Generation ─────────────────────────────────────────── */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>⚡ AI Report Generation</Text>
-          <View style={styles.aiRow}>
-            <TouchableOpacity
-              style={[styles.aiBtn, { backgroundColor: COLOR.primary, opacity: generatingAi ? 0.7 : 1 }]}
-              onPress={() => handleGenerateAi('daily')}
-              disabled={generatingAi !== null}
-            >
-              {generatingAi === 'daily'
-                ? <ActivityIndicator size="small" color="#FFF" />
-                : <><Zap size={15} color="#FFF" /><Text style={styles.aiBtnText}>Daily Reports</Text></>
-              }
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.aiBtn, { backgroundColor: '#7C3AED', opacity: generatingAi ? 0.7 : 1 }]}
-              onPress={() => handleGenerateAi('management')}
-              disabled={generatingAi !== null}
-            >
-              {generatingAi === 'management'
-                ? <ActivityIndicator size="small" color="#FFF" />
-                : <><Zap size={15} color="#FFF" /><Text style={styles.aiBtnText}>Management Report</Text></>
-              }
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.aiHint}>Daily reports auto-generate at 23:00 IST · Management reports on 1st & 16th</Text>
-        </Card>
-
-        {/* ── Direct Payments ──────────────────────────────────────────────── */}
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>💳 Direct Payments</Text>
-            <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: COLOR.primary }]}
-              onPress={() => setShowPaymentModal(true)}
-            >
-              <Plus size={13} color="#FFF" />
-              <Text style={styles.addBtnText}>New</Text>
-            </TouchableOpacity>
-          </View>
-          {directPayments.length === 0 ? (
-            <Text style={styles.emptyText}>No direct payments recorded yet.</Text>
-          ) : (
-            directPayments.slice(0, 5).map((p, i) => (
-              <View key={p.id ?? i} style={styles.paymentRow}>
-                <View style={styles.paymentLeft}>
-                  <View style={[styles.paymentTypePill, { backgroundColor: typeColor(p.type) + '22' }]}>
-                    <Text style={[styles.paymentTypeText, { color: typeColor(p.type) }]}>{p.type}</Text>
+  const kpiDeck = (items: Kpi[], rowKey: string) => {
+    const oddTail = !wide && items.length % 2 === 1;
+    return (
+      <View key={rowKey} style={[s.grid, wide && s.kpiRowWide]}>
+        {items.map((k, i) => {
+          const w = wide
+            ? `${100 / items.length}%`
+            : oddTail && i === items.length - 1 ? '100%' : '50%';
+          return (
+          <View key={k.label} style={[{ width: w as any, padding: cellPad }, wide && s.kpiCell]}>
+            <Card style={[s.kpi, { padding: panelPad }]}>
+              <View style={[s.kpiIcon, { backgroundColor: withAlpha(k.tone || T.accent, SOFT_TINT), width: iconBox, height: iconBox }]}>
+                <Icon name={k.icon} size={Math.round(iconBox * 0.53)} color={k.tone || T.accent} />
+              </View>
+              <Text numberOfLines={1} style={[s.kpiValue, { color: k.valueColor || T.text }]}>{k.value}</Text>
+              <Text numberOfLines={2} style={[s.kpiLabel, { color: T.sub }]}>{k.label}</Text>
+              <Text numberOfLines={1} style={[s.kpiSub, { color: T.dim }]}>{k.sub}</Text>
+              {k.bar != null && (
+                <View style={[s.track, { backgroundColor: T.cardAlt }]}>
+                  <View style={{ width: `${Math.min(Math.max(k.bar, 0), 100)}%`, height: '100%', borderRadius: 3, overflow: 'hidden' }}>
+                    <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
                   </View>
-                  <Text style={styles.paymentUser}>{p.userName ?? `User #${p.userId}`}</Text>
                 </View>
-                <View style={styles.paymentRight}>
-                  <Text style={[styles.paymentAmount, { color: COLOR.primary }]}>{formatCurrency(p.amount)}</Text>
-                  <Text style={styles.paymentDate}>{formatDate(p.createdAt)}</Text>
+              )}
+            </Card>
+          </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // AI report actions — SCA-only admin controls, styled with the kit's Btn.
+  const aiPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'AI Reports' })}
+      <Text style={[s.aiHint, { color: T.dim }]}>Trigger organisation-wide report generation.</Text>
+      <View style={s.aiRow}>
+        <Btn
+          label={generatingAi === 'daily' ? 'Generating…' : 'Daily Reports'}
+          onPress={() => handleGenerateAi('daily')}
+          disabled={generatingAi !== null}
+          small
+          icon={generatingAi === 'daily'
+            ? <ActivityIndicator size="small" color={T.onAccent} />
+            : <Sparkles size={14} color={T.onAccent} strokeWidth={ICON_STROKE} />}
+        />
+        <Btn
+          label={generatingAi === 'management' ? 'Generating…' : 'Management'}
+          onPress={() => handleGenerateAi('management')}
+          disabled={generatingAi !== null}
+          variant="secondary"
+          small
+          icon={generatingAi === 'management'
+            ? <ActivityIndicator size="small" color={T.accent} />
+            : <Sparkles size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
+        />
+      </View>
+    </Card>
+  );
+
+  const regionPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Region Performance', count: regions.length })}
+      <PanelBody wide={wide} contentStyle={{ gap: listGap }}>
+        {regions.length ? (
+          regions.map(region => {
+            const tp = attainColor(T, region.targetPct);
+            return (
+              <View key={region.id} style={[s.zoneRow, { padding: rowPad, borderColor: T.line }]}>
+                <View style={s.flexMin}>
+                  <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{region.name}</Text>
+                  <View style={s.zoneStats}>
+                    <Text numberOfLines={1} style={[s.cellSub, s.shrink, { color: T.sub }]}>{formatCurrency(region.revenue)}</Text>
+                    <Text style={[s.cellSub, { color: T.dim }]}>·</Text>
+                    <Text numberOfLines={1} style={[s.cellSub, s.shrink, s.bold, { color: tp }]}>{region.targetPct}%</Text>
+                    <Text style={[s.cellSub, { color: T.dim }]}>·</Text>
+                    <Text numberOfLines={1} style={[s.cellSub, s.shrink, { color: T.sub }]}>{region.foCount ?? 0} FOs</Text>
+                  </View>
+                  <ProgressBar value={region.targetPct} height={4} color={tp} trackColor={T.cardAlt} style={{ marginTop: 5 }} />
+                </View>
+                <View style={s.noShrink}>
+                  <StatusBadge label={region.health} color={healthColor(T, region.health)} />
                 </View>
               </View>
-            ))
-          )}
-        </Card>
+            );
+          })
+        ) : empty('No region data yet')}
+      </PanelBody>
+    </Card>
+  );
 
-        {/* ── Regional Scorecard ────────────────────────────────────────────── */}
-        {(data?.regions?.length ?? 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>🗺️ Regional Scorecard</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ minWidth: tablet ? width - 80 : Math.max(width - 64, 560) }}>
-                <View style={styles.tableHeader}>
-                  {['Region', 'Revenue', 'Target %', 'Leads', 'Win Rate', 'Health'].map((h, i) => (
-                    <Text key={h} style={[styles.thCell, i === 0 ? { flex: 2 } : { flex: 1.2 }]} numberOfLines={1}>{h}</Text>
-                  ))}
-                </View>
-                {(data?.regions ?? []).map((reg) => (
-                  <View key={reg.id} style={styles.tableRow}>
-                    <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>{reg.name}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{formatCurrency(reg.revenue)}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2, color: getProgressColor(reg.targetPct) }]}>{reg.targetPct}%</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.activeLeads ?? reg.schools}</Text>
-                    <Text style={[styles.tdCell, { flex: 1.2 }]}>{reg.winRate}%</Text>
-                    <View style={{ flex: 1.2, alignItems: 'flex-start' }}>
-                      <Badge label={reg.health} color={getStatusColor(reg.health)} size="sm" />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          </Card>
-        )}
-
-        {/* Conversion Funnel */}
-        {(data?.conversionFunnel?.length || 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>📊 Conversion Funnel</Text>
-            <View style={styles.funnelContainer}>
-              {(data?.conversionFunnel || []).map((item) => {
-                const maxCount = Math.max(...(data?.conversionFunnel || []).map((s) => s.count), 1);
-                const barH = Math.max((item.count / maxCount) * 120, 8);
-                const FUNNEL_COLORS: Record<string, string> = {
-                  'New Lead': '#9CA3AF', 'Contacted': '#9CA3AF',
-                  'Qualified': '#38BDF8', 'Demo': '#818CF8',
-                  'Proposal': '#FBBF24', 'Negotiation': '#F97316', 'Won': '#14B8A6',
-                };
-                const color = FUNNEL_COLORS[item.stage] || '#9CA3AF';
-                return (
-                  <View key={item.stage} style={styles.funnelBar}>
-                    <Text style={styles.funnelCount}>{item.count}</Text>
-                    <View style={[styles.funnelFill, { height: barH, backgroundColor: color }]} />
-                    <Text style={styles.funnelLabel} numberOfLines={2}>{item.stage}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </Card>
-        )}
-
-        {/* Aging Deals */}
-        {(data?.agingDeals?.length || 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>⏰ Aging Deals</Text>
-            {(data?.agingDeals || []).map((deal, idx) => (
-              <View key={idx} style={styles.agingRow}>
-                <View style={styles.agingInfo}>
-                  <Text style={styles.agingSchool} numberOfLines={1}>{deal.school}</Text>
-                  <Text style={styles.agingMeta}>{deal.stage} · {deal.daysInStage}d</Text>
-                </View>
-                <View style={styles.agingRight}>
-                  <Text style={styles.agingValue}>{formatCurrency(deal.value)}</Text>
-                  <View style={[styles.riskBadge, { backgroundColor: RISK_COLORS[deal.risk] + '22' }]}>
-                    <Text style={[styles.riskText, { color: RISK_COLORS[deal.risk] }]}>{deal.risk}</Text>
-                  </View>
+  const funnelPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Conversion Funnel (National)' })}
+      <PanelBody wide={wide} contentStyle={{ gap: listGap }}>
+        {funnel.length ? (
+          funnel.map(f => (
+            <View key={f.stage} style={s.funnelRow}>
+              <Text numberOfLines={2} style={[s.funnelLbl, { color: T.sub }]}>{f.stage}</Text>
+              <View style={[s.funnelTrack, { backgroundColor: T.cardAlt }]}>
+                <View style={{ width: `${(f.count / maxFunnel) * 100}%`, height: '100%', borderRadius: 7, overflow: 'hidden', justifyContent: 'center' }}>
+                  <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
+                  {f.count > 0 && <Text style={s.funnelCount}>{f.count}</Text>}
                 </View>
               </View>
-            ))}
-          </Card>
-        )}
-
-        {/* ── Revenue Trend ────────────────────────────────────────────────── */}
-        {(data?.revenueChart?.length ?? 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>📈 Revenue Trend</Text>
-            <View style={styles.chartArea}>
-              {(data?.revenueChart ?? []).map((point) => {
-                const maxVal = Math.max(...(data?.revenueChart ?? []).map((p) => p.value));
-                const pct = maxVal > 0 ? (point.value / maxVal) * 100 : 0;
-                return (
-                  <View key={point.label} style={styles.barWrap}>
-                    <Text style={styles.barValue}>{formatCurrency(point.value)}</Text>
-                    <View style={styles.barContainer}>
-                      <View style={[styles.bar, { height: `${pct}%` as any, backgroundColor: COLOR.primary }]} />
-                    </View>
-                    <Text style={styles.barLabel}>{point.label}</Text>
-                  </View>
-                );
-              })}
             </View>
-          </Card>
-        )}
+          ))
+        ) : empty('No pipeline data yet')}
+      </PanelBody>
+    </Card>
+  );
 
-        {/* Loss Reasons */}
-        {(data?.lossReasons?.length || 0) > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>📉 Loss Reasons</Text>
-            {(data?.lossReasons || []).map((lr) => {
-              const total = (data?.lossReasons || []).reduce((s, r) => s + r.count, 0);
-              const pct = total > 0 ? (lr.count / total) * 100 : 0;
-              return (
-                <View key={lr.reason} style={styles.lossRow}>
-                  <Text style={styles.lossReason} numberOfLines={1}>{lr.reason}</Text>
-                  <View style={{ flex: 1, marginHorizontal: 10, height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
-                    <View style={{ width: `${pct}%` as any, height: 6, backgroundColor: '#EF4444', borderRadius: 3 }} />
-                  </View>
-                  <Text style={styles.lossCount}>{lr.count}</Text>
+  const agingPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Aging Deals', count: agingDeals.length })}
+      <PanelBody wide={wide} contentStyle={{ gap: listGap }}>
+        {agingDeals.length ? agingDeals.map((deal, idx) => {
+          const c = riskColor(T, deal.risk);
+          return (
+            <View key={idx} style={[s.agingRow, { padding: rowPad, backgroundColor: withAlpha(c, 0.08), borderColor: withAlpha(c, 0.2) }]}>
+              <View style={s.flexMin}>
+                <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{deal.school}</Text>
+                <Text numberOfLines={1} style={[s.cellSub, { color: T.sub }]}>{deal.stage} · {formatCurrency(deal.value)}</Text>
+              </View>
+              <View style={[s.noShrink, s.alignEnd]}>
+                <Text numberOfLines={1} style={[s.rowVal, { color: c }]}>{deal.daysInStage}d</Text>
+                <View style={[s.riskChip, { backgroundColor: withAlpha(c, SOFT_TINT) }]}>
+                  <Text numberOfLines={1} style={[s.riskTxt, { color: c }]}>{deal.risk}</Text>
                 </View>
-              );
-            })}
-          </Card>
-        )}
-
-        {/* ── Pipeline & Win Stats ─────────────────────────────────────────── */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 National Overview</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <TrendingUp size={20} color={COLOR.primary} />
-              <Text style={styles.statVal}>{formatCurrency(data?.pipelineValue ?? 0)}</Text>
-              <Text style={styles.statLbl}>Pipeline</Text>
+              </View>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <CreditCard size={20} color="#22C55E" />
-              <Text style={styles.statVal}>{data?.winRate ?? 0}%</Text>
-              <Text style={styles.statLbl}>Win Rate</Text>
+          );
+        }) : empty('No aging deals')}
+      </PanelBody>
+    </Card>
+  );
+
+  const revenuePanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Revenue Trend' })}
+      <PanelBody wide={wide}>
+        <View style={s.chartArea}>
+          {revenueChart.map(point => (
+            <View key={point.label} style={s.barWrap}>
+              <Text numberOfLines={1} style={[s.barValue, { color: T.sub }]}>{formatCurrency(point.value)}</Text>
+              <View style={s.barContainer}>
+                <View style={[s.bar, { height: `${(point.value / maxRevenue) * 100}%` }]}>
+                  <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
+                </View>
+              </View>
+              <Text numberOfLines={1} style={[s.barLabel, { color: T.dim }]}>{point.label}</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Building2 size={20} color="#F59E0B" />
-              <Text style={styles.statVal}>{data?.schoolsWon ?? 0}</Text>
-              <Text style={styles.statLbl}>Schools Won</Text>
-            </View>
-          </View>
-        </Card>
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
-
-      {/* ── Direct Payment Modal ──────────────────────────────────────────── */}
-      <Modal
-        visible={showPaymentModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowPaymentModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create Direct Payment</Text>
-              <TouchableOpacity onPress={() => setShowPaymentModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={22} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.inputLabel}>User ID *</Text>
-            <TextInput
-              style={styles.input}
-              value={dpUserId}
-              onChangeText={setDpUserId}
-              placeholder="Enter user ID"
-              keyboardType="numeric"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={styles.inputLabel}>Payment Type</Text>
-            <View style={styles.typeRow}>
-              {(['Bonus', 'Allowance', 'Incentive'] as const).map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typeChip, dpType === t && { backgroundColor: COLOR.primary }]}
-                  onPress={() => setDpType(t)}
-                >
-                  <Text style={[styles.typeChipText, dpType === t && { color: '#FFF' }]}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.inputLabel}>Amount (₹) *</Text>
-            <TextInput
-              style={styles.input}
-              value={dpAmount}
-              onChangeText={setDpAmount}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={styles.inputLabel}>Description</Text>
-            <TextInput
-              style={[styles.input, { height: 76, textAlignVertical: 'top' }]}
-              value={dpDescription}
-              onChangeText={setDpDescription}
-              placeholder="Optional note..."
-              multiline
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Button
-              title="Create Payment"
-              onPress={handleCreateDirectPayment}
-              loading={dpSaving}
-              color={COLOR.primary}
-              style={{ marginTop: 4 }}
-            />
-          </View>
+          ))}
         </View>
-      </Modal>
-      <LogoutModal visible={showLogout} onCancel={() => setShowLogout(false)} onConfirm={() => { setShowLogout(false); setTimeout(logout, 350); }} />
-    </SafeAreaView>
+      </PanelBody>
+    </Card>
+  );
+
+  const lossPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Loss Reasons', count: lossReasons.length })}
+      <PanelBody wide={wide} contentStyle={{ gap: listGap + 2 }}>
+        {lossReasons.length ? lossReasons.map(lr => {
+          const p = totalLoss > 0 ? (lr.count / totalLoss) * 100 : 0;
+          return (
+            <View key={lr.reason} style={s.lossRow}>
+              <Text numberOfLines={1} style={[s.lossReason, { color: T.sub }]}>{lr.reason}</Text>
+              <View style={[s.lossTrack, { backgroundColor: T.cardAlt }]}>
+                <View style={{ width: `${p}%`, height: '100%', borderRadius: 3, backgroundColor: T.danger }} />
+              </View>
+              <Text numberOfLines={1} style={[s.lossCount, { color: T.danger }]}>{lr.count}</Text>
+            </View>
+          );
+        }) : empty('No loss data yet')}
+      </PanelBody>
+    </Card>
+  );
+
+  const topPanel = (
+    <Card style={[s.panel, { padding: panelPad }, !wide && s.panelPhone]}>
+      {panelHead({ title: 'Top Performers', count: topPerformers.length })}
+      <PanelBody wide={wide} contentStyle={{ gap: listGap }}>
+        {topPerformers.length ? topPerformers.slice(0, 8).map((p, idx) => {
+          const tp = attainColor(T, p.targetPct);
+          return (
+            <View key={p.foId ?? idx} style={[s.zoneRow, { padding: rowPad, borderColor: T.line }]}>
+              <View style={[s.rankChip, { backgroundColor: withAlpha(T.accent, SOFT_TINT) }]}>
+                <Text style={[s.rankTxt, { color: T.accent }]}>{idx + 1}</Text>
+              </View>
+              <View style={s.flexMin}>
+                <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{p.name}</Text>
+                <View style={s.zoneStats}>
+                  <Text numberOfLines={1} style={[s.cellSub, s.shrink, { color: T.sub }]}>{formatCurrency(p.revenue)}</Text>
+                  <Text style={[s.cellSub, { color: T.dim }]}>·</Text>
+                  <Text numberOfLines={1} style={[s.cellSub, s.shrink, s.bold, { color: tp }]}>{p.targetPct}%</Text>
+                  <Text style={[s.cellSub, { color: T.dim }]}>·</Text>
+                  <Text numberOfLines={1} style={[s.cellSub, s.shrink, { color: T.sub }]}>{p.dealsWon} won</Text>
+                </View>
+              </View>
+              <View style={s.noShrink}>
+                <StatusBadge label={p.status} color={healthColor(T, p.status)} />
+              </View>
+            </View>
+          );
+        }) : empty('No performer data yet')}
+      </PanelBody>
+    </Card>
+  );
+
+  const rowA: { key: string; node: React.ReactNode }[] = [];
+  if (regions.length > 0) rowA.push({ key: 'regions', node: regionPanel });
+  rowA.push({ key: 'funnel', node: funnelPanel });
+  if (agingDeals.length > 0) rowA.push({ key: 'aging', node: agingPanel });
+
+  const rowB: { key: string; node: React.ReactNode }[] = [];
+  if (revenueChart.length > 0) rowB.push({ key: 'revenue', node: revenuePanel });
+  if (lossReasons.length > 0) rowB.push({ key: 'loss', node: lossPanel });
+  if (topPerformers.length > 0) rowB.push({ key: 'top', node: topPanel });
+
+  const rowC: { key: string; node: React.ReactNode }[] = [{ key: 'ai', node: aiPanel }];
+
+  const panelRow = (cells: { key: string; node: React.ReactNode }[]) => {
+    const w = wide ? `${100 / cells.length}%` : '100%';
+    return (
+      <View style={[s.grid, wide && s.rowWide, wide && s.rowFlex]}>
+        {cells.map(c => (
+          <View key={c.key} style={{ width: w as any, padding: cellPad }}>{c.node}</View>
+        ))}
+      </View>
+    );
+  };
+
+  return (
+    <View style={[s.root, { backgroundColor: T.bg }]}>
+      {periodBar}
+      <Body {...bodyProps}>
+        {kpiDeck(headline, 'headline')}
+        {showActivity && kpiDeck(activity, 'activity')}
+        {rowA.length > 0 && panelRow(rowA)}
+        {rowB.length > 0 && panelRow(rowB)}
+        {/* AI actions row — on phone it just stacks below like any other panel. */}
+        {!wide && panelRow(rowC)}
+      </Body>
+    </View>
   );
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const typeColor = (type: string) => {
-  if (type === 'Bonus') return '#22C55E';
-  if (type === 'Incentive') return '#8B5CF6';
-  return '#F59E0B'; // Allowance
-};
-
-// ─── Demo fallback ────────────────────────────────────────────────────────────
-
-const DEMO_DATA: ScaDashboardDto = {
-  revenueMTD: 68000000,
-  revenueTarget: 200000000,
-  targetPct: 34,
-  schoolsWon: 84,
-  pipelineValue: 145000000,
-  winRate: 33,
-  totalUsers: 48,
-  activeUsers: 35,
-  totalRegions: 4,
-  totalZones: 12,
-  regions: [],
-  revenueChart: [
-    { label: 'Oct', value: 42000000 }, { label: 'Nov', value: 55000000 },
-    { label: 'Dec', value: 38000000 }, { label: 'Jan', value: 61000000 },
-    { label: 'Feb', value: 52000000 }, { label: 'Mar', value: 68000000 },
-  ],
-  lossReasons: [],
-  activeLeads: 900,
-  visitsThisMonth: 3200,
-  demosThisMonth: 420,
-  conversionFunnel: [],
-  agingDeals: [],
-};
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  headerTop: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 12,
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  greeting: { fontSize: rf(12), color: 'rgba(255,255,255,0.7)' },
-  userName: { fontSize: rf(17), fontWeight: '700', color: '#FFF' },
-  headerRight: { flexDirection: 'row', gap: 8 },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  periodRow: { flexDirection: 'row', gap: 6 },
-  periodBtn: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  periodBtnActive: { backgroundColor: '#FFF' },
-  periodText: { fontSize: rf(13), color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
+// ─── Styles (layout only — every colour is applied inline from the theme) ──────
+const s = StyleSheet.create({
+  errWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  errCard: { maxWidth: 380, alignItems: 'center', padding: 24, gap: 8, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
+  errTitle: { fontSize: rf(15.5), fontWeight: '700', marginTop: 4 },
+  errTxt: { fontSize: rf(12.5), textAlign: 'center', lineHeight: rf(18) },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8, height: 38, paddingHorizontal: 18, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  retryTxt: { fontSize: rf(13), fontWeight: '700' },
+  root: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 14 },
+  bodyWide: { flex: 1, minHeight: 0, padding: 12 },
 
-  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  periodBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+    paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  scopeName: { fontSize: rf(12.5), fontWeight: '700', flexShrink: 1, minWidth: 0 },
+  segment: { alignSelf: 'flex-start', flexShrink: 0 },
+  refreshBtn: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, paddingHorizontal: 11, borderRadius: 9, borderWidth: StyleSheet.hairlineWidth },
+  refreshTxt: { fontSize: rf(11.5), fontWeight: '700' },
 
-  section: { padding: 16 },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', color: '#111827', marginBottom: 14 },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 14,
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch' },
+  kpiRowWide: { flexWrap: 'nowrap', flexShrink: 0, height: 145 },
+  kpiCell: { height: '100%' },
+  rowWide: { flexWrap: 'nowrap' },
+  rowFlex: { flex: 1, minHeight: 0 },
 
-  // AI
-  aiRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  aiBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 13, borderRadius: 10,
-  },
-  aiBtnText: { fontSize: rf(13), fontWeight: '700', color: '#FFF' },
-  aiHint: { fontSize: rf(11), color: '#9CA3AF', textAlign: 'center' },
+  kpi: { flex: 1 },
+  kpiIcon: { borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  kpiValue: { fontSize: rf(21), fontWeight: '800', letterSpacing: -0.6, marginTop: 8 },
+  kpiLabel: { fontSize: rf(12), fontWeight: '600', marginTop: 3 },
+  kpiSub: { fontSize: rf(10.5), fontWeight: '400', marginTop: 2, marginBottom: 8 },
+  track: { height: 5, borderRadius: 3, overflow: 'hidden', marginTop: 'auto', marginBottom: 0 },
 
-  // Direct payments
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
-  },
-  addBtnText: { fontSize: rf(12), fontWeight: '700', color: '#FFF' },
-  emptyText: { fontSize: rf(13), color: '#9CA3AF', textAlign: 'center', paddingVertical: 10 },
-  paymentRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
-  },
-  paymentLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  paymentTypePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  paymentTypeText: { fontSize: rf(11), fontWeight: '700' },
-  paymentUser: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
-  paymentRight: { alignItems: 'flex-end', gap: 2 },
-  paymentAmount: { fontSize: rf(14), fontWeight: '700' },
-  paymentDate: { fontSize: rf(10), color: '#9CA3AF' },
+  panel: { flex: 1 },
+  panelPhone: { minHeight: 190 },
+  panelScroll: { flex: 1, minHeight: 0 },
 
-  // Table
-  tableHeader: {
-    flexDirection: 'row', paddingBottom: 8,
-    borderBottomWidth: 2, borderBottomColor: '#F3F4F6',
-  },
-  thCell: { fontSize: rf(11), fontWeight: '700', color: '#6B7280', textTransform: 'uppercase' },
-  tableRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
-  },
-  tdCell: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
+  panelHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  h3: { fontSize: rf(13.5), fontWeight: '700', flexShrink: 1, minWidth: 0 },
+  countChip: { flexShrink: 0, minWidth: 20, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 7 },
+  countTxt: { fontSize: rf(9.5), fontWeight: '700', textAlign: 'center' },
+  spacer: { flex: 1, minWidth: 0 },
+  linkBtn: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 1 },
+  link: { fontSize: rf(10.5), fontWeight: '700' },
 
-  // Chart
-  chartArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120 },
-  barWrap: { flex: 1, alignItems: 'center' },
-  barContainer: { width: '100%', height: 80, justifyContent: 'flex-end' },
-  bar: { width: '70%', borderRadius: 4, alignSelf: 'center', minHeight: 4 },
-  barLabel: { fontSize: rf(10), color: '#9CA3AF', marginTop: 4 },
-  barValue: { fontSize: rf(8), color: '#6B7280', marginBottom: 2 },
+  aiHint: { fontSize: rf(11.5), fontWeight: '400', marginBottom: 10 },
+  aiRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
 
-  // Stats row
-  statsRow: { flexDirection: 'row', alignItems: 'center' },
-  statBox: { flex: 1, alignItems: 'center', gap: 6 },
-  statDivider: { width: 1, height: 40, backgroundColor: '#F3F4F6' },
-  statVal: { fontSize: rf(14), fontWeight: '700', color: '#111827', textAlign: 'center' },
-  statLbl: { fontSize: rf(11), color: '#9CA3AF' },
+  flexMin: { flex: 1, minWidth: 0 },
+  shrink: { flexShrink: 1, minWidth: 0 },
+  noShrink: { flexShrink: 0 },
+  alignEnd: { alignItems: 'flex-end' },
+  bold: { fontWeight: '700' },
+  rowTitle: { fontSize: rf(12.5), fontWeight: '600' },
+  rowVal: { fontSize: rf(11.5), fontWeight: '700' },
+  cellSub: { fontSize: rf(10.5), fontWeight: '400', marginTop: 1 },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    padding: 20, gap: 12,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
-  inputLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: -4 },
-  input: {
-    backgroundColor: '#F9FAFB', borderRadius: 10, borderWidth: 1,
-    borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: rf(14), color: '#111827',
-  },
-  typeRow: { flexDirection: 'row', gap: 8 },
-  typeChip: {
-    flex: 1, paddingVertical: 9, borderRadius: 8,
-    alignItems: 'center', backgroundColor: '#F3F4F6',
-  },
-  typeChipText: { fontSize: rf(13), fontWeight: '600', color: '#374151' },
+  zoneRow: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  zoneStats: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
 
-  funnelContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: 160, paddingTop: 8 },
-  funnelBar: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
-  funnelCount: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  funnelFill: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8, minHeight: 8 },
-  funnelLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '500', textAlign: 'center' },
-  agingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  agingInfo: { flex: 1 },
-  agingSchool: { fontSize: rf(14), fontWeight: '600', color: '#111827' },
-  agingMeta: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
-  agingRight: { alignItems: 'flex-end', gap: 4 },
-  agingValue: { fontSize: rf(14), fontWeight: '700', color: '#374151' },
-  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
-  riskText: { fontSize: rf(11), fontWeight: '700' },
-  lossRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  lossReason: { fontSize: rf(13), color: '#374151', width: 110 },
-  lossCount: { fontSize: rf(13), fontWeight: '700', color: '#EF4444', width: 24, textAlign: 'right' },
+  rankChip: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rankTxt: { fontSize: rf(11), fontWeight: '800' },
+
+  funnelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  funnelLbl: { fontSize: rf(11), fontWeight: '500', width: 84, flexShrink: 0 },
+  funnelTrack: { flex: 1, minWidth: 0, height: 22, borderRadius: 7, overflow: 'hidden' },
+  funnelCount: { fontSize: rf(10), fontWeight: '700', color: '#FFF', marginLeft: 7 },
+
+  chartArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 132 },
+  barWrap: { flex: 1, minWidth: 0, alignItems: 'center' },
+  barContainer: { width: '100%', flex: 1, justifyContent: 'flex-end', marginVertical: 3 },
+  bar: { width: '68%', minHeight: 4, borderRadius: 5, alignSelf: 'center', overflow: 'hidden' },
+  barValue: { fontSize: rf(9), fontWeight: '600', textAlign: 'center' },
+  barLabel: { fontSize: rf(10), fontWeight: '500', textAlign: 'center' },
+
+  agingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  riskChip: { height: 16, paddingHorizontal: 6, borderRadius: 8, justifyContent: 'center', marginTop: 2 },
+  riskTxt: { fontSize: rf(9), fontWeight: '700' },
+
+  lossRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  lossReason: { fontSize: rf(11.5), fontWeight: '500', width: 96, flexShrink: 0 },
+  lossTrack: { flex: 1, minWidth: 0, height: 6, borderRadius: 3, overflow: 'hidden' },
+  lossCount: { fontSize: rf(12), fontWeight: '700', width: 24, textAlign: 'right' },
+
+  empty: { fontSize: rf(12.5), textAlign: 'center', paddingVertical: 28 },
 });

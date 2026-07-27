@@ -488,7 +488,7 @@ export const FODashboard = ({ navigation }: any) => {
         {/* ── Weekly plan strip — compact mirror of web; taps through to the full screen ── */}
         {weekDays.length > 0 && (
           <View style={[styles.stripCell, { padding: cellPad }]}>
-            <Card style={styles.strip} onPress={() => navigation.navigate('WeeklyPlanScreen')}>
+            <Card style={styles.strip} onPress={() => navigation.navigate('WeeklyPlanScreen', { pushed: true })}>
               <View style={styles.stripHead}>
                 <CalendarCheck size={14} color={T.accent} strokeWidth={ICON_STROKE} />
                 <Text numberOfLines={1} style={[styles.stripTitle, { color: T.text }]}>Weekly Plan</Text>
@@ -728,7 +728,7 @@ export const FODashboard = ({ navigation }: any) => {
               {panelHead({
                 title: 'Hot Leads — Immediate Action',
                 count: hotLeads.length,
-                onAction: () => navigation.navigate('LeadsList'),
+                onAction: () => navigation.navigate('LeadsList', { pushed: true }),
                 actionLabel: 'View all',
               })}
               {wide && hotLeads.length > 0 && (

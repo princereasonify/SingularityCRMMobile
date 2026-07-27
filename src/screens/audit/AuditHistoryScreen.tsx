@@ -162,7 +162,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontWeight: '700', fontSize: rf(20), letterSpacing: -0.3 },
   headerSub: { fontWeight: '400', fontSize: rf(12.5), marginTop: 1 },
 
-  list: { padding: 16, gap: 0 },
+  // Centered + capped so log rows don't stretch edge-to-edge on iPad landscape.
+  list: { padding: 16, gap: 0, width: '100%', maxWidth: 720, alignSelf: 'center' },
   listEmpty: { flex: 1 },
   logRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   timelineCol: { alignItems: 'center', width: 32 },

@@ -21,6 +21,7 @@ import {
   Btn, IconBtn, Field, Input, Segmented, Trigger, Dropdown,
   StatusBadge, Pagination, ListCard, FormModal, ConfirmModal,
 } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
@@ -289,21 +290,20 @@ function CreateModal({ parent, users, onClose, onSaved }: {
           </Field>
 
           <View style={wide ? s.row2 : s.col2}>
-            <Input
+            <NumField
               label="Target Amount (₹) *"
               value={form.targetAmount}
               onChangeText={v => set('targetAmount', v)}
-              keyboardType="numeric"
               placeholder="e.g. 2500000"
-              containerStyle={{ flex: 1 }}
+              style={{ flex: 1 }}
             />
-            <Input
+            <NumField
               label="Number of Schools *"
               value={form.numberOfSchools}
               onChangeText={v => set('numberOfSchools', v)}
-              keyboardType="numeric"
               placeholder="e.g. 50"
-              containerStyle={{ flex: 1 }}
+              allowDecimal={false}
+              style={{ flex: 1 }}
             />
           </View>
           {Number(form.targetAmount) > 0 && (
@@ -311,21 +311,21 @@ function CreateModal({ parent, users, onClose, onSaved }: {
           )}
 
           <View style={wide ? s.row2 : s.col2}>
-            <Input
+            <NumField
               label="Number of Logins (optional)"
               value={form.numberOfLogins}
               onChangeText={v => set('numberOfLogins', v)}
-              keyboardType="numeric"
               placeholder="e.g. 1000"
-              containerStyle={{ flex: 1 }}
+              allowDecimal={false}
+              style={{ flex: 1 }}
             />
-            <Input
+            <NumField
               label="Number of Students (optional)"
               value={form.numberOfStudents}
               onChangeText={v => set('numberOfStudents', v)}
-              keyboardType="numeric"
               placeholder="e.g. 5000"
-              containerStyle={{ flex: 1 }}
+              allowDecimal={false}
+              style={{ flex: 1 }}
             />
           </View>
 
@@ -428,11 +428,10 @@ function ProgressModal({ target, onClose, onSaved }: {
           </Text>
         </View>
 
-        <Input
+        <NumField
           label="Achieved Amount (₹)"
           value={form.achievedAmount}
           onChangeText={v => set('achievedAmount', v)}
-          keyboardType="numeric"
         />
         {amt > 0 && (
           <Text style={[s.previewTxt, { color: T.dim }]}>
@@ -440,28 +439,28 @@ function ProgressModal({ target, onClose, onSaved }: {
           </Text>
         )}
 
-        <Input
+        <NumField
           label="Achieved Schools"
           value={form.achievedSchools}
           onChangeText={v => set('achievedSchools', v)}
-          keyboardType="numeric"
+          allowDecimal={false}
         />
 
         {target.numberOfLogins != null && (
-          <Input
+          <NumField
             label={`Achieved Logins (target: ${target.numberOfLogins})`}
             value={form.achievedLogins}
             onChangeText={v => set('achievedLogins', v)}
-            keyboardType="numeric"
+            allowDecimal={false}
           />
         )}
 
         {target.numberOfStudents != null && (
-          <Input
+          <NumField
             label={`Achieved Students (target: ${target.numberOfStudents})`}
             value={form.achievedStudents}
             onChangeText={v => set('achievedStudents', v)}
-            keyboardType="numeric"
+            allowDecimal={false}
           />
         )}
 

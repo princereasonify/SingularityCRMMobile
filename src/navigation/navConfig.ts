@@ -204,11 +204,146 @@ export const RH_NAV: NavGroup[] = [
   },
 ];
 
+/**
+ * SH — mirrors web's `Sidebar.jsx` SH array (22 items) regrouped into the shared bands,
+ * plus Team (which mobile already had and the backend supports for SH via
+ * DashboardService.GetTeamPerformanceAsync). SH-specific admin screens: Allowance Config
+ * and Visit Fields (visit-report field configuration — SH only, web parity).
+ *
+ * Differences from RH, all matching web:
+ *   · "National Dashboard"; adds Visit Fields + Allowance Config in Admin
+ *   · no per-FO tracking; national scope (org-wide, enforced server-side)
+ */
+export const SH_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { route: 'Dashboard', label: 'National Dashboard', icon: 'Dashboard' },
+      { route: 'Team', label: 'Team', icon: 'Users' },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'Schools', label: 'Schools', icon: 'Schools' },
+      { route: 'All Leads', label: 'All Leads', icon: 'Leads' },
+      { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
+      { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
+      { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+    ],
+  },
+  {
+    label: 'Demos',
+    items: [
+      { route: 'Demo Management', label: 'Demo Management', icon: 'Demos' },
+      { route: 'Record Demo', label: 'Record Demo', icon: 'Record' },
+      { route: 'Onboarding', label: 'Onboarding', icon: 'Onboarding' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Live Tracking', label: 'Live Tracking', icon: 'Tracking' },
+      { route: 'Home Location', label: 'Home Location', icon: 'Home' },
+      { route: 'Weekly Plan', label: 'Weekly Plan', icon: 'Weekly' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { route: 'Payment Integration', label: 'Payment Integration', icon: 'Payment' },
+      { route: 'Targets', label: 'Targets', icon: 'Targets' },
+      { route: 'Allowances', label: 'Allowances', icon: 'Allowance' },
+      { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
+      { route: 'Visit Fields', label: 'Visit Fields', icon: 'Onboarding' },
+      { route: 'Regions & Zones', label: 'Regions & Zones', icon: 'Regions' },
+      { route: 'Manage Users', label: 'Manage Users', icon: 'Users' },
+    ],
+  },
+];
+
+/**
+ * SCA — mirrors web's `Sidebar.jsx` SCA array (22 items) regrouped into the shared bands.
+ * Differences from SH, all matching web:
+ *   · "Admin Dashboard"; adds Performance; no Team, no Visit Fields
+ *   · Payments is the real gateway "Payment Integration" (the old "Deal Payments"
+ *     direct-payment screen hit endpoints the backend never served)
+ *   · full org-wide scope (SCA sees everything)
+ */
+export const SCA_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ route: 'Dashboard', label: 'Admin Dashboard', icon: 'Dashboard' }],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'Schools', label: 'Schools', icon: 'Schools' },
+      { route: 'All Leads', label: 'All Leads', icon: 'Leads' },
+      { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
+      { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
+      { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+    ],
+  },
+  {
+    label: 'Demos',
+    items: [
+      { route: 'Demo Management', label: 'Demo Management', icon: 'Demos' },
+      { route: 'Record Demo', label: 'View Recordings', icon: 'Record' },
+      { route: 'Onboarding', label: 'Onboarding', icon: 'Onboarding' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Live Tracking', label: 'Live Tracking', icon: 'Tracking' },
+      { route: 'Home Location', label: 'Home Location', icon: 'Home' },
+      { route: 'Weekly Plan', label: 'Weekly Plan', icon: 'Weekly' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { route: 'Payment Integration', label: 'Payment Integration', icon: 'Payment' },
+      { route: 'Targets', label: 'Targets', icon: 'Targets' },
+      { route: 'Performance', label: 'Performance', icon: 'Performance' },
+      { route: 'Allowances', label: 'Allowances', icon: 'Allowance' },
+      { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
+      { route: 'Regions & Zones', label: 'Regions & Zones', icon: 'Regions' },
+      { route: 'Manage Users', label: 'Manage Users', icon: 'Users' },
+    ],
+  },
+];
+
 /** Role → grouped nav. Other roles land here as they're migrated to the new shell. */
 export const NAV_BY_ROLE: Record<string, NavGroup[]> = {
   FO: FO_NAV,
   ZH: ZH_NAV,
   RH: RH_NAV,
+  SH: SH_NAV,
+  SCA: SCA_NAV,
 };
 
 /** The group a route belongs to — used by the topbar breadcrumb ("Role · Group"). */

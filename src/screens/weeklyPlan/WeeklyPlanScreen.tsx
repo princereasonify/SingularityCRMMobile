@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
   Alert, RefreshControl, useWindowDimensions, StyleProp, ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, ChevronDown, ChevronUp,
   Check, Pencil, CircleX, Users, WifiOff, TriangleAlert, CalendarDays,
@@ -597,9 +597,10 @@ const tm = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 const ROLE_FILTERS = ['ALL', 'FO', 'ZH', 'RH', 'SH'] as const;
 
-export const WeeklyPlanScreen = (_: any) => {
+export const WeeklyPlanScreen = ({ route }: any) => {
   const { user } = useAuth();
   const T = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { isOnline } = useOffline();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
@@ -1078,6 +1079,9 @@ export const WeeklyPlanScreen = (_: any) => {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* Stack-pushed from the FO dashboard → no AppTopbar; pad for the island.
+          Drawer path (no `pushed` param) already gets the inset from AppTopbar. */}
+      {route?.params?.pushed && <View style={{ height: insets.top }} />}
       <ScrollView
         contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         keyboardShouldPersistTaps="handled"

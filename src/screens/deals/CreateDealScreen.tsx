@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TextInput, useWindowDimensions,
+  View, Text, ScrollView, StyleSheet, Alert, TextInput, useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerActions } from '@react-navigation/native';
@@ -10,7 +10,8 @@ import { leadsApi } from '../../api/leads';
 import { LeadListDto } from '../../types';
 import { DateInput } from '../../components/common/DateInput';
 import { AppHeader, Card } from '../../components/ui';
-import { Btn, Field, Input, Trigger, Dropdown, StatusBadge } from '../../components/crud';
+import { Btn, Field, Trigger, Dropdown, StatusBadge } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
 import { CONTRACT_DURATIONS } from '../../utils/constants';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -46,6 +47,10 @@ const INSTALLMENT_MAP: Record<string, number> = {
  */
 const DISCOUNT_MIN = 0;
 const DISCOUNT_MAX = 100;
+
+// Same module catalog web's staticData.js exposes — the backend stores Deal.Modules
+// (JSON) and deal detail renders them, so the picker feeds a real field.
+const MODULE_CATALOG = ['AI Voice', 'Curriculum', 'AI Videos', 'Lab Simulator', 'ERP', 'Homework', 'Exam'];
 
 // Escalation ladder, coloured from the theme. Four tiers, four distinct hues:
 // `accent` sits between warning and danger because two adjacent escalation tiers
@@ -95,7 +100,13 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
     notes: '',
     contractStartDate: '',
     contractEndDate: '',
+    modules: [] as string[],
   });
+
+  const toggleModule = (m: string) => setForm((f) => ({
+    ...f,
+    modules: f.modules.includes(m) ? f.modules.filter((x) => x !== m) : [...f.modules, m],
+  }));
 
   useEffect(() => {
     // GET /leads/pipeline returns ApiResponse<List<LeadListDto>>; the client's response
@@ -172,7 +183,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
         billingFrequency: form.billing,
         paymentTerms: form.billing,
         duration: form.duration,
-        modules: [],
+        modules: form.modules,
         notes: form.notes || undefined,
         submitForApproval: true,
         contractStartDate: form.contractStartDate || undefined,
@@ -232,33 +243,30 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
         </Field>
 
         <View style={s.row}>
-          <Input
+          <NumField
             label="Base Price (₹ per login) *"
             value={form.basePrice}
             onChangeText={(v) => set('basePrice', v)}
-            keyboardType="numeric"
             placeholder="e.g. 1000"
-            containerStyle={s.half}
+            style={s.half}
           />
-          <Input
+          <NumField
             label="Total Logins *"
             value={form.totalLogins}
             onChangeText={(v) => set('totalLogins', v)}
-            keyboardType="numeric"
             placeholder="e.g. 50"
-            containerStyle={s.half}
+            allowDecimal={false}
+            style={s.half}
           />
         </View>
 
         <View style={s.row}>
-          <Input
+          <NumField
             label="Discount %"
             value={form.discount}
             onChangeText={(v) => set('discount', v)}
-            keyboardType="numeric"
             placeholder="0"
-            containerStyle={s.half}
-            error={discErr}
+            style={s.half}
           />
           <Field label="Billing Frequency" style={s.half}>
             <Trigger
@@ -302,6 +310,27 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
           <DateInput label="End Date" value={form.contractEndDate} onChange={(v) => set('contractEndDate', v)} accentColor={T.accent} />
           {!!datesErr && <Text style={[s.hint, { color: T.danger }]}>{datesErr}</Text>}
         </View>
+
+        <Field label="Modules">
+          <View style={s.moduleWrap}>
+            {MODULE_CATALOG.map((m) => {
+              const on = form.modules.includes(m);
+              return (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => toggleModule(m)}
+                  activeOpacity={0.8}
+                  style={[
+                    s.moduleChip,
+                    { borderColor: on ? T.accent : T.line, backgroundColor: on ? T.accent : T.card },
+                  ]}
+                >
+                  <Text style={[s.moduleChipTxt, { color: on ? T.onAccent : T.sub }]}>{m}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Field>
 
         {/* The kit's Input is a fixed 46px row, so a 3-row textarea uses the kit's
             Field + the kit's input face at a taller height. */}
@@ -440,6 +469,9 @@ const s = StyleSheet.create({
   sectionSub: { fontWeight: '400', fontSize: rf(11.5), marginTop: 2 },
   cardTitle: { fontWeight: '700', fontSize: rf(14), letterSpacing: -0.2, marginBottom: 8 },
   hint: { fontWeight: '500', fontSize: rf(11.5), lineHeight: 16, marginTop: 6 },
+  moduleWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  moduleChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100, borderWidth: 1 },
+  moduleChipTxt: { fontSize: rf(12), fontWeight: '600' },
 
   infoRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12,

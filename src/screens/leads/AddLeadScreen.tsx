@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, useWindowDimensions,
+  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { leadsApi } from '../../api/leads';
 import { UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Input } from '../../components/common/Input';
 // Free text 400s the create: CreateLeadRequest.CloseDate is a C# DateTime?.
 import { DateInput } from '../../components/common/DateInput';
+import { NumField } from '../../components/common/NumField';
 import { ICON_STROKE } from '../../components/common/Icon';
-import { IconBtn, Btn, Field, Trigger, Dropdown } from '../../components/crud';
+import { IconBtn, Btn, Field, Input, Trigger, Dropdown } from '../../components/crud';
 import { Card } from '../../components/ui';
 import { BOARDS, SCHOOL_TYPES, LEAD_SOURCES } from '../../utils/constants';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -283,37 +283,54 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
               <>
                 {sec.key === 'school' && (
                   <>
-                    <Input label="School Name *" value={form.school} onChangeText={(v) => set('school', v)} error={errors.school} accentColor={T.accent} placeholder="e.g. DPS Andheri" />
+                    <Input label="School Name *" value={form.school} onChangeText={(v) => set('school', v)} error={errors.school} placeholder="e.g. DPS Andheri" />
                     <View style={[styles.row, twoWide && styles.rowTablet]}>
                       {renderSelect('board', 'Board *', BOARDS.map((b) => ({ label: b, value: b })), form.board, (v) => set('board', v), 'Select board', styles.half)}
                       {renderSelect('type', 'Type *', SCHOOL_TYPES.map((t) => ({ label: t, value: t })), form.type, (v) => set('type', v), 'Select type', styles.half)}
                     </View>
-                    <Input label="Number of Students" value={form.students} onChangeText={(v) => set('students', v)} keyboardType="numeric" placeholder="e.g. 1200" accentColor={T.accent} />
+                    <Field label="Number of Students">
+                      <NumField value={form.students} onChangeText={(v) => set('students', v)} placeholder="e.g. 1200" label="Number of Students" allowDecimal={false} />
+                    </Field>
                   </>
                 )}
                 {sec.key === 'location' && (
                   <View style={[styles.row, twoWide && styles.rowTablet]}>
-                    <Input label="City *" value={form.city} onChangeText={(v) => set('city', v)} error={errors.city} placeholder="e.g. Mumbai" accentColor={T.accent} containerStyle={styles.half} />
-                    <Input label="State" value={form.state} onChangeText={(v) => set('state', v)} placeholder="e.g. Maharashtra" accentColor={T.accent} containerStyle={styles.half} />
+                    <Input label="City *" value={form.city} onChangeText={(v) => set('city', v)} error={errors.city} placeholder="e.g. Mumbai" containerStyle={styles.half} />
+                    <Input label="State" value={form.state} onChangeText={(v) => set('state', v)} placeholder="e.g. Maharashtra" containerStyle={styles.half} />
                   </View>
                 )}
                 {sec.key === 'contact' && (
                   <>
-                    <Input label="Contact Name *" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" accentColor={T.accent} />
-                    <Input label="Designation" value={form.contactDesignation} onChangeText={(v) => set('contactDesignation', v)} placeholder="e.g. Principal" accentColor={T.accent} />
-                    <Input label="Phone *" value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" accentColor={T.accent} />
-                    <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" accentColor={T.accent} />
+                    <Input label="Contact Name *" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" />
+                    <Input label="Designation" value={form.contactDesignation} onChangeText={(v) => set('contactDesignation', v)} placeholder="e.g. Principal" />
+                    <Input label="Phone *" value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" />
+                    <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" />
                   </>
                 )}
                 {sec.key === 'deal' && (
                   <>
-                    <Input label="Estimated Value (₹)" value={form.value} onChangeText={(v) => set('value', v)} keyboardType="numeric" placeholder="e.g. 500000" accentColor={T.accent} />
+                    <Field label="Estimated Value (₹)">
+                      <NumField value={form.value} onChangeText={(v) => set('value', v)} placeholder="e.g. 500000" label="Estimated Value (₹)" />
+                    </Field>
                     <DateInput label="Expected Close Date" value={form.closeDate} onChange={(v) => set('closeDate', v)} accentColor={T.accent} />
                     {renderSelect('source', 'Lead Source', LEAD_SOURCES.map((s) => ({ label: s, value: s })), form.source, (v) => set('source', v), 'Select source')}
                   </>
                 )}
                 {sec.key === 'extra' && (
-                  <Input label="Notes" value={form.notes} onChangeText={(v) => set('notes', v)} multiline numberOfLines={4} placeholder="Additional context..." accentColor={T.accent} style={{ textAlignVertical: 'top', minHeight: 80 }} />
+                  /* Kit Input hard-codes height 46 — a multiline field needs Field + TextInput. */
+                  <Field label="Notes">
+                    <View style={[styles.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
+                      <TextInput
+                        value={form.notes}
+                        onChangeText={(v) => set('notes', v)}
+                        placeholder="Additional context..."
+                        placeholderTextColor={T.dim}
+                        multiline
+                        numberOfLines={4}
+                        style={[styles.textareaTxt, { color: T.text }]}
+                      />
+                    </View>
+                  </Field>
                 )}
               </>
             )}
@@ -349,4 +366,6 @@ const styles = StyleSheet.create({
   footerActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
   actionBtn: { flex: 1 },
   fieldError: { fontWeight: '400', fontSize: rf(12), marginTop: 4 },
+  textarea: { minHeight: 80, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
+  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
 });

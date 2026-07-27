@@ -199,7 +199,9 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
   },
   markAllText: { fontWeight: '600', fontSize: rf(12) },
-  list: { paddingVertical: 8 },
+  // Centered + capped so rows don't stretch edge-to-edge on iPad landscape (no effect on
+  // phones, whose width is already below the cap).
+  list: { paddingVertical: 8, width: '100%', maxWidth: 720, alignSelf: 'center' },
   listEmpty: { flex: 1 },
   notifCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,

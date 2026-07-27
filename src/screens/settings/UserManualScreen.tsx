@@ -13,6 +13,7 @@ import {
 } from 'lucide-react-native';
 import { AppHeader } from '../../components/ui';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT, AppTheme } from '../../theme';
 
 import { rf } from '../../utils/responsive';
 import { MANUAL_HTML } from '../../assets/manualHtml';
@@ -23,101 +24,123 @@ const PhoneFrame = ({ headerBg, headerContent, children }: {
   headerBg: string;
   headerContent: React.ReactNode;
   children: React.ReactNode;
-}) => (
-  <View style={phoneS.outer}>
-    <View style={phoneS.frame}>
-      <View style={phoneS.notchBar}><View style={phoneS.notchPill} /></View>
-      <View style={{ backgroundColor: headerBg }}>{headerContent}</View>
-      <View style={phoneS.phBody}>{children}</View>
-    </View>
-  </View>
-);
-
-const MockInput = ({ label, value, secure }: { label: string; value: string; secure?: boolean }) => (
-  <View style={phoneS.fieldWrap}>
-    <Text style={phoneS.fieldLabel}>{label}</Text>
-    <View style={phoneS.fieldBox}>
-      <Text style={phoneS.fieldValue}>{secure ? '••••••••' : value}</Text>
-    </View>
-  </View>
-);
-
-const MockBtn = ({ label, color }: { label: string; color: string }) => (
-  <View style={[phoneS.mockBtn, { backgroundColor: color }]}>
-    <Text style={phoneS.mockBtnText}>{label}</Text>
-  </View>
-);
-
-const KpiCard = ({ value, label, color }: { value: string; label: string; color: string }) => (
-  <View style={phoneS.kpiCard}>
-    <Text style={[phoneS.kpiValue, { color }]}>{value}</Text>
-    <Text style={phoneS.kpiLabel}>{label}</Text>
-  </View>
-);
-
-const ProgressBar = ({ pct, color }: { pct: number; color: string }) => (
-  <View style={phoneS.progressBg}>
-    <View style={[phoneS.progressFill, { width: `${pct}%` as any, backgroundColor: color }]} />
-  </View>
-);
-
-const LeadCard = ({ school, city, stage, value, score, hot, overdue, borderColor }: any) => (
-  <View style={[phoneS.leadCard, { borderLeftColor: borderColor }]}>
-    {hot && <Text style={phoneS.hotBadge}>🔥 Hot</Text>}
-    <Text style={phoneS.cardTitle}>{school}</Text>
-    <Text style={phoneS.cardMeta}>{city} · {stage}</Text>
-    <View style={phoneS.cardBottom}>
-      <Text style={phoneS.cardValue}>{value}</Text>
-      <View style={[phoneS.scoreChip, { backgroundColor: score >= 70 ? '#dcfce7' : score >= 40 ? '#fef3c7' : '#fee2e2' }]}>
-        <Text style={[phoneS.scoreText, { color: score >= 70 ? '#16a34a' : score >= 40 ? '#d97706' : '#dc2626' }]}>{score}</Text>
+}) => {
+  const T = useAppTheme();
+  return (
+    <View style={phoneS.outer}>
+      <View style={[phoneS.frame, { borderColor: T.line, backgroundColor: T.card }]}>
+        <View style={[phoneS.notchBar, { backgroundColor: T.text }]}><View style={[phoneS.notchPill, { backgroundColor: T.dim }]} /></View>
+        <View style={{ backgroundColor: headerBg }}>{headerContent}</View>
+        <View style={[phoneS.phBody, { backgroundColor: T.bg }]}>{children}</View>
       </View>
     </View>
-    {overdue && <Text style={phoneS.overdueText}>⚠ No activity in 6 days</Text>}
-  </View>
-);
+  );
+};
 
-const KanbanCol = ({ title, count, cards, isTarget, colColor }: any) => (
-  <View style={[phoneS.kCol, isTarget && { borderColor: colColor, borderWidth: 2 }]}>
-    <View style={[phoneS.kColHeader, isTarget && { backgroundColor: colColor + '20' }]}>
-      <Text style={[phoneS.kColTitle, isTarget && { color: colColor }]}>{title}</Text>
-      <View style={[phoneS.kColBadge, { backgroundColor: colColor }]}>
-        <Text style={phoneS.kColBadgeText}>{count}</Text>
+const MockInput = ({ label, value, secure }: { label: string; value: string; secure?: boolean }) => {
+  const T = useAppTheme();
+  return (
+    <View style={phoneS.fieldWrap}>
+      <Text style={[phoneS.fieldLabel, { color: T.sub }]}>{label}</Text>
+      <View style={[phoneS.fieldBox, { borderColor: T.line, backgroundColor: T.cardAlt }]}>
+        <Text style={[phoneS.fieldValue, { color: T.text }]}>{secure ? '••••••••' : value}</Text>
       </View>
     </View>
-    <View style={phoneS.kColBody}>
-      {isTarget && (
-        <View style={[phoneS.dropZone, { borderColor: colColor }]}>
-          <Text style={[phoneS.dropText, { color: colColor }]}>↓ Drop</Text>
-        </View>
-      )}
-      {cards.map((c: string, i: number) => (
-        <View key={i} style={phoneS.kCard}>
-          <Text style={phoneS.kCardText}>{c}</Text>
-        </View>
-      ))}
-    </View>
-  </View>
-);
+  );
+};
 
-const renderMockup = (id: string) => {
+const MockBtn = ({ label, color }: { label: string; color: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[phoneS.mockBtn, { backgroundColor: color }]}>
+      <Text style={[phoneS.mockBtnText, { color: T.onAccent }]}>{label}</Text>
+    </View>
+  );
+};
+
+const KpiCard = ({ value, label, color }: { value: string; label: string; color: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[phoneS.kpiCard, { borderColor: T.line, backgroundColor: T.card }]}>
+      <Text style={[phoneS.kpiValue, { color }]}>{value}</Text>
+      <Text style={[phoneS.kpiLabel, { color: T.dim }]}>{label}</Text>
+    </View>
+  );
+};
+
+const ProgressBar = ({ pct, color }: { pct: number; color: string }) => {
+  const T = useAppTheme();
+  return (
+    <View style={[phoneS.progressBg, { backgroundColor: T.cardAlt }]}>
+      <View style={[phoneS.progressFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+    </View>
+  );
+};
+
+const LeadCard = ({ school, city, stage, value, score, hot, overdue, borderColor }: any) => {
+  const T = useAppTheme();
+  const scoreColor = score >= 70 ? T.success : score >= 40 ? T.warning : T.danger;
+  return (
+    <View style={[phoneS.leadCard, { borderColor: T.line, backgroundColor: T.card, borderLeftColor: borderColor }]}>
+      {hot && <Text style={[phoneS.hotBadge, { color: T.warning }]}>🔥 Hot</Text>}
+      <Text style={[phoneS.cardTitle, { color: T.text }]}>{school}</Text>
+      <Text style={[phoneS.cardMeta, { color: T.dim }]}>{city} · {stage}</Text>
+      <View style={phoneS.cardBottom}>
+        <Text style={[phoneS.cardValue, { color: T.text }]}>{value}</Text>
+        <View style={[phoneS.scoreChip, { backgroundColor: withAlpha(scoreColor, SOFT_TINT) }]}>
+          <Text style={[phoneS.scoreText, { color: scoreColor }]}>{score}</Text>
+        </View>
+      </View>
+      {overdue && <Text style={[phoneS.overdueText, { color: T.danger }]}>⚠ No activity in 6 days</Text>}
+    </View>
+  );
+};
+
+const KanbanCol = ({ title, count, cards, isTarget, colColor }: any) => {
+  const T = useAppTheme();
+  return (
+    <View style={[phoneS.kCol, { borderColor: T.line }, isTarget && { borderColor: colColor, borderWidth: 2 }]}>
+      <View style={[phoneS.kColHeader, { backgroundColor: T.cardAlt }, isTarget && { backgroundColor: withAlpha(colColor, SOFT_TINT) }]}>
+        <Text style={[phoneS.kColTitle, { color: T.sub }, isTarget && { color: colColor }]}>{title}</Text>
+        <View style={[phoneS.kColBadge, { backgroundColor: colColor }]}>
+          <Text style={[phoneS.kColBadgeText, { color: T.onAccent }]}>{count}</Text>
+        </View>
+      </View>
+      <View style={phoneS.kColBody}>
+        {isTarget && (
+          <View style={[phoneS.dropZone, { borderColor: colColor }]}>
+            <Text style={[phoneS.dropText, { color: colColor }]}>↓ Drop</Text>
+          </View>
+        )}
+        {cards.map((c: string, i: number) => (
+          <View key={i} style={[phoneS.kCard, { borderColor: T.line, backgroundColor: T.card }]}>
+            <Text style={[phoneS.kCardText, { color: T.text }]}>{c}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const renderMockup = (id: string, T: AppTheme) => {
   switch (id) {
 
     case 'login':
       return (
         <PhoneFrame
-          headerBg="#fff"
+          headerBg={T.card}
           headerContent={
             <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 6 }}>
               <Text style={{ fontSize: rf(22) }}>◉</Text>
-              <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#0d9488' }}>SingularityCRM</Text>
-              <Text style={{ fontSize: rf(9), color: '#9ca3af' }}>EduCRM Sales Portal</Text>
+              <Text style={{ fontSize: rf(14), fontWeight: '800', color: T.accent }}>SingularityCRM</Text>
+              <Text style={{ fontSize: rf(9), color: T.dim }}>EduCRM Sales Portal</Text>
             </View>
           }
         >
           <MockInput label="Email Address" value="rajesh@educrm.in" />
           <MockInput label="Password" value="password" secure />
-          <MockBtn label="Login" color="#0d9488" />
-          <Text style={{ textAlign: 'center', fontSize: rf(9), color: '#9ca3af', marginTop: 6, marginBottom: 10 }}>
+          <MockBtn label="Login" color={T.accent} />
+          <Text style={{ textAlign: 'center', fontSize: rf(9), color: T.dim, marginTop: 6, marginBottom: 10 }}>
             Forgot password? · v1.0.0
           </Text>
         </PhoneFrame>
@@ -126,38 +149,38 @@ const renderMockup = (id: string) => {
     case 'dashboard':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Good Morning, Ravi! 🌤</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>Monday, 24 March 2026</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Good Morning, Ravi! 🌤</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>Monday, 24 March 2026</Text>
             </View>
           }
         >
           <View style={{ flexDirection: 'row', gap: 5, padding: 8 }}>
-            <KpiCard value="3" label="Visits" color="#0d9488" />
-            <KpiCard value="7" label="Calls" color="#2563eb" />
-            <KpiCard value="24" label="Leads" color="#ea580c" />
+            <KpiCard value="3" label="Visits" color={T.accent} />
+            <KpiCard value="7" label="Calls" color={T.info} />
+            <KpiCard value="24" label="Leads" color={T.warning} />
           </View>
           <View style={{ paddingHorizontal: 10, marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text style={{ fontSize: rf(9), color: '#374151', fontWeight: '700' }}>Monthly Revenue</Text>
-              <Text style={{ fontSize: rf(9), color: '#dc2626', fontWeight: '700' }}>40%</Text>
+              <Text style={{ fontSize: rf(9), color: T.text, fontWeight: '700' }}>Monthly Revenue</Text>
+              <Text style={{ fontSize: rf(9), color: T.danger, fontWeight: '700' }}>40%</Text>
             </View>
-            <ProgressBar pct={40} color="#dc2626" />
+            <ProgressBar pct={40} color={T.danger} />
           </View>
           <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
             {[
-              { emoji: '🏫', title: 'Delhi Public School', sub: '9:00 AM · Visit', bg: '#dcfce7' },
-              { emoji: '📞', title: 'Modern Academy', sub: '11:00 AM · Call', bg: '#eff6ff' },
+              { emoji: '🏫', title: 'Delhi Public School', sub: '9:00 AM · Visit', bg: withAlpha(T.success, SOFT_TINT) },
+              { emoji: '📞', title: 'Modern Academy', sub: '11:00 AM · Call', bg: withAlpha(T.info, SOFT_TINT) },
             ].map((t, i) => (
               <View key={i} style={phoneS.timelineItem}>
                 <View style={[phoneS.timelineDot, { backgroundColor: t.bg }]}>
                   <Text style={{ fontSize: rf(10) }}>{t.emoji}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={phoneS.cardTitle}>{t.title}</Text>
-                  <Text style={phoneS.cardMeta}>{t.sub}</Text>
+                  <Text style={[phoneS.cardTitle, { color: T.text }]}>{t.title}</Text>
+                  <Text style={[phoneS.cardMeta, { color: T.dim }]}>{t.sub}</Text>
                 </View>
               </View>
             ))}
@@ -168,27 +191,27 @@ const renderMockup = (id: string) => {
     case 'leads':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Leads</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>47 leads · ₹1,24,50,000</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Leads</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>47 leads · ₹1,24,50,000</Text>
             </View>
           }
         >
-          <View style={{ margin: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 7, padding: 6 }}>
-            <Text style={{ fontSize: rf(10), color: '#9ca3af' }}>🔍 Search school or city...</Text>
+          <View style={{ margin: 8, borderWidth: 1, borderColor: T.line, borderRadius: 7, padding: 6 }}>
+            <Text style={{ fontSize: rf(10), color: T.dim }}>🔍 Search school or city...</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 8, marginBottom: 6 }}>
             {['All', 'New', 'Demo', 'Won'].map((f, i) => (
-              <View key={f} style={[phoneS.chipItem, i === 0 && { backgroundColor: '#0d9488', borderColor: '#0d9488' }]}>
-                <Text style={[phoneS.chipText, i === 0 && { color: '#fff' }]}>{f}</Text>
+              <View key={f} style={[phoneS.chipItem, { backgroundColor: T.cardAlt, borderColor: T.line }, i === 0 && { backgroundColor: T.accent, borderColor: T.accent }]}>
+                <Text style={[phoneS.chipText, { color: T.sub }, i === 0 && { color: T.onAccent }]}>{f}</Text>
               </View>
             ))}
           </View>
           <View style={{ gap: 5, paddingHorizontal: 8, paddingBottom: 10 }}>
-            <LeadCard school="Delhi Public School" city="Dwarka" stage="Demo Done" value="₹2,40,000" score={82} hot borderColor="#f59e0b" />
-            <LeadCard school="Modern Academy" city="Rohini" stage="Contacted" value="₹1,80,000" score={54} overdue borderColor="#ef4444" />
+            <LeadCard school="Delhi Public School" city="Dwarka" stage="Demo Done" value="₹2,40,000" score={82} hot borderColor={T.warning} />
+            <LeadCard school="Modern Academy" city="Rohini" stage="Contacted" value="₹1,80,000" score={54} overdue borderColor={T.danger} />
           </View>
         </PhoneFrame>
       );
@@ -196,36 +219,36 @@ const renderMockup = (id: string) => {
     case 'pipeline':
       return (
         <PhoneFrame
-          headerBg="#7c3aed"
+          headerBg={T.warning}
           headerContent={
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10 }}>
               <View>
-                <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Pipeline</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>47 leads</Text>
+                <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Pipeline</Text>
+                <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>47 leads</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 {['−', '+'].map(b => (
-                  <View key={b} style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: rf(12) }}>{b}</Text>
+                  <View key={b} style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: withAlpha(T.onAccent, 0.2), alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: T.onAccent, fontSize: rf(12) }}>{b}</Text>
                   </View>
                 ))}
               </View>
             </View>
           }
         >
-          <View style={{ backgroundColor: '#e0e7ff', padding: 4 }}>
-            <Text style={{ textAlign: 'center', fontSize: rf(8), color: '#4338ca' }}>🤏 Pinch · ✌ Drag · 👆 Long press to move</Text>
+          <View style={{ backgroundColor: withAlpha(T.info, SOFT_TINT), padding: 4 }}>
+            <Text style={{ textAlign: 'center', fontSize: rf(8), color: T.info }}>🤏 Pinch · ✌ Drag · 👆 Long press to move</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ padding: 6 }}>
             <View style={{ flexDirection: 'row', gap: 6 }}>
-              <KanbanCol title="New" count={12} cards={['DPS Dwarka', 'Bloom Int\'l']} colColor="#7c3aed" />
-              <KanbanCol title="Qualified" count={8} cards={['GD Goenka']} colColor="#7c3aed" />
-              <KanbanCol title="Demo" count={11} cards={['Oxford Int\'l']} isTarget colColor="#7c3aed" />
+              <KanbanCol title="New" count={12} cards={['DPS Dwarka', 'Bloom Int\'l']} colColor={T.warning} />
+              <KanbanCol title="Qualified" count={8} cards={['GD Goenka']} colColor={T.warning} />
+              <KanbanCol title="Demo" count={11} cards={['Oxford Int\'l']} isTarget colColor={T.warning} />
             </View>
           </ScrollView>
-          <View style={phoneS.ghostCard}>
-            <Text style={phoneS.ghostSchool}>🔥 Sunrise Int'l</Text>
-            <Text style={phoneS.ghostMeta}>Dragging... · ₹4,50,000</Text>
+          <View style={[phoneS.ghostCard, { borderColor: T.line, backgroundColor: T.card, borderLeftColor: T.warning }]}>
+            <Text style={[phoneS.ghostSchool, { color: T.text }]}>🔥 Sunrise Int'l</Text>
+            <Text style={[phoneS.ghostMeta, { color: T.dim }]}>Dragging... · ₹4,50,000</Text>
           </View>
         </PhoneFrame>
       );
@@ -233,28 +256,28 @@ const renderMockup = (id: string) => {
     case 'schools':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Schools</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>63 schools</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Schools</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>63 schools</Text>
             </View>
           }
         >
-          <View style={{ margin: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 7, padding: 6 }}>
-            <Text style={{ fontSize: rf(10), color: '#9ca3af' }}>🔍 Search schools...</Text>
+          <View style={{ margin: 8, borderWidth: 1, borderColor: T.line, borderRadius: 7, padding: 6 }}>
+            <Text style={{ fontSize: rf(10), color: T.dim }}>🔍 Search schools...</Text>
           </View>
           <View style={{ gap: 5, paddingHorizontal: 8, paddingBottom: 10 }}>
             {[
-              { name: 'Delhi Public School', city: 'Dwarka · CBSE', score: 94, priority: 'HIGH', color: '#ea580c' },
-              { name: 'Sunrise International', city: 'Gurgaon · IB', score: 72, priority: 'MEDIUM', color: '#d97706' },
-              { name: 'Bloom Academy', city: 'Noida · ICSE', score: 38, priority: 'LOW', color: '#16a34a' },
+              { name: 'Delhi Public School', city: 'Dwarka · CBSE', score: 94, priority: 'HIGH', color: T.danger },
+              { name: 'Sunrise International', city: 'Gurgaon · IB', score: 72, priority: 'MEDIUM', color: T.warning },
+              { name: 'Bloom Academy', city: 'Noida · ICSE', score: 38, priority: 'LOW', color: T.success },
             ].map((s, i) => (
-              <View key={i} style={[phoneS.leadCard, { borderLeftColor: s.color }]}>
+              <View key={i} style={[phoneS.leadCard, { borderColor: T.line, backgroundColor: T.card, borderLeftColor: s.color }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={phoneS.cardTitle}>{s.name}</Text>
-                    <Text style={phoneS.cardMeta}>{s.city}</Text>
+                    <Text style={[phoneS.cardTitle, { color: T.text }]}>{s.name}</Text>
+                    <Text style={[phoneS.cardMeta, { color: T.dim }]}>{s.city}</Text>
                   </View>
                   <View style={{ alignItems: 'center' }}>
                     <Text style={{ fontSize: rf(16), fontWeight: '800', color: s.color }}>{s.score}</Text>
@@ -270,29 +293,29 @@ const renderMockup = (id: string) => {
     case 'contacts':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Contacts</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>Principal · Finance · Admin</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Contacts</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>Principal · Finance · Admin</Text>
             </View>
           }
         >
           <View style={{ padding: 8, gap: 6 }}>
             {[
-              { name: 'Sunita Sharma', role: 'Principal', stage: 'Champion', color: '#16a34a' },
-              { name: 'Arun Mehta', role: 'Finance Head', stage: 'Warm', color: '#d97706' },
-              { name: 'Priya Singh', role: 'Coordinator', stage: 'New', color: '#6b7280' },
+              { name: 'Sunita Sharma', role: 'Principal', stage: 'Champion', color: T.success },
+              { name: 'Arun Mehta', role: 'Finance Head', stage: 'Warm', color: T.warning },
+              { name: 'Priya Singh', role: 'Coordinator', stage: 'New', color: T.sub },
             ].map((c, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[phoneS.contactAvatar, { backgroundColor: c.color + '20' }]}>
+                <View style={[phoneS.contactAvatar, { backgroundColor: withAlpha(c.color, SOFT_TINT) }]}>
                   <Text style={{ color: c.color, fontWeight: '800', fontSize: rf(14) }}>{c.name[0]}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={phoneS.cardTitle}>{c.name}</Text>
-                  <Text style={phoneS.cardMeta}>{c.role} · {c.stage}</Text>
+                  <Text style={[phoneS.cardTitle, { color: T.text }]}>{c.name}</Text>
+                  <Text style={[phoneS.cardMeta, { color: T.dim }]}>{c.role} · {c.stage}</Text>
                 </View>
-                <View style={[phoneS.chipItem, { backgroundColor: '#25D366', borderColor: '#25D366', paddingHorizontal: 6 }]}>
+                <View style={[phoneS.chipItem, { backgroundColor: T.success, borderColor: T.success, paddingHorizontal: 6 }]}>
                   <Text style={{ fontSize: rf(10) }}>💬</Text>
                 </View>
               </View>
@@ -304,28 +327,28 @@ const renderMockup = (id: string) => {
     case 'activities':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Activity Log</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>All interactions</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Activity Log</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>All interactions</Text>
             </View>
           }
         >
           <View style={{ padding: 8, gap: 7 }}>
             {[
-              { type: 'Visit', school: 'Delhi Public School', time: 'Today 9:14 AM', color: '#0d9488' },
-              { type: 'Call', school: 'Modern Academy', time: 'Today 11:30 AM', color: '#2563eb' },
-              { type: 'Demo', school: 'Sunrise Int\'l', time: 'Yesterday 2:00 PM', color: '#7c3aed' },
-              { type: 'Proposal', school: 'GD Goenka', time: '22 Mar 4:00 PM', color: '#ea580c' },
+              { type: 'Visit', school: 'Delhi Public School', time: 'Today 9:14 AM', color: T.accent },
+              { type: 'Call', school: 'Modern Academy', time: 'Today 11:30 AM', color: T.info },
+              { type: 'Demo', school: 'Sunrise Int\'l', time: 'Yesterday 2:00 PM', color: T.warning },
+              { type: 'Proposal', school: 'GD Goenka', time: '22 Mar 4:00 PM', color: T.danger },
             ].map((a, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[phoneS.activityDot, { backgroundColor: a.color + '18', borderColor: a.color }]}>
+                <View style={[phoneS.activityDot, { backgroundColor: withAlpha(a.color, 0.1), borderColor: a.color }]}>
                   <Text style={{ fontSize: rf(9), color: a.color, fontWeight: '800' }}>{a.type[0]}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={phoneS.cardTitle}>{a.type} — {a.school}</Text>
-                  <Text style={phoneS.cardMeta}>{a.time}</Text>
+                  <Text style={[phoneS.cardTitle, { color: T.text }]}>{a.type} — {a.school}</Text>
+                  <Text style={[phoneS.cardMeta, { color: T.dim }]}>{a.time}</Text>
                 </View>
               </View>
             ))}
@@ -336,23 +359,23 @@ const renderMockup = (id: string) => {
     case 'targets':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Targets</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>March 2026</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Targets</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>March 2026</Text>
             </View>
           }
         >
           <View style={{ padding: 10, gap: 10 }}>
             {[
-              { label: 'Revenue', current: '₹4.8L', target: '₹12L', pct: 40, color: '#dc2626', status: 'Behind' },
-              { label: 'Visits', current: '18', target: '30', pct: 60, color: '#f59e0b', status: 'At Risk' },
-              { label: 'New Leads', current: '14', target: '20', pct: 70, color: '#16a34a', status: 'On Track' },
+              { label: 'Revenue', current: '₹4.8L', target: '₹12L', pct: 40, color: T.danger, status: 'Behind' },
+              { label: 'Visits', current: '18', target: '30', pct: 60, color: T.warning, status: 'At Risk' },
+              { label: 'New Leads', current: '14', target: '20', pct: 70, color: T.success, status: 'On Track' },
             ].map(t => (
               <View key={t.label}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: rf(11), fontWeight: '700', color: '#111827' }}>{t.label}</Text>
+                  <Text style={{ fontSize: rf(11), fontWeight: '700', color: T.text }}>{t.label}</Text>
                   <Text style={{ fontSize: rf(10), color: t.color, fontWeight: '700' }}>{t.current} / {t.target}</Text>
                 </View>
                 <ProgressBar pct={t.pct} color={t.color} />
@@ -366,33 +389,33 @@ const renderMockup = (id: string) => {
     case 'tracking':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>My Day</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>GPS Tracking</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>My Day</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>GPS Tracking</Text>
             </View>
           }
         >
           <View style={{ padding: 10, gap: 8 }}>
-            <View style={{ backgroundColor: '#dcfce7', borderRadius: 10, padding: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: rf(11), fontWeight: '700', color: '#16a34a' }}>● Day Active — 4h 12m</Text>
-              <Text style={{ fontSize: rf(9), color: '#16a34a', marginTop: 2 }}>GPS pings every 60s</Text>
+            <View style={{ backgroundColor: withAlpha(T.success, SOFT_TINT), borderRadius: 10, padding: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: rf(11), fontWeight: '700', color: T.success }}>● Day Active — 4h 12m</Text>
+              <Text style={{ fontSize: rf(9), color: T.success, marginTop: 2 }}>GPS pings every 60s</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <View style={[phoneS.trackBtn, { backgroundColor: '#0d9488' }]}>
-                <Text style={{ color: '#fff', fontSize: rf(10), fontWeight: '700' }}>Start Visit</Text>
+              <View style={[phoneS.trackBtn, { backgroundColor: T.accent }]}>
+                <Text style={{ color: T.onAccent, fontSize: rf(10), fontWeight: '700' }}>Start Visit</Text>
               </View>
-              <View style={[phoneS.trackBtn, { backgroundColor: '#dc2626' }]}>
-                <Text style={{ color: '#fff', fontSize: rf(10), fontWeight: '700' }}>End My Day</Text>
+              <View style={[phoneS.trackBtn, { backgroundColor: T.danger }]}>
+                <Text style={{ color: T.onAccent, fontSize: rf(10), fontWeight: '700' }}>End My Day</Text>
               </View>
             </View>
             <View style={{ gap: 5 }}>
-              <Text style={{ fontSize: rf(10), fontWeight: '700', color: '#374151' }}>Today's Stops</Text>
+              <Text style={{ fontSize: rf(10), fontWeight: '700', color: T.text }}>Today's Stops</Text>
               {['9:14 AM — Delhi Public School', '11:20 AM — Modern Academy'].map((s, i) => (
                 <View key={i} style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#0d9488' }} />
-                  <Text style={{ fontSize: rf(9), color: '#6b7280' }}>{s}</Text>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.accent }} />
+                  <Text style={{ fontSize: rf(9), color: T.sub }}>{s}</Text>
                 </View>
               ))}
             </View>
@@ -403,11 +426,11 @@ const renderMockup = (id: string) => {
     case 'ai':
       return (
         <PhoneFrame
-          headerBg="#7c3aed"
+          headerBg={T.warning}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>AI Daily Plan ✨</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>Mon 24 Mar · 3 items</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>AI Daily Plan ✨</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>Mon 24 Mar · 3 items</Text>
             </View>
           }
         >
@@ -418,15 +441,15 @@ const renderMockup = (id: string) => {
               { text: 'Follow up: GD Goenka contract', checked: false },
             ].map((item, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                <View style={[phoneS.checkbox, item.checked && { backgroundColor: '#7c3aed', borderColor: '#7c3aed' }]}>
-                  {item.checked && <Text style={{ color: '#fff', fontSize: rf(9) }}>✓</Text>}
+                <View style={[phoneS.checkbox, { borderColor: T.line }, item.checked && { backgroundColor: T.warning, borderColor: T.warning }]}>
+                  {item.checked && <Text style={{ color: T.onAccent, fontSize: rf(9) }}>✓</Text>}
                 </View>
-                <Text style={[{ flex: 1, fontSize: rf(11), color: '#374151', lineHeight: 18 }, item.checked && { color: '#9ca3af', textDecorationLine: 'line-through' }]}>
+                <Text style={[{ flex: 1, fontSize: rf(11), color: T.text, lineHeight: 18 }, item.checked && { color: T.dim, textDecorationLine: 'line-through' }]}>
                   {item.text}
                 </Text>
               </View>
             ))}
-            <MockBtn label="✓ Accept Plan" color="#7c3aed" />
+            <MockBtn label="✓ Accept Plan" color={T.warning} />
           </View>
         </PhoneFrame>
       );
@@ -434,10 +457,10 @@ const renderMockup = (id: string) => {
     case 'settings':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Settings</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Settings</Text>
             </View>
           }
         >
@@ -450,12 +473,12 @@ const renderMockup = (id: string) => {
               { label: '🖥 Dashboard', sub: 'Customize widgets' },
               { label: '📖 User Manual', sub: 'This guide' },
             ].map((row, i) => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: T.line }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: rf(11), color: '#111827', fontWeight: '600' }}>{row.label}</Text>
-                  <Text style={{ fontSize: rf(9), color: '#9ca3af' }}>{row.sub}</Text>
+                  <Text style={{ fontSize: rf(11), color: T.text, fontWeight: '600' }}>{row.label}</Text>
+                  <Text style={{ fontSize: rf(9), color: T.dim }}>{row.sub}</Text>
                 </View>
-                <Text style={{ fontSize: rf(13), color: '#9ca3af' }}>›</Text>
+                <Text style={{ fontSize: rf(13), color: T.dim }}>›</Text>
               </View>
             ))}
           </View>
@@ -465,18 +488,18 @@ const renderMockup = (id: string) => {
     case 'offline':
       return (
         <PhoneFrame
-          headerBg="#6b7280"
+          headerBg={T.warning}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Offline Mode</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>Offline · 3 queued</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Offline Mode</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>Offline · 3 queued</Text>
             </View>
           }
         >
           <View style={{ padding: 8, gap: 8 }}>
-            <View style={{ backgroundColor: '#dc2626', borderRadius: 8, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ backgroundColor: T.danger, borderRadius: 8, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ fontSize: rf(10) }}>📵</Text>
-              <Text style={{ color: '#fff', fontSize: rf(10), fontWeight: '700' }}>No internet — 3 actions queued</Text>
+              <Text style={{ color: T.onAccent, fontSize: rf(10), fontWeight: '700' }}>No internet — 3 actions queued</Text>
             </View>
             {[
               { label: 'View cached leads', status: '✅ Offline' },
@@ -486,8 +509,8 @@ const renderMockup = (id: string) => {
               { label: 'AI features', status: '🌐 Online' },
             ].map((r, i) => (
               <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: rf(10), color: '#374151' }}>{r.label}</Text>
-                <Text style={{ fontSize: rf(9), color: '#6b7280' }}>{r.status}</Text>
+                <Text style={{ fontSize: rf(10), color: T.text }}>{r.label}</Text>
+                <Text style={{ fontSize: rf(9), color: T.sub }}>{r.status}</Text>
               </View>
             ))}
           </View>
@@ -497,28 +520,28 @@ const renderMockup = (id: string) => {
     case 'audit':
       return (
         <PhoneFrame
-          headerBg="#0d9488"
+          headerBg={T.accent}
           headerContent={
             <View style={{ padding: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: rf(13) }}>Audit History</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: rf(9) }}>Change log</Text>
+              <Text style={{ color: T.onAccent, fontWeight: '800', fontSize: rf(13) }}>Audit History</Text>
+              <Text style={{ color: withAlpha(T.onAccent, 0.8), fontSize: rf(9) }}>Change log</Text>
             </View>
           }
         >
           <View style={{ padding: 8, gap: 7 }}>
             {[
-              { type: 'Updated', field: 'Stage → Demo Done', user: 'Ravi', time: 'Today 2:15 PM', color: '#2563eb' },
-              { type: 'Created', field: 'Lead added', user: 'Ravi', time: 'Yesterday 9:00 AM', color: '#16a34a' },
-              { type: 'Updated', field: 'Score: 54 → 82', user: 'System', time: '22 Mar 4:00 PM', color: '#2563eb' },
-              { type: 'Deleted', field: 'Activity removed', user: 'Admin', time: '21 Mar 1:00 PM', color: '#dc2626' },
+              { type: 'Updated', field: 'Stage → Demo Done', user: 'Ravi', time: 'Today 2:15 PM', color: T.info },
+              { type: 'Created', field: 'Lead added', user: 'Ravi', time: 'Yesterday 9:00 AM', color: T.success },
+              { type: 'Updated', field: 'Score: 54 → 82', user: 'System', time: '22 Mar 4:00 PM', color: T.info },
+              { type: 'Deleted', field: 'Activity removed', user: 'Admin', time: '21 Mar 1:00 PM', color: T.danger },
             ].map((e, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                <View style={[phoneS.activityDot, { backgroundColor: e.color + '18', borderColor: e.color }]}>
+                <View style={[phoneS.activityDot, { backgroundColor: withAlpha(e.color, 0.1), borderColor: e.color }]}>
                   <Text style={{ fontSize: rf(8), color: e.color, fontWeight: '800' }}>{e.type[0]}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={phoneS.cardTitle}>{e.type} — {e.field}</Text>
-                  <Text style={phoneS.cardMeta}>by {e.user} · {e.time}</Text>
+                  <Text style={[phoneS.cardTitle, { color: T.text }]}>{e.type} — {e.field}</Text>
+                  <Text style={[phoneS.cardMeta, { color: T.dim }]}>by {e.user} · {e.time}</Text>
                 </View>
               </View>
             ))}
@@ -531,71 +554,71 @@ const renderMockup = (id: string) => {
   }
 };
 
-// ─── Phone mockup styles ──────────────────────────────────────────────────────
+// ─── Phone mockup styles (layout only — colours applied inline from theme) ────
 const phoneS = StyleSheet.create({
   outer: { alignItems: 'center', marginBottom: 6 },
   frame: {
-    width: 240, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 22,
-    overflow: 'hidden', backgroundColor: '#fff',
+    width: 240, borderWidth: 2, borderRadius: 22,
+    overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12, shadowRadius: 12, elevation: 6,
   },
-  notchBar: { backgroundColor: '#111', height: 18, alignItems: 'center', justifyContent: 'center' },
-  notchPill: { width: 60, height: 6, backgroundColor: '#333', borderRadius: 3 },
-  phBody: { backgroundColor: '#f9fafb' },
+  notchBar: { height: 18, alignItems: 'center', justifyContent: 'center' },
+  notchPill: { width: 60, height: 6, borderRadius: 3 },
+  phBody: {},
   fieldWrap: { marginHorizontal: 10, marginTop: 7 },
-  fieldLabel: { fontSize: rf(9), color: '#6b7280', fontWeight: '600', marginBottom: 2 },
-  fieldBox: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: '#fafafa' },
-  fieldValue: { fontSize: rf(11), color: '#111827' },
+  fieldLabel: { fontSize: rf(9), fontWeight: '600', marginBottom: 2 },
+  fieldBox: { borderWidth: 1, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 6 },
+  fieldValue: { fontSize: rf(11) },
   mockBtn: { marginHorizontal: 10, marginTop: 8, marginBottom: 4, borderRadius: 7, paddingVertical: 9, alignItems: 'center' },
-  mockBtnText: { color: '#fff', fontWeight: '700', fontSize: rf(12) },
-  kpiCard: { flex: 1, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 8, alignItems: 'center', backgroundColor: '#fff' },
+  mockBtnText: { fontWeight: '700', fontSize: rf(12) },
+  kpiCard: { flex: 1, borderWidth: 1, borderRadius: 8, padding: 8, alignItems: 'center' },
   kpiValue: { fontSize: rf(16), fontWeight: '800' },
-  kpiLabel: { fontSize: rf(8), color: '#9ca3af', marginTop: 1 },
-  progressBg: { height: 5, backgroundColor: '#e5e7eb', borderRadius: 3 },
+  kpiLabel: { fontSize: rf(8), marginTop: 1 },
+  progressBg: { height: 5, borderRadius: 3 },
   progressFill: { height: 5, borderRadius: 3 },
   timelineItem: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6 },
   timelineDot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  leadCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 9, padding: 9, backgroundColor: '#fff', borderLeftWidth: 3 },
-  hotBadge: { fontSize: rf(9), color: '#d97706', fontWeight: '700', marginBottom: 2 },
-  cardTitle: { fontSize: rf(11), fontWeight: '700', color: '#111827' },
-  cardMeta: { fontSize: rf(9), color: '#9ca3af', marginTop: 1 },
+  leadCard: { borderWidth: 1, borderRadius: 9, padding: 9, borderLeftWidth: 3 },
+  hotBadge: { fontSize: rf(9), fontWeight: '700', marginBottom: 2 },
+  cardTitle: { fontSize: rf(11), fontWeight: '700' },
+  cardMeta: { fontSize: rf(9), marginTop: 1 },
   cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },
-  cardValue: { fontSize: rf(11), fontWeight: '700', color: '#374151' },
+  cardValue: { fontSize: rf(11), fontWeight: '700' },
   scoreChip: { borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2 },
   scoreText: { fontSize: rf(9), fontWeight: '700' },
-  overdueText: { fontSize: rf(9), color: '#ef4444', marginTop: 3 },
-  chipItem: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f3f4f6' },
-  chipText: { fontSize: rf(9), color: '#6b7280', fontWeight: '600' },
-  kCol: { width: 85, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 9, overflow: 'hidden' },
-  kColHeader: { paddingHorizontal: 7, paddingVertical: 5, backgroundColor: '#f3f4f6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  kColTitle: { fontSize: rf(9), fontWeight: '700', color: '#6b7280' },
+  overdueText: { fontSize: rf(9), marginTop: 3 },
+  chipItem: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
+  chipText: { fontSize: rf(9), fontWeight: '600' },
+  kCol: { width: 85, borderWidth: 1, borderRadius: 9, overflow: 'hidden' },
+  kColHeader: { paddingHorizontal: 7, paddingVertical: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  kColTitle: { fontSize: rf(9), fontWeight: '700' },
   kColBadge: { borderRadius: 10, paddingHorizontal: 5, paddingVertical: 1 },
-  kColBadgeText: { fontSize: rf(8), fontWeight: '700', color: '#fff' },
+  kColBadgeText: { fontSize: rf(8), fontWeight: '700' },
   kColBody: { padding: 4, gap: 3 },
-  kCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 6, padding: 5, backgroundColor: '#fff' },
-  kCardText: { fontSize: rf(8), color: '#111827', fontWeight: '600' },
+  kCard: { borderWidth: 1, borderRadius: 6, padding: 5 },
+  kCardText: { fontSize: rf(8), fontWeight: '600' },
   dropZone: { borderWidth: 2, borderRadius: 6, padding: 5, alignItems: 'center', marginBottom: 3 },
   dropText: { fontSize: rf(9), fontWeight: '700' },
   ghostCard: {
     marginHorizontal: 10, marginBottom: 8, padding: 8,
-    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 9,
-    backgroundColor: '#fff', borderLeftWidth: 3, borderLeftColor: '#7c3aed',
+    borderWidth: 1, borderRadius: 9,
+    borderLeftWidth: 3,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.14, shadowRadius: 8, elevation: 6,
   },
-  ghostSchool: { fontSize: rf(10), fontWeight: '700', color: '#111827' },
-  ghostMeta: { fontSize: rf(9), color: '#9ca3af', marginTop: 2 },
+  ghostSchool: { fontSize: rf(10), fontWeight: '700' },
+  ghostMeta: { fontSize: rf(9), marginTop: 2 },
   contactAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   activityDot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   trackBtn: { flex: 1, borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
-  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 2, borderColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
 });
 
 // ─── Section data ─────────────────────────────────────────────────────────────
 const SECTIONS = [
   {
-    id: 'login', icon: LogIn, title: '1. Login', color: '#0d9488',
+    id: 'login', icon: LogIn, title: '1. Login',
     summary: 'Access the app with your registered email and password.',
     content: [
       { type: 'steps', title: 'Steps', items: [
@@ -614,7 +637,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'roles', icon: Users, title: '2. User Roles', color: '#7c3aed',
+    id: 'roles', icon: Users, title: '2. User Roles',
     summary: 'Four roles — FO, ZH, RH, SH — each with a unique colour theme and tab set.',
     content: [
       { type: 'table', title: 'Roles', headers: ['Role', 'Full Name', 'Access'],
@@ -628,7 +651,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'dashboard', icon: LayoutDashboard, title: '3. Dashboard', color: '#0d9488',
+    id: 'dashboard', icon: LayoutDashboard, title: '3. Dashboard',
     summary: 'Role-specific KPIs, team status, today\'s plan, and quick actions.',
     content: [
       { type: 'bullets', title: 'Key Features', items: [
@@ -641,7 +664,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'leads', icon: ClipboardList, title: '4. Leads Management', color: '#0d9488',
+    id: 'leads', icon: ClipboardList, title: '4. Leads Management',
     summary: 'Create, search, filter, and manage the full lifecycle of school leads.',
     content: [
       { type: 'steps', title: 'Adding a Lead', items: [
@@ -664,7 +687,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'pipeline', icon: GitBranch, title: '5. Pipeline (Kanban)', color: '#7c3aed',
+    id: 'pipeline', icon: GitBranch, title: '5. Pipeline (Kanban)',
     summary: 'Visual board with pinch-to-zoom and drag-and-drop card movement.',
     content: [
       { type: 'steps', title: 'Drag & Drop a Card', items: [
@@ -685,7 +708,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'schools', icon: Building2, title: '6. Schools', color: '#0d9488',
+    id: 'schools', icon: Building2, title: '6. Schools',
     summary: 'School database with priority scoring and duplicate detection.',
     content: [
       { type: 'table', title: 'Priority Levels', headers: ['Level', 'Score', 'Action'],
@@ -704,7 +727,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'contacts', icon: Contact2, title: '7. Contacts', color: '#0d9488',
+    id: 'contacts', icon: Contact2, title: '7. Contacts',
     summary: 'People at schools — decision makers, influencers, coordinators.',
     content: [
       { type: 'table', title: 'Relationship Stages', headers: ['Stage', 'Meaning'],
@@ -724,7 +747,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'activities', icon: Activity, title: '8. Activities', color: '#0d9488',
+    id: 'activities', icon: Activity, title: '8. Activities',
     summary: 'Log every interaction — visits, calls, demos, proposals, follow-ups.',
     content: [
       { type: 'table', title: 'Activity Types', headers: ['Type', 'When to use'],
@@ -740,7 +763,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'targets', icon: Target, title: '9. Targets', color: '#0d9488',
+    id: 'targets', icon: Target, title: '9. Targets',
     summary: 'Monthly sales targets vs. actual performance with colour-coded progress bars.',
     content: [
       { type: 'table', title: 'Progress Colours', headers: ['Colour', 'Status', 'Meaning'],
@@ -753,7 +776,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'tracking', icon: MapPin, title: '10. Location Tracking', color: '#0d9488',
+    id: 'tracking', icon: MapPin, title: '10. Location Tracking',
     summary: 'GPS-based work tracking for FOs and live visibility for managers.',
     content: [
       { type: 'table', title: 'My Day Buttons', headers: ['Button', 'Action'],
@@ -773,7 +796,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'ai', icon: Zap, title: '11. AI Features', color: '#7c3aed',
+    id: 'ai', icon: Zap, title: '11. AI Features',
     summary: 'AI-generated daily plans, reports, lead insights, and score breakdowns.',
     content: [
       { type: 'steps', title: 'AI Daily Plan', items: [
@@ -792,7 +815,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'settings', icon: Settings, title: '12. Settings', color: '#0d9488',
+    id: 'settings', icon: Settings, title: '12. Settings',
     summary: 'Language, notifications, offline mode, AI usage, dashboard customization.',
     content: [
       { type: 'table', title: 'Settings Overview', headers: ['Section', 'What you can do'],
@@ -808,7 +831,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'offline', icon: Wifi, title: '13. Offline Mode', color: '#6b7280',
+    id: 'offline', icon: Wifi, title: '13. Offline Mode',
     summary: 'The app works without internet. Actions are queued and synced on reconnect.',
     content: [
       { type: 'table', title: 'Offline Capabilities', headers: ['Feature', 'Available'],
@@ -824,7 +847,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: 'audit', icon: Clock, title: '14. Audit History', color: '#0d9488',
+    id: 'audit', icon: Clock, title: '14. Audit History',
     summary: 'Full change log for every lead, school, and contact.',
     content: [
       { type: 'bullets', title: 'How to Access', items: [
@@ -948,7 +971,7 @@ export const UserManualScreen = ({ navigation }: any) => {
               {isOpen && (
                 <View style={[styles.sectionBody, { borderTopColor: T.line }]}>
                   {/* Phone mockup snapshot */}
-                  {renderMockup(section.id)}
+                  {renderMockup(section.id, T)}
 
                   {section.content.map((block, bi) => (
                     <View key={bi} style={styles.block}>

@@ -1,30 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Modal,
-  ActivityIndicator, FlatList, Switch,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Switch, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X, Edit2, Trash2 } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Plus, Edit2, Trash2, AlertTriangle } from 'lucide-react-native';
 import { visitReportApi } from '../../api/visitReport';
 import { VisitField, CreateVisitFieldRequest } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { ScreenHeader } from '../../components/common/ScreenHeader';
 import { Card } from '../../components/common/Card';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../../utils/constants';
+import { Btn, Field, Input, FormModal, ConfirmModal, StatusBadge } from '../../components/crud';
+import { NumField } from '../../components/common/NumField';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { withAlpha, SOFT_TINT } from '../../theme';
+import { ICON_STROKE } from '../../components/common/Icon';
 import { rf } from '../../utils/responsive';
-import { ConfirmModal } from '../../components/common/ConfirmModal';
 
 const FIELD_TYPES = ['Text', 'Number', 'Date', 'Dropdown', 'MultiSelect'] as const;
 
-const TYPE_COLORS: Record<string, string> = {
-  Text: '#2563EB', Number: '#7C3AED', Date: '#F59E0B',
-  Dropdown: '#0D9488', MultiSelect: '#DC2626',
-};
+export const VisitFieldConfigScreen = ({ route }: any) => {
+  const T = useAppTheme();
+  const insets = useSafeAreaInsets();
 
-export const VisitFieldConfigScreen = ({ navigation }: any) => {
-  const { user } = useAuth();
-  const COLOR = ROLE_COLORS[(user?.role || 'SH') as keyof typeof ROLE_COLORS];
+  // Field type → theme status tone (replaces the old hardcoded hex map).
+  const typeTone = (t: string) =>
+    t === 'Text' ? T.info : t === 'Number' ? T.accent : t === 'Date' ? T.warning
+      : t === 'Dropdown' ? T.success : T.danger;
 
   const [fields, setFields] = useState<VisitField[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,6 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ visible: boolean; id: number }>({ visible: false, id: -1 });
 
-  // Form state
   const [fieldName, setFieldName] = useState('');
   const [fieldType, setFieldType] = useState<typeof FIELD_TYPES[number]>('Text');
   const [optionsText, setOptionsText] = useState('');
@@ -81,7 +80,6 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
       const options = ['Dropdown', 'MultiSelect'].includes(fieldType)
         ? optionsText.split(',').map(o => o.trim()).filter(Boolean)
         : undefined;
-
       const payload: CreateVisitFieldRequest = {
         fieldName: fieldName.trim(),
         fieldType,
@@ -89,16 +87,12 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
         displayOrder: displayOrder ? parseInt(displayOrder) : undefined,
         isRequired,
       };
-
-      if (editingField) {
-        await visitReportApi.updateField(editingField.id, payload);
-      } else {
-        await visitReportApi.createField(payload);
-      }
+      if (editingField) await visitReportApi.updateField(editingField.id, payload);
+      else await visitReportApi.createField(payload);
       setShowForm(false);
       await loadFields();
-    } catch {
-      // silent
+    } catch (err: any) {
+      Alert.alert('Save failed', err?.response?.data?.message || 'Could not save the visit field. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -108,47 +102,44 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
     try {
       await visitReportApi.deleteField(id);
       await loadFields();
-    } catch {}
+    } catch (err: any) {
+      Alert.alert('Delete failed', err?.response?.data?.message || 'Could not delete the visit field. Please try again.');
+    }
   };
 
-  const renderField = ({ item, index }: { item: VisitField; index: number }) => (
-    <Card style={styles.fieldCard}>
-      <View style={styles.fieldCardHeader}>
-        <View style={styles.orderBadge}>
-          <Text style={styles.orderText}>{item.displayOrder}</Text>
+  const renderField = ({ item }: { item: VisitField }) => (
+    <Card style={s.fieldCard}>
+      <View style={s.fieldRow}>
+        <View style={[s.orderBadge, { backgroundColor: T.cardAlt }]}>
+          <Text style={[s.orderText, { color: T.sub }]}>{item.displayOrder}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <View style={styles.fieldNameRow}>
-            <Text style={styles.fieldName}>{item.fieldName}</Text>
+        <View style={s.flexMin}>
+          <View style={s.nameRow}>
+            <Text numberOfLines={1} style={[s.fieldName, { color: T.text }]}>{item.fieldName}</Text>
             {item.isRequired && (
-              <View style={styles.requiredBadge}>
-                <Text style={styles.requiredText}>Required</Text>
+              <View style={[s.reqBadge, { backgroundColor: withAlpha(T.danger, SOFT_TINT) }]}>
+                <Text style={[s.reqTxt, { color: T.danger }]}>Required</Text>
               </View>
             )}
           </View>
-          <View style={styles.fieldTypeBadge}>
-            <Text style={[styles.fieldTypeText, { color: TYPE_COLORS[item.fieldType] || '#6B7280' }]}>
-              {item.fieldType}
-            </Text>
+          <View style={s.typeRow}>
+            <StatusBadge label={item.fieldType} color={typeTone(item.fieldType)} />
           </View>
         </View>
-        <View style={styles.fieldActions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(item)}>
-            <Edit2 size={15} color="#2563EB" />
+        <View style={s.actions}>
+          <TouchableOpacity style={s.actionBtn} hitSlop={8} onPress={() => openEdit(item)}>
+            <Edit2 size={16} color={T.accent} strokeWidth={ICON_STROKE} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => setDeleteConfirm({ visible: true, id: item.id })}
-          >
-            <Trash2 size={15} color="#DC2626" />
+          <TouchableOpacity style={s.actionBtn} hitSlop={8} onPress={() => setDeleteConfirm({ visible: true, id: item.id })}>
+            <Trash2 size={16} color={T.danger} strokeWidth={ICON_STROKE} />
           </TouchableOpacity>
         </View>
       </View>
       {item.options && item.options.length > 0 && (
-        <View style={styles.optionsRow}>
+        <View style={[s.optionsRow, { borderTopColor: T.line }]}>
           {item.options.map(opt => (
-            <View key={opt} style={styles.optionChip}>
-              <Text style={styles.optionText}>{opt}</Text>
+            <View key={opt} style={[s.optionChip, { backgroundColor: T.cardAlt }]}>
+              <Text style={[s.optionTxt, { color: T.sub }]}>{opt}</Text>
             </View>
           ))}
         </View>
@@ -156,194 +147,136 @@ export const VisitFieldConfigScreen = ({ navigation }: any) => {
     </Card>
   );
 
-  if (loading) return <LoadingSpinner fullScreen color={COLOR.primary} message="Loading fields..." />;
+  if (loading) return <LoadingSpinner fullScreen color={T.accent} message="Loading fields..." />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScreenHeader
-        title="Visit Field Config"
-        color={COLOR.primary}
-        onMenu={() => navigation.toggleDrawer()}
-        rightAction={
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-            onPress={openCreate}
-          >
-            <Plus size={18} color="#FFF" />
-          </TouchableOpacity>
-        }
-      />
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      {/* Stack-pushed from Settings → no AppTopbar; pad for the island. Drawer path (SH
+          sidebar) has no `pushed` param and already gets the inset from AppTopbar. */}
+      {route?.params?.pushed && <View style={{ height: insets.top }} />}
+      <View style={[s.toolbar, { borderBottomColor: T.line }]}>
+        <Text style={[s.toolbarTitle, { color: T.sub }]}>
+          Custom Fields{fields.length ? ` · ${fields.length}` : ''}
+        </Text>
+        <View style={s.spacer} />
+        <Btn label="New Field" onPress={openCreate} small icon={<Plus size={14} color={T.onAccent} strokeWidth={ICON_STROKE} />} />
+      </View>
 
       <FlatList
         data={fields}
         keyExtractor={item => String(item.id)}
         renderItem={renderField}
-        contentContainerStyle={[styles.list, fields.length === 0 && { flex: 1 }]}
+        contentContainerStyle={[s.list, fields.length === 0 && s.listEmpty]}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState
-            title="No custom fields"
-            subtitle="Add custom fields for visit reports"
-            icon="📋"
-          />
+          <EmptyState title="No custom fields" subtitle="Add custom fields for visit reports" icon="📋" />
         }
       />
 
-      {/* Create/Edit Modal */}
-      <Modal visible={showForm} transparent animationType="slide" onRequestClose={() => setShowForm(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingField ? 'Edit Field' : 'New Field'}</Text>
-              <TouchableOpacity onPress={() => setShowForm(false)}>
-                <X size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
+      <FormModal
+        visible={showForm}
+        title={editingField ? 'Edit Field' : 'New Field'}
+        onClose={() => setShowForm(false)}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={() => setShowForm(false)} small />
+            <Btn
+              label={editingField ? 'Update' : 'Add Field'}
+              onPress={handleSubmit}
+              loading={submitting}
+              disabled={!fieldName.trim()}
+              small
+            />
+          </>
+        }
+      >
+        <Field label="Field Name *">
+          <Input value={fieldName} onChangeText={setFieldName} placeholder="e.g. Decision Maker Present" />
+        </Field>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Field Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={fieldName}
-                  onChangeText={setFieldName}
-                  placeholder="e.g. Decision Maker Present"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Field Type *</Text>
-                <View style={styles.chipRow}>
-                  {FIELD_TYPES.map(type => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.chip, fieldType === type && { backgroundColor: COLOR.primary }]}
-                      onPress={() => setFieldType(type)}
-                    >
-                      <Text style={[styles.chipText, fieldType === type && { color: '#FFF' }]}>{type}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {['Dropdown', 'MultiSelect'].includes(fieldType) && (
-                <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>Options (comma-separated)</Text>
-                  <TextInput
-                    style={[styles.input, styles.inputMulti]}
-                    value={optionsText}
-                    onChangeText={setOptionsText}
-                    placeholder="Option 1, Option 2, Option 3"
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                  />
-                </View>
-              )}
-
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Display Order</Text>
-                <TextInput
-                  style={styles.input}
-                  value={displayOrder}
-                  onChangeText={setDisplayOrder}
-                  placeholder="e.g. 1"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.toggleRow}>
-                <Text style={styles.formLabel}>Required</Text>
-                <Switch
-                  value={isRequired}
-                  onValueChange={setIsRequired}
-                  trackColor={{ true: COLOR.primary }}
-                  thumbColor="#FFF"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: COLOR.primary }, submitting && { opacity: 0.7 }]}
-                onPress={handleSubmit}
-                disabled={submitting}
-              >
-                {submitting
-                  ? <ActivityIndicator color="#FFF" />
-                  : <Text style={styles.submitBtnText}>{editingField ? 'Update Field' : 'Add Field'}</Text>}
-              </TouchableOpacity>
-            </ScrollView>
+        <Field label="Field Type *">
+          <View style={s.chipRow}>
+            {FIELD_TYPES.map(type => {
+              const on = fieldType === type;
+              return (
+                <TouchableOpacity
+                  key={type}
+                  onPress={() => setFieldType(type)}
+                  activeOpacity={0.8}
+                  style={[s.chip, { borderColor: on ? T.accent : T.line, backgroundColor: on ? T.accent : T.card }]}
+                >
+                  <Text style={[s.chipTxt, { color: on ? T.onAccent : T.sub }]}>{type}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </View>
-      </Modal>
+        </Field>
 
-      {/* Delete confirm */}
+        {['Dropdown', 'MultiSelect'].includes(fieldType) && (
+          <Field label="Options (comma-separated)">
+            <Input value={optionsText} onChangeText={setOptionsText} placeholder="Option 1, Option 2, Option 3" multiline />
+          </Field>
+        )}
+
+        <Field label="Display Order">
+          <NumField value={displayOrder} onChangeText={setDisplayOrder} placeholder="e.g. 1" label="Display Order" allowDecimal={false} />
+        </Field>
+
+        <View style={s.toggleRow}>
+          <Text style={[s.toggleLabel, { color: T.text }]}>Required</Text>
+          <Switch
+            value={isRequired}
+            onValueChange={setIsRequired}
+            trackColor={{ true: T.accent, false: T.line }}
+            thumbColor={T.card}
+          />
+        </View>
+      </FormModal>
+
       <ConfirmModal
         visible={deleteConfirm.visible}
         title="Delete Field"
         message="This will remove the custom field from all future visit reports."
-        confirmText="Delete"
-        confirmColor="#DC2626"
-        onConfirm={() => {
-          handleDelete(deleteConfirm.id);
-          setDeleteConfirm({ visible: false, id: -1 });
-        }}
+        icon={<AlertTriangle size={22} color={T.danger} strokeWidth={ICON_STROKE} />}
+        tone="danger"
+        confirmLabel="Delete"
+        onConfirm={() => { handleDelete(deleteConfirm.id); setDeleteConfirm({ visible: false, id: -1 }); }}
         onCancel={() => setDeleteConfirm({ visible: false, id: -1 })}
       />
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  list: { padding: 16, gap: 10 },
-  addBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  toolbar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  toolbarTitle: { fontSize: rf(12.5), fontWeight: '700' },
+  spacer: { flex: 1 },
+  list: { padding: 12, gap: 10 },
+  listEmpty: { flex: 1 },
 
   fieldCard: { padding: 14 },
-  fieldCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  orderBadge: {
-    width: 30, height: 30, borderRadius: 8, backgroundColor: '#F3F4F6',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  orderText: { fontSize: rf(13), fontWeight: '700', color: '#374151' },
-  fieldNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  fieldName: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  requiredBadge: { backgroundColor: '#FEF2F2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 100 },
-  requiredText: { fontSize: rf(10), color: '#DC2626', fontWeight: '700' },
-  fieldTypeBadge: {},
-  fieldTypeText: { fontSize: rf(12), fontWeight: '600' },
-  fieldActions: { flexDirection: 'row', gap: 4 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  orderBadge: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  orderText: { fontSize: rf(13), fontWeight: '700' },
+  flexMin: { flex: 1, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  fieldName: { fontSize: rf(14), fontWeight: '700', flexShrink: 1, minWidth: 0 },
+  reqBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 100, flexShrink: 0 },
+  reqTxt: { fontSize: rf(10), fontWeight: '700' },
+  typeRow: { flexDirection: 'row', alignItems: 'center' },
+  actions: { flexDirection: 'row', gap: 2, flexShrink: 0 },
   actionBtn: { padding: 6 },
-  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  optionChip: { backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  optionText: { fontSize: rf(12), color: '#374151' },
+  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  optionChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
+  optionTxt: { fontSize: rf(12) },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 20, paddingBottom: 40, maxHeight: '85%',
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: rf(17), fontWeight: '700', color: '#111827' },
-  formGroup: { marginBottom: 14 },
-  formLabel: { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: 6 },
-  input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: rf(14), color: '#111827', backgroundColor: '#FAFAFA',
-  },
-  inputMulti: { height: 80, textAlignVertical: 'top' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  chipText: { fontSize: rf(13), color: '#374151', fontWeight: '500' },
-  toggleRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 14,
-  },
-  submitBtn: {
-    borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8,
-  },
-  submitBtnText: { color: '#FFF', fontSize: rf(15), fontWeight: '700' },
+  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100, borderWidth: 1 },
+  chipTxt: { fontSize: rf(12.5), fontWeight: '600' },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  toggleLabel: { fontSize: rf(13), fontWeight: '600' },
 });
