@@ -7,11 +7,25 @@ import 'react-native-reanimated';
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import BackgroundFetch from 'react-native-background-fetch';
 import { sendLocationPing } from './src/services/locationPingService';
+import { captureAndSendB2CPing } from './src/services/b2cLocationPingService';
 import { registerBackgroundHandler } from './src/services/pushNotificationService';
 import { setTokenRefreshedHandler } from './src/api/client';
 import { updateNativeAuthToken } from './src/services/nativeLocationTracking';
+
+// The headless task has no React tree, so it can't read AuthContext — it decides which
+// tracking pipeline to use straight from the persisted user's role.
+const B2C_ROLES = ['B2CAdmin', 'Agent', 'Counselor'];
+const isB2CUser = async () => {
+  try {
+    const raw = await AsyncStorage.getItem('auth_user');
+    return raw ? B2C_ROLES.includes(JSON.parse(raw)?.role) : false;
+  } catch {
+    return false;
+  }
+};
 
 // Register FCM background handler — must be called before AppRegistry
 registerBackgroundHandler();
@@ -48,7 +62,9 @@ const backgroundFetchHeadlessTask = async (event) => {
   }
 
   try {
-    await sendLocationPing();
+    // Route to the right pipeline: B2C users hit /b2c/tracking, everyone else B2B.
+    if (await isB2CUser()) await captureAndSendB2CPing();
+    else await sendLocationPing();
   } catch (e) {
     console.warn('[BackgroundFetch] Error in headless task:', e);
   }

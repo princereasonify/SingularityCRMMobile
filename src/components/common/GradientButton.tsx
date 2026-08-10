@@ -21,6 +21,8 @@ interface Props {
   disabled?: boolean;
   icon?: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
+  /** Override the Sunstone gradient (e.g. B2CGreen for the B2C login CTA). */
+  gradient?: { from: string; to: string; deep: string };
 }
 
 /**
@@ -28,7 +30,7 @@ interface Props {
  * The gradient is react-native-svg (no extra native dep); the glint is a translucent
  * diagonal band translated left→right and clipped by the button's overflow:hidden.
  */
-export const GradientButton = ({ label, onPress, loading, disabled, icon, style }: Props) => {
+export const GradientButton = ({ label, onPress, loading, disabled, icon, style, gradient }: Props) => {
   const [w, setW] = useState(0);
   const sweep = useRef(new Animated.Value(0)).current;
 
@@ -58,9 +60,9 @@ export const GradientButton = ({ label, onPress, loading, disabled, icon, style 
       onPress={onPress}
       disabled={loading || disabled}
       onLayout={onLayout}
-      style={[styles.btn, disabled && !loading && styles.disabled, style]}
+      style={[styles.btn, gradient && { shadowColor: gradient.from }, disabled && !loading && styles.disabled, style]}
     >
-      <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
+      <GradientBackground glow={false} gradient={gradient} style={StyleSheet.absoluteFillObject} />
 
       {/* Sweeping glint */}
       {w > 0 && (

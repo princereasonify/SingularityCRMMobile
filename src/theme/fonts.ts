@@ -55,3 +55,12 @@ export const Sunstone = {
   deep: '#6E4620',
   soft: 'rgba(217,164,65,0.13)',
 } as const;
+
+// B2C green accent gradient — the green analogue of Sunstone, used to tint the B2C
+// login hero panel and its primary CTA. Same diagonal (deep → from → to) shape.
+export const B2CGreen = {
+  from: '#4e9e3a',
+  to: '#8fd14f',
+  deep: '#37701f',
+  soft: 'rgba(143,209,79,0.13)',
+} as const;

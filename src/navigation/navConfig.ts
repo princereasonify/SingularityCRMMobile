@@ -337,6 +337,150 @@ export const SCA_NAV: NavGroup[] = [
   },
 ];
 
+/**
+ * ── B2C nav (separate product) ──────────────────────────────────────────────
+ * Item membership and per-role order mirror the web app's Sidebar.jsx `navsByRole`
+ * exactly, regrouped into the shared bands the B2B drawers use so the two platforms
+ * stay in lockstep. The web sidebar is a flat list; the band sequence here is chosen
+ * so the flattened order is identical to web's. Icons reuse the SingularityCRM icon
+ * set (Icon.tsx) — the nearest set glyph to each web lucide icon.
+ *
+ * The Agent "Visit" and Counselor "Recording"/"AI Coach" entries are the native
+ * mobile flows (geo-verified visit capture, session recording + AI coaching); they
+ * have no web equivalent and are appended after the web-mirrored items.
+ */
+export const B2CAdmin_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ route: 'Dashboard', label: 'Dashboard', icon: 'Dashboard' }],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'Student Leads', label: 'Student Leads', icon: 'Leads' },
+      { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
+      { route: 'Counselors', label: 'Counselors', icon: 'Users' },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { route: 'User Management', label: 'User Management', icon: 'Users' },
+      { route: 'Approval Center', label: 'Approval Center', icon: 'Onboarding' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'Live Tracking', label: 'Live Tracking', icon: 'Tracking' },
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Geo Compliance', label: 'Geo Compliance', icon: 'Route' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+  },
+  {
+    label: 'Support',
+    items: [{ route: 'Counseling', label: 'Counseling', icon: 'Users' }],
+  },
+  {
+    label: 'Finance',
+    items: [{ route: 'Billing', label: 'Billing', icon: 'Payment' }],
+  },
+];
+
+export const Agent_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ route: 'Dashboard', label: 'Dashboard', icon: 'Dashboard' }],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'My Leads', label: 'My Leads', icon: 'Leads' },
+      { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'My Day', label: 'My Day', icon: 'Sun' },
+      { route: 'Route Planner', label: 'Route Planner', icon: 'Route' },
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Weekly Plan', label: 'Weekly Plan', icon: 'Weekly' },
+      { route: 'Activity Log', label: 'Activity Log', icon: 'Activity' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+      { route: 'My Performance', label: 'My Performance', icon: 'Performance' },
+    ],
+  },
+  {
+    // Mobile-only native geo-verified visit capture (no web equivalent).
+    label: 'Visit',
+    items: [{ route: 'Visit', label: 'Visit', icon: 'Activity' }],
+  },
+];
+
+export const Counselor_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ route: 'Dashboard', label: 'Dashboard', icon: 'Dashboard' }],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { route: 'Re-engagement Queue', label: 'Re-engagement Queue', icon: 'Targets' },
+      // Label tracks the web Counselor sidebar ("Assigned Students") while the
+      // route stays "My Leads" (the shared B2C leads list).
+      { route: 'My Leads', label: 'Assigned Students', icon: 'Leads' },
+    ],
+  },
+  {
+    label: 'Field',
+    items: [
+      { route: 'My Day', label: 'My Day', icon: 'Sun' },
+      { route: 'Route Planner', label: 'Route Planner', icon: 'Route' },
+      { route: 'Calendar', label: 'Calendar', icon: 'Calendar' },
+      { route: 'Activity Log', label: 'Activity Log', icon: 'Activity' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+      { route: 'My Performance', label: 'My Performance', icon: 'Performance' },
+    ],
+  },
+  {
+    // "AI Coach" keeps the native `Recording` route (the counselor's
+    // record→analyse flow); no web equivalent.
+    label: 'AI Coach',
+    items: [{ route: 'Recording', label: 'AI Coach', icon: 'Record' }],
+  },
+];
+
+/**
+ * MANAGER_NAV — extra Team section an Agent who is also a Manager gets
+ * (mirrors web's `MANAGER_NAV`, appended when `role === 'Agent' && isManager`).
+ */
+export const MANAGER_NAV: NavGroup[] = [
+  {
+    label: 'Team',
+    items: [
+      { route: 'My Team', label: 'My Team', icon: 'Users' },
+      { route: 'Team Leads', label: 'Team Leads', icon: 'Leads' },
+      { route: 'Team Tracking', label: 'Team Tracking', icon: 'Tracking' },
+      { route: 'Team Approvals', label: 'Team Approvals', icon: 'Onboarding' },
+    ],
+  },
+];
+
 /** Role → grouped nav. Other roles land here as they're migrated to the new shell. */
 export const NAV_BY_ROLE: Record<string, NavGroup[]> = {
   FO: FO_NAV,
@@ -344,6 +488,9 @@ export const NAV_BY_ROLE: Record<string, NavGroup[]> = {
   RH: RH_NAV,
   SH: SH_NAV,
   SCA: SCA_NAV,
+  B2CAdmin: B2CAdmin_NAV,
+  Agent: Agent_NAV,
+  Counselor: Counselor_NAV,
 };
 
 /** The group a route belongs to — used by the topbar breadcrumb ("Role · Group"). */

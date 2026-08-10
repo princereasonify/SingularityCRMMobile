@@ -50,10 +50,26 @@ export const ROLE_SPLASH: Record<UserRole, RoleSplashTheme> = {
     dark: '#3a1c18', base: '#D98A6E', bright: '#FFE0CF', ink: '#250f0b',
     quote: 'Master the system. Make winning inevitable.',
   },
+  // ── B2C roles — green identity (matches B2CSplash.html / the B2C design system) ──
+  B2CAdmin: {
+    key: 'B2CAdmin', short: 'BA', name: 'B2C Admin',
+    dark: '#0f2410', base: '#4a8f28', bright: '#d9edc6', ink: '#071808',
+    quote: 'Every enrollment starts with a decision. Own it.',
+  },
+  Agent: {
+    key: 'Agent', short: 'AG', name: 'Sales Agent',
+    dark: '#0f2a12', base: '#5aa832', bright: '#e9f2e0', ink: '#08240c',
+    quote: 'Reach the student. Earn the yes.',
+  },
+  Counselor: {
+    key: 'Counselor', short: 'CO', name: 'Counselor',
+    dark: '#12300f', base: '#7bb63a', bright: '#e0f2c6', ink: '#0b1f08',
+    quote: 'Guide the choice. Change the future.',
+  },
 };
 
 /** Ring order around the lockup — matches the source's ROLES array order. */
-export const RING_ORDER: UserRole[] = ['FO', 'ZH', 'RH', 'SH', 'SCA'];
+export const RING_ORDER: UserRole[] = ['FO', 'ZH', 'RH', 'SH', 'SCA', 'B2CAdmin', 'Agent', 'Counselor'];
 
 /**
  * Scene boundaries in ms, verbatim from the source timeline:

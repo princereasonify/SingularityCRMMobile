@@ -10,17 +10,18 @@ import {
   useWindowDimensions,
   StatusBar,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Eye, EyeOff, ArrowRight, Check } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowRight, ChevronLeft, Check } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
 import { GradientButton } from '../../components/common/GradientButton';
 import { ThemeToggle } from '../../components/common/ThemeToggle';
 import { CustomKeyboard, KEYBOARD_PANEL_H } from '../../components/common/CustomKeyboard';
-import { Wordmark, getAuthTheme } from '../../theme';
+import { Wordmark, getAuthThemeFor, B2CGreen, withAlpha } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { applyLoginOrientation, applyAuthedOrientation } from '../../utils/orientation';
 import { BiometricButton } from '../../components/common/BiometricButton';
@@ -35,12 +36,15 @@ import { saveCredentials, loadCredentials, clearCredentials } from '../../servic
 import { loadRememberedEmail, saveRememberedEmail, clearRememberedEmail } from '../../services/rememberMe';
 import { androidAuthenticate } from '../../services/nativeBiometric';
 
-export const LoginScreen = ({ navigation }: any) => {
+export const LoginScreen = ({ navigation, route }: any) => {
   const { login } = useAuth();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { mode } = useTheme();
-  const T = getAuthTheme(mode);
+  // Brand family chosen on the Landing screen. Drives the auth theme (green for
+  // B2C) — DESIGN ONLY; the login logic below is unchanged.
+  const family: 'b2b' | 'b2c' = route?.params?.family === 'b2c' ? 'b2c' : 'b2b';
+  const T = getAuthThemeFor(family, mode);
 
   const isLandscape = width > height;
   const twoPane = isTabletDevice && isLandscape;
@@ -87,18 +91,30 @@ export const LoginScreen = ({ navigation }: any) => {
   // Lift the form so the active field clears the in-app keyboard.
   useEffect(() => {
     if (activeField) {
-      const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+      // Force-dismiss the OS keyboard so its voice-dictation mic + suggestion strip
+      // never show over our in-app keyboard (showSoftInputOnFocus isn't always honoured
+      // on Android). Dismiss immediately and once more after focus settles.
+      Keyboard.dismiss();
+      const t = setTimeout(() => { Keyboard.dismiss(); scrollRef.current?.scrollToEnd({ animated: true }); }, 60);
       return () => clearTimeout(t);
     }
   }, [activeField]);
 
   // ─── In-app keyboard handlers ────────────────────────────────────────────────
-  const setActiveValue = (updater: (prev: string) => string) => {
-    if (activeField === 'email') setEmail(updater);
-    else if (activeField === 'password') setPassword(updater);
+  // In-app keyboard edits happen at the END of the active field, and the caret is
+  // pinned there. A controlled mid-text `selection` is unreliable with a custom
+  // keyboard on RN — the tracked caret was stuck at {0,0}, so inserts landed at the
+  // start and backspace did nothing. Editing at the end is predictable and correct.
+  // Functional updaters so the hold-to-repeat backspace (whose interval closure is
+  // captured at press-in) always mutates the LATEST value — otherwise it kept
+  // deleting from the same stale string and only ever removed one char.
+  const editActive = (mutate: (value: string) => string) => {
+    if (activeField === 'email') setEmail(prev => mutate(prev));
+    else if (activeField === 'password') setPassword(prev => mutate(prev));
   };
-  const handleKey = (ch: string) => setActiveValue(v => v + ch);
-  const handleBackspace = () => setActiveValue(v => v.slice(0, -1));
+
+  const handleKey = (ch: string) => editActive(v => v + ch);
+  const handleBackspace = () => editActive(v => v.slice(0, -1));
   const hideKeyboard = () => {
     setActiveField(null);
     emailRef.current?.blur();
@@ -229,7 +245,8 @@ export const LoginScreen = ({ navigation }: any) => {
             ref={emailRef}
             value={email}
             onChangeText={setEmail}
-            onFocus={() => setActiveField('email')}
+            selection={{ start: email.length, end: email.length }}
+            onFocus={() => { setActiveField('email'); Keyboard.dismiss(); }}
             showSoftInputOnFocus={false}
             caretHidden={false}
             placeholder="Enter your email"
@@ -258,7 +275,8 @@ export const LoginScreen = ({ navigation }: any) => {
             ref={passwordRef}
             value={password}
             onChangeText={setPassword}
-            onFocus={() => setActiveField('password')}
+            selection={{ start: password.length, end: password.length }}
+            onFocus={() => { setActiveField('password'); Keyboard.dismiss(); }}
             showSoftInputOnFocus={false}
             caretHidden={false}
             placeholder="Enter password"
@@ -304,6 +322,7 @@ export const LoginScreen = ({ navigation }: any) => {
         label="Sign in"
         onPress={handleLogin}
         loading={loading}
+        gradient={family === 'b2c' ? B2CGreen : undefined}
         icon={<ArrowRight size={18} color="#FFF" strokeWidth={2.5} />}
         style={styles.signIn}
       />
@@ -365,10 +384,30 @@ export const LoginScreen = ({ navigation }: any) => {
   return (
     <View style={[styles.root, { backgroundColor: T.panelBg }]}>
       <StatusBar barStyle="light-content" />
+      {/* Back to the Landing / family picker — a bold, high-contrast solid chip.
+          Design-only (no auth logic touched). White surface reads clearly over the
+          coloured hero; the chevron + label take the theme accent, so they're green
+          on B2C and Sunstone on B2B. */}
+      {navigation?.canGoBack?.() && (
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back to workspaces"
+          style={[
+            styles.backChip,
+            { top: insets.top + 8, borderColor: withAlpha(T.accentText, 0.28) },
+          ]}
+        >
+          <ChevronLeft size={18} color={T.accentText} strokeWidth={3} />
+          <Text style={[styles.backChipText, { color: T.accentText }]}>Back</Text>
+        </TouchableOpacity>
+      )}
       <ThemeToggle />
       {twoPane ? (
         <View style={styles.splitRow}>
-          <View style={styles.splitHero}><AuthHero compact={false} /></View>
+          <View style={styles.splitHero}><AuthHero compact={false} family={family} /></View>
           {/* Keyboard lives INSIDE the form pane, so it only covers the right side */}
           <View style={[styles.splitForm, { backgroundColor: T.panelBg }]}>
             <ScrollView
@@ -391,7 +430,7 @@ export const LoginScreen = ({ navigation }: any) => {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <AuthHero compact />
+            <AuthHero compact family={family} />
             <View
               style={[
                 styles.stackForm,
@@ -411,6 +450,29 @@ export const LoginScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
+
+  // Top-left back control → returns to the Landing family picker. A bold solid
+  // chip: white surface (high contrast over the hero) with an accent chevron+label.
+  backChip: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 38,
+    paddingLeft: 9,
+    paddingRight: 16,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  backChipText: { fontSize: rf(13.5), fontWeight: '800', letterSpacing: 0.2 },
 
   // Hero
   hero: { justifyContent: 'flex-start' },

@@ -55,3 +55,37 @@ const DARK: AuthTheme = {
 
 export const getAuthTheme = (scheme: ColorSchemeName): AuthTheme =>
   scheme === 'dark' ? DARK : LIGHT;
+
+// ─── B2C (student enrollment) — GREEN family ──────────────────────────────────
+// Same neutral scaffolding as the B2B/default theme, only the surfaces are tinted
+// green and the accent/success flip from Sunstone gold to the B2C green. This is
+// DESIGN ONLY — the login logic reads every colour through `T`, so re-pointing the
+// theme is all that turns the B2C login green.
+const B2C_LIGHT: AuthTheme = {
+  ...LIGHT,
+  panelBg: '#eef3ea',
+  card: '#FFFFFF',
+  fieldBg: '#FFFFFF',
+  accentText: '#5aa832',
+  success: '#5aa832',
+};
+
+const B2C_DARK: AuthTheme = {
+  ...DARK,
+  panelBg: '#0f140c',
+  card: '#141a10',
+  cardAlt: '#161d12',
+  fieldBg: '#141a10',
+  accentText: '#8fd14f',
+  success: '#8fd14f',
+};
+
+/**
+ * Family-aware auth theme selector. `b2c` → the green theme above; anything else
+ * (default `b2b`) falls through to the unchanged Sunstone `getAuthTheme`.
+ */
+export const getAuthThemeFor = (
+  family: 'b2b' | 'b2c',
+  scheme: ColorSchemeName,
+): AuthTheme =>
+  family === 'b2c' ? (scheme === 'dark' ? B2C_DARK : B2C_LIGHT) : getAuthTheme(scheme);

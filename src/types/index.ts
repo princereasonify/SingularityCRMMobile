@@ -1,6 +1,8 @@
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH' | 'SCA';
+// B2B roles: FO/ZH/RH/SH/SCA. B2C roles: B2CAdmin/Agent/Counselor — separate product,
+// separate drawers/dashboards, gated by the same login → role plumbing.
+export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH' | 'SCA' | 'B2CAdmin' | 'Agent' | 'Counselor';
 
 export type LeadStage =
   | 'NewLead'
@@ -56,6 +58,8 @@ export interface UserDto {
   phoneNumber?: string;
   zonalHead?: string;
   regionalHead?: string;
+  isManager?: boolean;   // Agent who also manages a team (B2C)
+  address?: string;
 }
 
 export interface SchoolAssignment {

@@ -10,7 +10,7 @@ import { Icon, IconName, ICON_STROKE } from '../common/Icon';
 import { GradientBackground } from '../common/GradientBackground';
 import { SingularityLogo } from '../common/SingularityLogo';
 import { LogoutModal } from '../common/LogoutModal';
-import { NAV_BY_ROLE, NavGroup } from '../../navigation/navConfig';
+import { NAV_BY_ROLE, MANAGER_NAV, NavGroup } from '../../navigation/navConfig';
 import { isTabletDevice } from '../../utils/responsive';
 
 /** Spec: expanded 240 · collapsed rail 76 · phone slide-over 280. */
@@ -30,7 +30,12 @@ export const AppSidebar = ({ collapsed = false, onToggleCollapse, ...props }: Pr
   const { user, logout } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
 
-  const groups: NavGroup[] = NAV_BY_ROLE[user?.role ?? 'FO'] ?? [];
+  // An Agent who is also a Manager gets the extra Team section (web parity).
+  const baseGroups: NavGroup[] = NAV_BY_ROLE[user?.role ?? 'FO'] ?? [];
+  const groups: NavGroup[] =
+    user?.role === 'Agent' && (user as any)?.isManager
+      ? [...baseGroups, ...MANAGER_NAV]
+      : baseGroups;
 
   // Which route is active, straight from the navigator state.
   const activeRoute = useMemo(() => {

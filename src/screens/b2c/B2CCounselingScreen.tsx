@@ -1,0 +1,416 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AlertTriangle, Clock, Sparkles, RefreshCw, CalendarClock, Phone, ExternalLink, Filter, Users } from 'lucide-react-native';
+import { ICON_STROKE } from '../../components/common/Icon';
+import {
+  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, FormModal,
+} from '../../components/crud';
+import { StatTile, Chip } from '../../components/ui';
+import { b2cObjectionService, OBJECTION_TYPES } from '../../api/b2c/b2cObjectionService';
+import { b2cUserService } from '../../api/b2c/b2cUserService';
+import { b2cCounselorService } from '../../api/b2c/b2cCounselorService';
+import { useToast } from '../../context/ToastContext';
+import { useAppTheme } from '../../theme/useAppTheme';
+import { rf } from '../../utils/responsive';
+
+/** Web parity: B2CCounseling.jsx pages 20 at a time. */
+const PAGE_SIZE = 20;
+const DASH = '—';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDate = (d?: string) => {
+  if (!d) return DASH;
+  const x = new Date(d);
+  return `${x.getDate()} ${MONTHS[x.getMonth()]} ${x.getFullYear()}`;
+};
+const fmtDateTime = (d?: string) => {
+  if (!d) return DASH;
+  const x = new Date(d);
+  const h = x.getHours();
+  const hh = (h % 12) || 12;
+  const ap = h < 12 ? 'am' : 'pm';
+  return `${x.getDate()} ${MONTHS[x.getMonth()]}, ${hh}:${String(x.getMinutes()).padStart(2, '0')} ${ap}`;
+};
+
+const typeLabel = (v: string) => OBJECTION_TYPES.find(t => t.value === v)?.label || v;
+const initialsOf = (name?: string) =>
+  (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
+const STATUS_OPTS = [
+  { value: '', label: 'All' },
+  { value: 'Open', label: 'Open' },
+  { value: 'InProgress', label: 'In progress' },
+  { value: 'Resolved', label: 'Resolved' },
+  { value: 'LostCause', label: 'Lost' },
+];
+
+interface Objection {
+  id: number; leadId: number;
+  studentName?: string; studentMobile?: string; city?: string;
+  type: string; details?: string;
+  counselorName?: string; raisedByName?: string;
+  scheduledAt?: string; createdAt?: string;
+  status: string;
+  aiBrief?: string; aiPostSession?: string; aiGeneratedAt?: string;
+}
+interface Staff { id: number; name: string; isManager?: boolean; }
+
+export const B2CCounselingScreen = ({ navigation }: any) => {
+  const T = useAppTheme();
+  const toast = useToast();
+
+  const statusMeta = (st: string) =>
+    st === 'Open' ? { label: 'Open', color: T.warning }
+      : st === 'InProgress' ? { label: 'In progress', color: T.accent }
+        : st === 'Resolved' ? { label: 'Resolved', color: T.success }
+          : st === 'LostCause' ? { label: 'Lost', color: T.danger }
+            : { label: st, color: T.sub };
+
+  const [rows, setRows] = useState<Objection[]>([]);
+  const [summary, setSummary] = useState<any>({});
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // Filters
+  const [search, setSearch] = useState('');           // client-side quick filter on the loaded page
+  const [status, setStatus] = useState('');
+  const [type, setType] = useState('');
+  const [personVal, setPersonVal] = useState('');      // '' | 'a:<agentId>' | 'c:<counselorId>'
+  const [openPerson, setOpenPerson] = useState(false);
+  const [openType, setOpenType] = useState(false);
+
+  // Staff for the admin "view as" filter
+  const [agents, setAgents] = useState<Staff[]>([]);
+  const [counselors, setCounselors] = useState<Staff[]>([]);
+
+  // AI brief modal
+  const [briefRow, setBriefRow] = useState<Objection | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [briefErr, setBriefErr] = useState('');
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const fetchQueue = useCallback(async (pg = 1) => {
+    try {
+      const [kind, id] = personVal ? personVal.split(':') : [];
+      const res = await b2cObjectionService.getQueue({
+        page: pg, pageSize: PAGE_SIZE,
+        status: status || undefined,
+        type: type || undefined,
+        agentId: kind === 'a' ? Number(id) : undefined,
+        counselorId: kind === 'c' ? Number(id) : undefined,
+      });
+      setRows(res.data?.items ?? []);
+      setTotalCount(res.data?.totalCount ?? 0);
+      setSummary(res.data?.summary ?? {});
+    } catch {
+      setRows([]); setTotalCount(0); setSummary({});
+    } finally {
+      setLoading(false); setRefreshing(false);
+    }
+  }, [status, type, personVal]);
+
+  useEffect(() => { setLoading(true); setPage(1); fetchQueue(1); }, [fetchQueue]);
+
+  useEffect(() => {
+    Promise.all([
+      b2cUserService.getUsers({ role: 'Agent', pageSize: 200 }).catch(() => ({ data: {} as any })),
+      b2cCounselorService.getCounselors({ pageSize: 200 }).catch(() => ({ data: {} as any })),
+    ]).then(([u, c]) => {
+      const au: any = u.data;
+      const cu: any = c.data;
+      setAgents(((au?.items ?? au ?? []) as any[]).map(a => ({ id: a.id, name: a.name, isManager: !!a.isManager })));
+      setCounselors(((cu?.items ?? cu ?? []) as any[]).map(x => ({ id: x.id, name: x.name })));
+    }).catch(() => {});
+  }, []);
+
+  const personOptions = useMemo(() => [
+    { value: '', label: 'Everyone' },
+    ...agents.map(a => ({ value: `a:${a.id}`, label: `${a.name}${a.isManager ? ' • Manager' : ''}` })),
+    ...counselors.map(c => ({ value: `c:${c.id}`, label: c.name })),
+  ], [agents, counselors]);
+
+  const selectedStaff = useMemo(() => {
+    if (!personVal) return null;
+    const [kind, id] = personVal.split(':');
+    const list = kind === 'a' ? agents : counselors;
+    const s = list.find(x => String(x.id) === id);
+    return s ? { ...s, kind } : null;
+  }, [personVal, agents, counselors]);
+
+  const goToPage = (p: number) => {
+    if (p < 1 || p > totalPages || p === page) return;
+    setPage(p); setLoading(true); fetchQueue(p);
+  };
+
+  const openBrief = (o: Objection) => { setBriefRow(o); setBriefErr(''); };
+
+  const regenerate = async () => {
+    if (!briefRow) return;
+    setBusy(true); setBriefErr('');
+    try {
+      const res = await b2cObjectionService.generateBrief(briefRow.id);
+      setBriefRow(res.data ?? briefRow);
+      toast.success('Brief generated');
+      fetchQueue(page);
+    } catch (e: any) {
+      setBriefErr(e?.response?.data?.message || 'Could not generate the brief');
+      toast.error(e?.response?.data?.message || 'Could not generate the brief');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? rows.filter(o =>
+        [o.studentName, o.studentMobile, o.counselorName, o.raisedByName]
+          .some(v => (v || '').toLowerCase().includes(q)))
+    : rows;
+
+  const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, totalCount);
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchQueue(page); }} tintColor={T.accent} colors={[T.accent]} />}
+      >
+        <Text style={[s.subtitle, { color: T.sub }]}>Every counseling booking & objection — filter by any agent or counselor</Text>
+
+        {/* Summary */}
+        <View style={s.statGrid}>
+          <StatTile style={s.stat} label="Open" value={summary.openCount ?? 0} tint={T.warning} icon={<AlertTriangle size={15} color={T.warning} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={s.stat} label="In progress" value={summary.inProgressCount ?? 0} tint={T.accent} icon={<Clock size={15} color={T.accent} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={s.stat} label="Resolved" value={summary.resolvedCount ?? 0} tint={T.success} />
+          <StatTile style={s.stat} label="Lost cause" value={summary.lostCauseCount ?? 0} tint={T.danger} />
+        </View>
+
+        {/* Filters */}
+        <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
+          <View style={s.filterRow}>
+            <SearchBar value={search} onChangeText={setSearch} placeholder="Search student, counselor, agent…" style={{ flex: 1, minWidth: 180 }} />
+          </View>
+          <View style={s.filterRow}>
+            <Trigger
+              label={selectedStaff?.name || 'Everyone'}
+              open={openPerson}
+              onPress={() => { setOpenPerson(v => !v); setOpenType(false); }}
+              icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              style={{ flex: 1, minWidth: 150 }}
+            />
+            <Trigger
+              label={type ? typeLabel(type) : 'All types'}
+              open={openType}
+              onPress={() => { setOpenType(v => !v); setOpenPerson(false); }}
+              icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              style={{ flex: 1, minWidth: 150 }}
+            />
+          </View>
+
+          {openPerson && (
+            <Dropdown style={{ width: '100%' }} maxHeight={300} value={personVal}
+              onSelect={v => { setPersonVal(v); setOpenPerson(false); }}
+              options={personOptions} />
+          )}
+          {openType && (
+            <Dropdown style={{ width: '100%' }} maxHeight={300} value={type}
+              onSelect={v => { setType(v); setOpenType(false); }}
+              options={[{ label: 'All types', value: '' }, ...OBJECTION_TYPES.map(t => ({ label: t.label, value: t.value }))]} />
+          )}
+
+          {/* Status */}
+          <View style={s.chipWrap}>
+            {STATUS_OPTS.map(o => (
+              <Chip key={o.value || 'all'} label={o.label} active={status === o.value} onPress={() => setStatus(o.value)} />
+            ))}
+          </View>
+
+          <View style={s.countRow}>
+            <Text style={[s.count, { color: T.dim }]}>{totalCount} record{totalCount === 1 ? '' : 's'}</Text>
+            {type !== '' && <FilterChip label={typeLabel(type)} onRemove={() => setType('')} />}
+            {personVal !== '' && <FilterChip label={selectedStaff?.name || 'View'} onRemove={() => setPersonVal('')} />}
+          </View>
+        </View>
+
+        {selectedStaff && (
+          <View style={s.viewingRow}>
+            <Text style={[s.viewing, { color: T.sub }]} numberOfLines={1}>
+              Showing counseling for <Text style={{ color: T.text, fontWeight: '700' }}>{selectedStaff.name}</Text>
+            </Text>
+            {selectedStaff.kind === 'a' && selectedStaff.isManager && <StatusBadge label="Agent + Manager" color={T.accent} />}
+          </View>
+        )}
+
+        {loading ? (
+          <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
+        ) : visible.length === 0 ? (
+          <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+            <Text style={[s.emptyTitle, { color: T.text }]}>No counseling records</Text>
+            <Text style={[s.emptyTxt, { color: T.dim }]}>No counseling records match these filters.</Text>
+          </View>
+        ) : (
+          <>
+            <View style={{ gap: 8 }}>
+              {visible.map(o => {
+                const meta = statusMeta(o.status);
+                return (
+                  <ListCard key={o.id} style={s.rowCard}>
+                    <Avatar initials={initialsOf(o.studentName)} />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={s.rowTop}>
+                        <Text style={[s.name, { color: T.text }, { flex: 1 }]} numberOfLines={1}>{o.studentName || DASH}</Text>
+                        <StatusBadge label={meta.label} color={meta.color} />
+                      </View>
+
+                      {(o.studentMobile || o.city) ? (
+                        <View style={s.subRow}>
+                          {!!o.studentMobile && <Phone size={10} color={T.dim} strokeWidth={ICON_STROKE} />}
+                          {!!o.studentMobile && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{o.studentMobile}</Text>}
+                          {!!o.city && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{o.studentMobile ? ` · ${o.city}` : o.city}</Text>}
+                        </View>
+                      ) : null}
+
+                      <Text style={[s.type, { color: T.text }]} numberOfLines={1}>{typeLabel(o.type)}</Text>
+                      {!!o.details && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{o.details}</Text>}
+
+                      <View style={s.metaRow}>
+                        <Text style={[s.sub, { color: o.counselorName ? T.sub : T.warning }]} numberOfLines={1}>
+                          {o.counselorName || 'Unassigned'}{o.raisedByName ? ` · ${o.raisedByName}` : ''}
+                        </Text>
+                      </View>
+
+                      <View style={s.visitRow}>
+                        {o.scheduledAt ? (
+                          <>
+                            <CalendarClock size={11} color={T.accent} strokeWidth={ICON_STROKE} />
+                            <Text style={[s.sub, { color: T.accent }]} numberOfLines={1}>{fmtDateTime(o.scheduledAt)}</Text>
+                          </>
+                        ) : (
+                          <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{fmtDate(o.createdAt)}</Text>
+                        )}
+                      </View>
+
+                      <View style={s.actions}>
+                        <Btn
+                          small
+                          variant={o.aiBrief ? 'secondary' : 'soft'}
+                          label={o.aiBrief ? 'Brief' : 'No brief'}
+                          icon={<Sparkles size={13} color={o.aiBrief ? T.text : T.accent} strokeWidth={ICON_STROKE} />}
+                          onPress={() => openBrief(o)}
+                        />
+                        <Btn
+                          small
+                          variant="secondary"
+                          label="Open lead"
+                          icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
+                          onPress={() => navigation?.navigate('B2CLeadDetail', { leadId: o.leadId })}
+                        />
+                      </View>
+                    </View>
+                  </ListCard>
+                );
+              })}
+            </View>
+
+            {totalPages > 1 && (
+              <View style={s.pgRow}>
+                <Text style={[s.count, { color: T.dim }]}>Showing {from}{DASH}{to} of {totalCount}</Text>
+                <Pagination page={page} pageCount={totalPages} onChange={goToPage} />
+              </View>
+            )}
+          </>
+        )}
+        <View style={{ height: 24 }} />
+      </ScrollView>
+
+      {/* AI brief modal — read-only oversight + regenerate */}
+      <FormModal
+        visible={!!briefRow}
+        title="AI Counseling Brief"
+        onClose={() => setBriefRow(null)}
+        footer={
+          <>
+            <Btn label="Close" variant="secondary" onPress={() => setBriefRow(null)} disabled={busy} style={{ flex: 1 }} />
+            <Btn label={busy ? 'Generating…' : 'Regenerate'} onPress={regenerate} loading={busy} disabled={busy} icon={!busy ? <RefreshCw size={14} color="#FFF" strokeWidth={ICON_STROKE} /> : undefined} style={{ flex: 1 }} />
+          </>
+        }
+      >
+        {briefRow && (
+          <View style={{ gap: 12 }}>
+            {!!briefErr && (
+              <View style={[s.errBox, { backgroundColor: T.danger + '1A', borderColor: T.danger }]}>
+                <Text style={[s.errTxt, { color: T.danger }]}>{briefErr}</Text>
+              </View>
+            )}
+            <Text style={[s.briefMeta, { color: T.sub }]}>
+              {briefRow.studentName} · {typeLabel(briefRow.type)} · {briefRow.counselorName || 'Unassigned'}
+            </Text>
+
+            {briefRow.aiBrief ? (
+              <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiBrief}</Text>
+              </View>
+            ) : (
+              <Text style={[s.sub, { color: T.dim }]}>No brief yet — tap Regenerate to create one.</Text>
+            )}
+
+            {!!briefRow.aiPostSession && (
+              <View style={{ gap: 6 }}>
+                <Text style={[s.blockLabel, { color: T.sub }]}>Post-session next step</Text>
+                <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                  <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiPostSession}</Text>
+                </View>
+              </View>
+            )}
+
+            {!!briefRow.aiGeneratedAt && <Text style={[s.sub, { color: T.dim }]}>Generated {fmtDateTime(briefRow.aiGeneratedAt)}</Text>}
+          </View>
+        )}
+      </FormModal>
+    </SafeAreaView>
+  );
+};
+
+const s = StyleSheet.create({
+  safe: { flex: 1 },
+  scroll: { padding: 14, gap: 12 },
+  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
+
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  stat: { flexBasis: '47%', flexGrow: 1, minWidth: 140 },
+
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
+  filterRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  count: { fontSize: rf(11.5), fontWeight: '600' },
+
+  viewingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: -2 },
+  viewing: { fontSize: rf(12), fontWeight: '500', flexShrink: 1 },
+
+  rowCard: { alignItems: 'flex-start' },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'wrap' },
+  metaRow: { flexDirection: 'row', alignItems: 'center' },
+  visitRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  name: { fontSize: rf(13.5), fontWeight: '700' },
+  type: { fontSize: rf(12.5), fontWeight: '600' },
+  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
+
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+
+  briefMeta: { fontSize: rf(12), fontWeight: '500' },
+  briefBox: { borderRadius: 13, borderWidth: 1, padding: 12 },
+  briefTxt: { fontSize: rf(13), fontWeight: '500', lineHeight: 20 },
+  blockLabel: { fontSize: rf(11.5), fontWeight: '700' },
+  errBox: { borderRadius: 11, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
+  errTxt: { fontSize: rf(12), fontWeight: '600' },
+});

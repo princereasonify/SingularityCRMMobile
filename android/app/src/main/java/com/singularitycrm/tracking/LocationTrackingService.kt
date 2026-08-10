@@ -32,6 +32,16 @@ class LocationTrackingService : Service() {
         /** Cap the offline queue so a device left offline for days can't grow it without bound. */
         private const val MAX_QUEUED_PINGS = 500
 
+        /** Never send a fix older than this — a stale position corrupts the route. */
+        private const val STALE_FIX_MS = 30_000L
+
+        /** On-device accuracy gate (metres); mirrors the server's 75 m gate so poor
+         *  WiFi/cell fixes never enter the route. */
+        private const val MAX_ACCURACY_METRES = 75f
+
+        /** A fix this much newer wins outright (Google's isBetterLocation heuristic). */
+        private const val SIGNIFICANT_TIME_MS = 15_000L
+
         @Volatile
         var isRunning: Boolean = false
             private set
@@ -43,12 +53,32 @@ class LocationTrackingService : Service() {
     private var lastLocation: Location? = null
 
     private val locationListener = LocationListener { location ->
-        // Keep the most accurate fix
-        val prev = lastLocation
-        if (prev == null || location.accuracy <= prev.accuracy) {
+        // Accept the fix only when it's genuinely better than what we hold (Google's
+        // canonical heuristic): a much newer fix wins, a much older one is ignored,
+        // and among comparable-age fixes the more accurate one wins. This stops an
+        // optimistic NETWORK fix from displacing a real GPS fix.
+        if (isBetterLocation(location, lastLocation)) {
             lastLocation = location
         }
-        Log.d(TAG, "Location: ${location.latitude}, ${location.longitude} acc=${location.accuracy}m")
+        Log.d(TAG, "Location: ${location.latitude}, ${location.longitude} acc=${location.accuracy}m provider=${location.provider}")
+    }
+
+    /** Trimmed form of Google's isBetterLocation() — decides whether [candidate] should
+     *  replace the fix we're currently holding. */
+    private fun isBetterLocation(candidate: Location, current: Location?): Boolean {
+        if (current == null) return true
+        val timeDelta = candidate.time - current.time
+        if (timeDelta > SIGNIFICANT_TIME_MS) return true    // much newer → take it
+        if (timeDelta < -SIGNIFICANT_TIME_MS) return false  // much older → keep current
+        val accuracyDelta = candidate.accuracy - current.accuracy
+        val isNewer = timeDelta > 0
+        val isFromSameProvider = candidate.provider == current.provider
+        return when {
+            accuracyDelta < 0 -> true                                  // strictly more accurate
+            isNewer && accuracyDelta <= 50f -> true                    // newer and not much worse
+            isNewer && isFromSameProvider && accuracyDelta <= 100f -> true
+            else -> false
+        }
     }
 
     override fun onCreate() {
@@ -151,6 +181,15 @@ class LocationTrackingService : Service() {
         val baseUrl = currentBaseUrl() ?: return Unit.also { Log.w(TAG, "No API URL — skip ping") }
         val location = lastLocation ?: return Unit.also { Log.w(TAG, "No location yet — skip ping") }
 
+        // Staleness gate: a fix older than 30 s no longer reflects where the agent is.
+        val ageMs = System.currentTimeMillis() - location.time
+        if (ageMs > STALE_FIX_MS) return Unit.also { Log.w(TAG, "Fix ${ageMs}ms old — skip ping") }
+
+        // Accuracy gate: drop poor fixes on-device (the server gates identically at 75 m).
+        if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_METRES) {
+            return Unit.also { Log.w(TAG, "Low-accuracy fix ${location.accuracy}m — skip ping") }
+        }
+
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
@@ -161,7 +200,9 @@ class LocationTrackingService : Service() {
             if (location.hasSpeed()) put("speedKmh", location.speed * 3.6)
             if (location.hasAltitude()) put("altitudeMetres", location.altitude)
             put("recordedAt", sdf.format(Date(location.time)))
-            put("provider", "GPS")
+            // Report the real provider (gps/network/fused) so the server's fraud/quality
+            // engine can weight fixes correctly instead of assuming everything is GPS.
+            put("provider", location.provider?.uppercase(Locale.US) ?: "GPS")
             put("isMocked", location.isFromMockProvider)
         }
 

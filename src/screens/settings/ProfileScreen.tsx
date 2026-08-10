@@ -36,12 +36,19 @@ const ROLE_LABEL: Record<string, string> = {
   RH: 'Regional Head',
   SH: 'Sales Head',
   SCA: 'Sales Control Admin',
+  B2CAdmin: 'B2C Admin',
+  Agent: 'Sales Agent',
+  Counselor: 'Counselor',
 };
+const B2C_ROLES = ['B2CAdmin', 'Agent', 'Counselor'];
 
 export const ProfileScreen = ({ navigation }: any) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
+  // B2C accounts live in a separate table with no avatar/home-location/org endpoints,
+  // so those B2B-only bits are hidden for them (they'd 401 / dead-navigate otherwise).
+  const isB2C = B2C_ROLES.includes(user?.role || '');
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
 
@@ -170,7 +177,7 @@ export const ProfileScreen = ({ navigation }: any) => {
         */}
         <View style={[styles.stack, wide && styles.centeredWide]}>
           <Card style={styles.identity}>
-            <TouchableOpacity activeOpacity={0.8} onPress={pickAvatar} disabled={uploading}>
+            <TouchableOpacity activeOpacity={0.8} onPress={pickAvatar} disabled={isB2C || uploading}>
               <View style={[styles.avatar, { backgroundColor: T.accentSoft }]}>
                 {avatar ? (
                   // onError → drop back to initials rather than leaving a blank circle
@@ -179,17 +186,20 @@ export const ProfileScreen = ({ navigation }: any) => {
                 ) : (
                   <Text style={[styles.avatarTxt, { color: T.accent }]}>{initials}</Text>
                 )}
-                <View style={[styles.avatarEdit, { backgroundColor: T.accent, borderColor: T.card }]}>
-                  {uploading
-                    ? <ActivityIndicator size="small" color={T.onAccent} />
-                    : <Camera size={13} color={T.onAccent} strokeWidth={2} />}
-                </View>
+                {/* Avatar upload is a B2B-only endpoint — no edit affordance for B2C. */}
+                {!isB2C && (
+                  <View style={[styles.avatarEdit, { backgroundColor: T.accent, borderColor: T.card }]}>
+                    {uploading
+                      ? <ActivityIndicator size="small" color={T.onAccent} />
+                      : <Camera size={13} color={T.onAccent} strokeWidth={2} />}
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
             <Text style={[styles.name, { color: T.text }]} numberOfLines={1}>{user?.name || '—'}</Text>
             <Text style={[styles.email, { color: T.sub }]} numberOfLines={1}>{user?.email || '—'}</Text>
             {/* Remove only appears when a real photo is set — tapping the avatar changes it. */}
-            {!!avatar && !uploading && (
+            {!!avatar && !uploading && !isB2C && (
               <TouchableOpacity onPress={removeAvatar} hitSlop={8} style={styles.removeBtn}>
                 <Text style={[styles.removeTxt, { color: T.danger }]}>Remove photo</Text>
               </TouchableOpacity>
@@ -212,6 +222,8 @@ export const ProfileScreen = ({ navigation }: any) => {
             />
           </Card>
 
+          {/* Organisation (zones/regions) is a B2B concept — hidden for B2C accounts. */}
+          {!isB2C && (
           <Card style={styles.section}>
             <Text style={[styles.sectionTitle, { color: T.text }]}>Organisation</Text>
             <Row icon={<MapPin size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zone" value={user?.zone} />
@@ -219,7 +231,10 @@ export const ProfileScreen = ({ navigation }: any) => {
             <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Zonal Head" value={user?.zonalHead} />
             <Row icon={<Users size={15} color={T.accent} strokeWidth={ICON_STROKE} />} label="Regional Head" value={user?.regionalHead} last />
           </Card>
+          )}
 
+          {/* Base Location / travel-allowance is B2B-only (Home Location route + endpoint). */}
+          {!isB2C && (
           <Card style={styles.section}>
             <Text style={[styles.sectionTitle, { color: T.text }]}>Base Location</Text>
             <Row
@@ -233,6 +248,7 @@ export const ProfileScreen = ({ navigation }: any) => {
               Travel allowance is measured from here, so keep it accurate.
             </Text>
           </Card>
+          )}
 
           <View style={[styles.note, { backgroundColor: withAlpha(T.info, SOFT_TINT) }]}>
             <Text style={[styles.noteTxt, { color: T.info }]}>

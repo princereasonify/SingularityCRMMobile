@@ -4,13 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GradientBackground } from './GradientBackground';
 import { ShimmerWord } from './ShimmerText';
 import { SingularityLogo } from './SingularityLogo';
-import { Wordmark } from '../../theme';
+import { Wordmark, B2CGreen } from '../../theme';
 
 const SERIF = Platform.select({ ios: 'Georgia', default: 'serif' });
 
 interface Props {
   /** compact = stacked phone header; false = tall split-panel (tablet landscape). */
   compact: boolean;
+  /** Brand family — `b2c` tints the hero panel green; default `b2b` stays Sunstone. */
+  family?: 'b2b' | 'b2c';
 }
 
 /**
@@ -18,8 +20,9 @@ interface Props {
  * wordmark (CRM in bold black), the "One pitch away from onboard." quote with the
  * shimmering ink accent word, and the tagline. Stays gold in light and dark themes.
  */
-export const AuthHero = ({ compact }: Props) => {
+export const AuthHero = ({ compact, family = 'b2b' }: Props) => {
   const insets = useSafeAreaInsets();
+  const heroGradient = family === 'b2c' ? B2CGreen : undefined;
 
   // Brand lockup: the mark leads, the wordmark reads at the mark's own height and
   // never larger than it. No animation on the mark.
@@ -44,6 +47,7 @@ export const AuthHero = ({ compact }: Props) => {
   return (
     <GradientBackground
       glow
+      gradient={heroGradient}
       style={[
         styles.hero,
         compact

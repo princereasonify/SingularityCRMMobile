@@ -8,6 +8,11 @@ interface Props {
   children?: React.ReactNode;
   /** Show the soft radial glow in the lower-right, matching the mockup hero panel. */
   glow?: boolean;
+  /**
+   * Override the diagonal gradient stops. Defaults to the Sunstone brand gold; the
+   * B2C login passes the green `B2CGreen` triple so its hero/CTA render green.
+   */
+  gradient?: { from: string; to: string; deep: string };
 }
 
 /**
@@ -18,8 +23,9 @@ interface Props {
  * container, which previously left the bottom of the hero panel unpainted (the
  * tagline spilled onto the page background). Explicit dimensions guarantee a full fill.
  */
-export const GradientBackground = ({ style, children, glow = true }: Props) => {
+export const GradientBackground = ({ style, children, glow = true, gradient }: Props) => {
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const G = gradient ?? Sunstone;
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -32,9 +38,9 @@ export const GradientBackground = ({ style, children, glow = true }: Props) => {
         <Svg style={StyleSheet.absoluteFill} width={size.w} height={size.h}>
           <Defs>
             <LinearGradient id="sunstone" x1="0" y1="0" x2={size.w} y2={size.h} gradientUnits="userSpaceOnUse">
-              <Stop offset="0" stopColor={Sunstone.deep} />
-              <Stop offset="0.55" stopColor={Sunstone.from} />
-              <Stop offset="1" stopColor={Sunstone.to} />
+              <Stop offset="0" stopColor={G.deep} />
+              <Stop offset="0.55" stopColor={G.from} />
+              <Stop offset="1" stopColor={G.to} />
             </LinearGradient>
             <RadialGradient
               id="glow"
@@ -43,8 +49,8 @@ export const GradientBackground = ({ style, children, glow = true }: Props) => {
               r={Math.max(size.w, size.h) * 0.6}
               gradientUnits="userSpaceOnUse"
             >
-              <Stop offset="0" stopColor={Sunstone.to} stopOpacity="0.45" />
-              <Stop offset="0.7" stopColor={Sunstone.to} stopOpacity="0" />
+              <Stop offset="0" stopColor={G.to} stopOpacity="0.45" />
+              <Stop offset="0.7" stopColor={G.to} stopOpacity="0" />
             </RadialGradient>
           </Defs>
           <Rect x="0" y="0" width={size.w} height={size.h} fill="url(#sunstone)" />

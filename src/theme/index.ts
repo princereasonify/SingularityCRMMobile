@@ -4,8 +4,8 @@
 export { Palette, Colors, getScoreColor, getProgressColor, getStatusColor, getTargetStatusColor } from './colors';
 export { Typography } from './typography';
 export { Spacing, Radius } from './spacing';
-export { Fonts, Wordmark, Type, Sunstone } from './fonts';
-export { getAuthTheme } from './authTheme';
+export { Fonts, Wordmark, Type, Sunstone, B2CGreen } from './fonts';
+export { getAuthTheme, getAuthThemeFor } from './authTheme';
 export type { AuthTheme } from './authTheme';
 export { getAppTheme } from './appTheme';
 export type { AppTheme } from './appTheme';

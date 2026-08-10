@@ -26,6 +26,7 @@ import { ROLE_COLORS } from '../utils/constants';
 import { rf, isTabletDevice } from '../utils/responsive';
 
 // Auth
+import { LandingScreen } from '../screens/auth/LandingScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
 import { DeleteAccountScreen } from '../screens/auth/DeleteAccountScreen';
@@ -111,6 +112,40 @@ import { LeaveManagementScreen } from '../screens/leaves/LeaveManagementScreen';
 import { AllowancesScreen } from '../screens/allowances/AllowancesScreen';
 import { RegionsZonesScreen } from '../screens/regionsZones/RegionsZonesScreen';
 import { TeamManagementScreen } from '../screens/team/TeamManagementScreen';
+
+// ─── B2C (student enrollment) screens ─────────────────────────────────────────
+import { B2CAdminDashboard } from '../screens/b2c/B2CAdminDashboard';
+import { AgentDashboard } from '../screens/b2c/AgentDashboard';
+import { CounselorDashboard } from '../screens/b2c/CounselorDashboard';
+import { B2CLeadsListScreen } from '../screens/b2c/B2CLeadsListScreen';
+import { B2CLeadDetailScreen } from '../screens/b2c/B2CLeadDetailScreen';
+import { B2CAddLeadScreen } from '../screens/b2c/B2CAddLeadScreen';
+import { B2CCounselorsListScreen } from '../screens/b2c/B2CCounselorsListScreen';
+import { B2CBillingScreen } from '../screens/b2c/B2CBillingScreen';
+import { B2CAgentVisitScreen } from '../screens/b2c/B2CAgentVisitScreen';
+import { B2CCounselorRecordingScreen } from '../screens/b2c/B2CCounselorRecordingScreen';
+import { B2CAiCoachScreen } from '../screens/b2c/B2CAiCoachScreen';
+// B2C phase-1 stub screens (mirror the web B2C sidebars).
+import { B2CPipelineScreen } from '../screens/b2c/B2CPipelineScreen';
+import { B2CUserManagementScreen } from '../screens/b2c/B2CUserManagementScreen';
+import { B2CApprovalCenterScreen } from '../screens/b2c/B2CApprovalCenterScreen';
+import { B2CLiveTrackingScreen } from '../screens/b2c/B2CLiveTrackingScreen';
+import { B2CGeoComplianceScreen } from '../screens/b2c/B2CGeoComplianceScreen';
+import { B2CReportsScreen } from '../screens/b2c/B2CReportsScreen';
+import { B2CCounselingScreen } from '../screens/b2c/B2CCounselingScreen';
+import { B2CCalendarScreen } from '../screens/b2c/B2CCalendarScreen';
+import { B2CMyDayScreen } from '../screens/b2c/B2CMyDayScreen';
+import { B2CRoutePlannerScreen } from '../screens/b2c/B2CRoutePlannerScreen';
+import { B2CActivityLogScreen } from '../screens/b2c/B2CActivityLogScreen';
+import { B2CMyLeavesScreen } from '../screens/b2c/B2CMyLeavesScreen';
+import { B2CMyPerformanceScreen } from '../screens/b2c/B2CMyPerformanceScreen';
+import { B2CWeeklyPlanScreen } from '../screens/b2c/B2CWeeklyPlanScreen';
+import { B2CReengagementScreen } from '../screens/b2c/B2CReengagementScreen';
+import { B2CTeamScreen } from '../screens/b2c/B2CTeamScreen';
+import { B2CTeamLeadsScreen } from '../screens/b2c/B2CTeamLeadsScreen';
+import { B2CTeamTrackingScreen } from '../screens/b2c/B2CTeamTrackingScreen';
+import { B2CTeamApprovalsScreen } from '../screens/b2c/B2CTeamApprovalsScreen';
+import { B2CConvertScreen } from '../screens/b2c/B2CConvertScreen';
 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -502,12 +537,142 @@ function SCADrawer() {
   );
 }
 
+// ─── B2C shell (identical AppSidebar/AppTopbar shell as the B2B drawers) ───────
+const b2cScreenOptions = (T: ReturnType<typeof useAppTheme>, permanent: boolean, collapsed: boolean) =>
+  ({ navigation, route }: any) => ({
+    headerShown: true,
+    header: () => (
+      <AppTopbar
+        title={route.name}
+        onMenu={() => navigation.openDrawer()}
+        onNotifications={() => navigation.navigate('Notifications' as never)}
+        onProfile={() => navigation.navigate('Profile' as never)}
+        onSettings={() => navigation.navigate('Settings' as never)}
+      />
+    ),
+    drawerType: permanent ? ('permanent' as const) : ('front' as const),
+    drawerStyle: {
+      width: permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : SIDEBAR_PHONE_W,
+      borderRightWidth: 0,
+    },
+    overlayColor: 'rgba(0,0,0,0.4)',
+    sceneContainerStyle: { backgroundColor: T.bg },
+    swipeEnabled: !permanent,
+  });
+
+// ─── B2CAdmin Drawer ──────────────────────────────────────────────────────────
+function B2CAdminDrawer() {
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+  return (
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
+      screenOptions={b2cScreenOptions(T, permanent, collapsed)}
+    >
+      {/* Names MUST equal navConfig B2CAdmin_NAV routes. Order mirrors web. */}
+      <Drawer.Screen name="Dashboard" component={B2CAdminDashboard} />
+      <Drawer.Screen name="Student Leads" component={B2CLeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={B2CPipelineScreen} />
+      <Drawer.Screen name="Counselors" component={B2CCounselorsListScreen} />
+      <Drawer.Screen name="User Management" component={B2CUserManagementScreen} />
+      <Drawer.Screen name="Approval Center" component={B2CApprovalCenterScreen} />
+      <Drawer.Screen name="Live Tracking" component={B2CLiveTrackingScreen} />
+      <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
+      <Drawer.Screen name="Geo Compliance" component={B2CGeoComplianceScreen} />
+      <Drawer.Screen name="Reports" component={B2CReportsScreen} />
+      <Drawer.Screen name="Counseling" component={B2CCounselingScreen} />
+      <Drawer.Screen name="Billing" component={B2CBillingScreen} />
+      {/* Read-only counselor-quality overview (AI Coach) — reachable route, not in the sidebar. */}
+      <Drawer.Screen name="B2CAiCoach" component={B2CAiCoachScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+    </Drawer.Navigator>
+  );
+}
+
+// ─── Agent Drawer ─────────────────────────────────────────────────────────────
+function AgentDrawer() {
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+  return (
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
+      screenOptions={b2cScreenOptions(T, permanent, collapsed)}
+    >
+      {/* Names MUST equal navConfig Agent_NAV routes. Order mirrors web. */}
+      <Drawer.Screen name="Dashboard" component={AgentDashboard} />
+      <Drawer.Screen name="My Leads" component={B2CLeadsListScreen} />
+      <Drawer.Screen name="Pipeline" component={B2CPipelineScreen} />
+      <Drawer.Screen name="My Day" component={B2CMyDayScreen} />
+      <Drawer.Screen name="Route Planner" component={B2CRoutePlannerScreen} />
+      <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
+      <Drawer.Screen name="Weekly Plan" component={B2CWeeklyPlanScreen} />
+      <Drawer.Screen name="Activity Log" component={B2CActivityLogScreen} />
+      <Drawer.Screen name="Leaves" component={B2CMyLeavesScreen} />
+      <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
+      {/* Native geo-verified visit capture. Also reachable from a lead's detail (with leadId). */}
+      <Drawer.Screen name="Visit" component={B2CAgentVisitScreen} />
+
+      {/* Manager (Agent + isManager) Team section. Registered here even though the
+          sidebar shows them only when isManager (AppSidebar appends MANAGER_NAV). */}
+      <Drawer.Screen name="My Team" component={B2CTeamScreen} />
+      <Drawer.Screen name="Team Leads" component={B2CTeamLeadsScreen} />
+      <Drawer.Screen name="Team Tracking" component={B2CTeamTrackingScreen} />
+      <Drawer.Screen name="Team Approvals" component={B2CTeamApprovalsScreen} />
+
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+    </Drawer.Navigator>
+  );
+}
+
+// ─── Counselor Drawer ─────────────────────────────────────────────────────────
+function CounselorDrawer() {
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+  return (
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
+      screenOptions={b2cScreenOptions(T, permanent, collapsed)}
+    >
+      {/* Names MUST equal navConfig Counselor_NAV routes. Order mirrors web. */}
+      <Drawer.Screen name="Dashboard" component={CounselorDashboard} />
+      <Drawer.Screen name="Re-engagement Queue" component={B2CReengagementScreen} />
+      {/* Route "My Leads" — labelled "Assigned Students" in the sidebar. */}
+      <Drawer.Screen name="My Leads" component={B2CLeadsListScreen} />
+      <Drawer.Screen name="My Day" component={B2CMyDayScreen} />
+      <Drawer.Screen name="Route Planner" component={B2CRoutePlannerScreen} />
+      <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
+      <Drawer.Screen name="Activity Log" component={B2CActivityLogScreen} />
+      <Drawer.Screen name="Leaves" component={B2CMyLeavesScreen} />
+      <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
+      {/* Native session recording + AI coaching (labelled "AI Coach" in the sidebar). */}
+      <Drawer.Screen name="Recording" component={B2CCounselorRecordingScreen} />
+      {/* Credits — reuses the shared B2C billing/wallet screen (reachable route, not in the sidebar). */}
+      <Drawer.Screen name="B2CBilling" component={B2CBillingScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+    </Drawer.Navigator>
+  );
+}
+
 const getRoleNavigator = (role: string) => {
   switch (role) {
     case 'ZH':  return ZHDrawer;
     case 'RH':  return RHDrawer;
     case 'SH':  return SHDrawer;
     case 'SCA': return SCADrawer;
+    case 'B2CAdmin':  return B2CAdminDrawer;
+    case 'Agent':     return AgentDrawer;
+    case 'Counselor': return CounselorDrawer;
     default:    return FODrawer;
   }
 };
@@ -611,6 +776,8 @@ export const AppNavigator = () => {
       <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!user ? (
           <>
+            {/* Landing/Hero — the initial unauthenticated route (B2B / B2C picker). */}
+            <Stack.Screen name="Landing" component={LandingScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ animation: 'slide_from_bottom' }} />
@@ -676,6 +843,16 @@ export const AppNavigator = () => {
             <Stack.Screen name="AllowancesScreen" component={AllowancesScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="RegionsZones" component={RegionsZonesScreen} options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="TeamManagement" component={TeamManagementScreen} options={{ animation: 'slide_from_right' }} />
+
+            {/* ── B2C (student enrollment) ── */}
+            <Stack.Screen name="B2CLeadDetail" component={B2CLeadDetailScreen} options={{ animation: 'slide_from_right' }} />
+            {/* Lead → deal conversion, reached from the lead detail (phase-1 stub). */}
+            <Stack.Screen name="B2CConvert" component={B2CConvertScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="B2CAddLead" component={B2CAddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="B2CEditLead" component={B2CAddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
+            {/* Native geo-visit (Agent) + session recording/AI coaching (Counselor) flows. */}
+            <Stack.Screen name="B2CAgentVisit" component={B2CAgentVisitScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="B2CCounselorRecording" component={B2CCounselorRecordingScreen} options={{ animation: 'slide_from_bottom' }} />
           </>
         )}
       </Stack.Navigator>

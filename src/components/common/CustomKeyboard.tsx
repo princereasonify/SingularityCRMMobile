@@ -40,6 +40,36 @@ export const CustomKeyboard = ({
   const [shift, setShift] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
 
+  // ── Backspace hold-to-repeat ──────────────────────────────────────────────
+  // A quick tap deletes exactly one char (onPressIn deletes once, onPressOut
+  // clears before the delay fires). Holding kicks off an interval after an
+  // initial delay, then accelerates for a natural "keeps deleting" feel.
+  const bkDelay = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bkAccel = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bkInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopBackspace = () => {
+    if (bkDelay.current) { clearTimeout(bkDelay.current); bkDelay.current = null; }
+    if (bkAccel.current) { clearTimeout(bkAccel.current); bkAccel.current = null; }
+    if (bkInterval.current) { clearInterval(bkInterval.current); bkInterval.current = null; }
+  };
+
+  const startBackspace = () => {
+    stopBackspace();
+    onBackspace(); // immediate delete on press-in → a quick tap removes one char
+    bkDelay.current = setTimeout(() => {
+      bkInterval.current = setInterval(onBackspace, 70);
+      // After ~1s of holding, speed up to a snappier repeat rate.
+      bkAccel.current = setTimeout(() => {
+        if (bkInterval.current) clearInterval(bkInterval.current);
+        bkInterval.current = setInterval(onBackspace, 40);
+      }, 1000);
+    }, 350);
+  };
+
+  // Clear any pending timers on unmount so a held backspace can't outlive the panel.
+  useEffect(() => stopBackspace, []);
+
   useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 220, useNativeDriver: true }).start();
   }, [visible, slide]);
@@ -119,7 +149,7 @@ export const CustomKeyboard = ({
             </Key>
           ))}
           {ri === 2 && (
-            <Key flexAmt={1.5} bg={specialBg} onPress={onBackspace}>
+            <Key flexAmt={1.5} bg={specialBg} onPressIn={startBackspace} onPressOut={stopBackspace}>
               <Delete size={20} color={txt} />
             </Key>
           )}
@@ -158,9 +188,22 @@ const KEY_H = isTabletDevice ? 52 : 44;
 export const KEYBOARD_PANEL_H = 8 + 46 + 4 * (KEY_H + 7) + 10;
 
 const Key = ({
-  children, onPress, bg, flexAmt = 1,
-}: { children: React.ReactNode; onPress: () => void; bg: string; flexAmt?: number }) => (
-  <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={[styles.key, { backgroundColor: bg, flex: flexAmt, height: KEY_H }]}>
+  children, onPress, onPressIn, onPressOut, bg, flexAmt = 1,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
+  bg: string;
+  flexAmt?: number;
+}) => (
+  <TouchableOpacity
+    activeOpacity={0.6}
+    onPress={onPress}
+    onPressIn={onPressIn}
+    onPressOut={onPressOut}
+    style={[styles.key, { backgroundColor: bg, flex: flexAmt, height: KEY_H }]}
+  >
     {children}
   </TouchableOpacity>
 );

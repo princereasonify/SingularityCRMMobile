@@ -302,8 +302,12 @@ class LocationTrackingModule: NSObject {
     private func setupLocationManager() {
         let mgr = CLLocationManager()
         mgr.delegate = self
-        mgr.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // Field-grade accuracy: BestForNavigation drives the GPS chip hardest
+        // (was HundredMeters → fixes up to 100 m off). Paired with the JS-side
+        // 75 m accuracy gate, this is what gets us to ~99% route fidelity.
+        mgr.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         mgr.distanceFilter  = kCLDistanceFilterNone
+        mgr.activityType    = .automotiveNavigation
         // Keep delivering updates in background (UIBackgroundModes:location in Info.plist)
         mgr.allowsBackgroundLocationUpdates    = true
         mgr.pausesLocationUpdatesAutomatically = false

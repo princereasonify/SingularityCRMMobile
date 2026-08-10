@@ -16,12 +16,19 @@ import { ensureFreshToken, refreshAccessToken } from '../api/client';
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 
+/**
+ * On-device accuracy gate (metres). Fixes worse than this are dropped before we
+ * even send them — the server applies the same 75 m gate, so this just saves a
+ * round-trip and keeps low-quality WiFi/cell fixes out of the route entirely.
+ */
+const MAX_ACCURACY_METRES = 75;
+
 const getPosition = (): Promise<any> =>
   new Promise((resolve, reject) => {
     Geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: false, // WiFi/cell — fast, works indoors
+      enableHighAccuracy: true,  // GPS — required for field-grade (sub-20 m) accuracy
       timeout: 20000,
-      maximumAge: 30000,
+      maximumAge: 5000,          // never accept a fix older than 5 s (was 30 s → stale routes)
     });
   });
 
@@ -47,6 +54,14 @@ export const sendLocationPing = async (): Promise<void> => {
     }
 
     const { latitude, longitude, accuracy, speed, altitude } = position.coords;
+
+    // On-device accuracy gate: drop clearly-bad fixes (null or > 75 m) so a poor
+    // WiFi/cell fix never enters the route. The server gates identically.
+    if (accuracy == null || accuracy > MAX_ACCURACY_METRES) {
+      console.log('[PingService] Dropping low-accuracy fix:', accuracy, 'm');
+      return;
+    }
+
     pingBody = JSON.stringify({
       latitude,
       longitude,

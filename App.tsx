@@ -15,6 +15,7 @@ import { ThemeProvider } from './src/context/ThemeContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import { OfflineProvider } from './src/context/OfflineContext';
 import { NotificationProvider } from './src/context/NotificationContext';
+import { ToastProvider } from './src/context/ToastContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import messaging from '@react-native-firebase/messaging';
 import { onForegroundMessage, onNotifeeEvent } from './src/services/pushNotificationService';
@@ -74,9 +75,11 @@ function App() {
           <LanguageProvider>
             <OfflineProvider>
               <AuthProvider>
-                <NotificationProvider>
-                  <AppNavigator />
-                </NotificationProvider>
+                <ToastProvider>
+                  <NotificationProvider>
+                    <AppNavigator />
+                  </NotificationProvider>
+                </ToastProvider>
               </AuthProvider>
             </OfflineProvider>
           </LanguageProvider>
