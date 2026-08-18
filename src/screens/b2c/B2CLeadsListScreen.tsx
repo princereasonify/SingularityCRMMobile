@@ -6,7 +6,7 @@ import { pick, types } from '@react-native-documents/picker';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
 import {
-  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, Fab, FormModal,
+  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, Fab, FormModal, Input,
 } from '../../components/crud';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { B2CLeadListDto, B2C_LEAD_STAGES, B2C_LEAD_SOURCES } from '../../types/b2c';
@@ -60,8 +60,8 @@ export const B2CLeadsListScreen = () => {
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('');
   const [source, setSource] = useState('');
-  const [openStage, setOpenStage] = useState(false);
-  const [openSource, setOpenSource] = useState(false);
+  const [grade, setGrade] = useState('');
+  const [board, setBoard] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -71,12 +71,44 @@ export const B2CLeadsListScreen = () => {
   // `enabled: isAdmin` skips the (B2CAdmin-only, otherwise-403) roster fetch for them.
   const { agents, counselors } = useFieldStaff(isAdmin);
   const [personVal, setPersonVal] = useState(''); // '' | 'a:<id>' | 'c:<id>'
-  const [openPerson, setOpenPerson] = useState(false);
   const person: FieldPersonSelection | null = useMemo(
     () => resolvePersonSelection(personVal, agents, counselors),
     [personVal, agents, counselors],
   );
   const personOptions = useMemo(() => buildPersonFilterOptions(agents, counselors), [agents, counselors]);
+
+  // Every filter (view-as, stage, source, std, board) lives behind one "Filters" button —
+  // edited as a draft inside the modal and only committed to the real (query-driving) state
+  // on Apply, so typing "9" into Std doesn't fire a request per keystroke.
+  const [showFilters, setShowFilters] = useState(false);
+  const [openPerson, setOpenPerson] = useState(false);
+  const [openStage, setOpenStage] = useState(false);
+  const [openSource, setOpenSource] = useState(false);
+  const [draftPersonVal, setDraftPersonVal] = useState('');
+  const [draftStage, setDraftStage] = useState('');
+  const [draftSource, setDraftSource] = useState('');
+  const [draftGrade, setDraftGrade] = useState('');
+  const [draftBoard, setDraftBoard] = useState('');
+  const draftPerson = useMemo(
+    () => resolvePersonSelection(draftPersonVal, agents, counselors),
+    [draftPersonVal, agents, counselors],
+  );
+  const activeFilterCount = [personVal, stage, source, grade, board].filter(v => v !== '').length;
+
+  const openFilters = () => {
+    setDraftPersonVal(personVal); setDraftStage(stage); setDraftSource(source);
+    setDraftGrade(grade); setDraftBoard(board);
+    setOpenPerson(false); setOpenStage(false); setOpenSource(false);
+    setShowFilters(true);
+  };
+  const applyFilters = () => {
+    setPersonVal(draftPersonVal); setStage(draftStage); setSource(draftSource);
+    setGrade(draftGrade); setBoard(draftBoard);
+    setShowFilters(false);
+  };
+  const clearFilters = () => {
+    setDraftPersonVal(''); setDraftStage(''); setDraftSource(''); setDraftGrade(''); setDraftBoard('');
+  };
 
   // Bulk upload modal
   const [showBulk, setShowBulk] = useState(false);
@@ -90,18 +122,23 @@ export const B2CLeadsListScreen = () => {
         search: search || undefined,
         stage: stage || undefined,
         source: source || undefined,
+        grade: grade || undefined,
+        board: board || undefined,
         agentId: person?.kind === 'agent' ? person.agentId : undefined,
         counselorId: person?.kind === 'counselor' ? person.counselorId : undefined,
       });
       setLeads(res.data?.items ?? []);
       setTotalPages(res.data?.totalPages ?? 1);
       setTotalCount(res.data?.totalCount ?? 0);
-    } catch {
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[B2CLeadsListScreen] fetchLeads failed:', err);
+      }
       setLeads([]); setTotalPages(1); setTotalCount(0);
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [search, stage, source, person]);
+  }, [search, stage, source, grade, board, person]);
 
   // Refetch (reset to page 1) whenever the search/filters change.
   useEffect(() => { setLoading(true); setPage(1); fetchLeads(1); }, [fetchLeads]);
@@ -166,43 +203,26 @@ export const B2CLeadsListScreen = () => {
           )}
         </View>
 
-        {/* Search + filter card */}
+        {/* Search + single Filters entry point — every filter (view-as, stage, source, std, board) lives in one modal */}
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={[s.searchRow, wide && { flexWrap: 'nowrap' }]}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search by name, mobile, email…" style={{ flex: 1, minWidth: 180 }} />
-            {isAdmin && (
-              <Trigger
-                label={person?.name || 'Everyone'}
-                open={openPerson}
-                onPress={() => { setOpenPerson(v => !v); setOpenStage(false); setOpenSource(false); }}
-                icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
-              />
-            )}
-            <Trigger label={stage || 'Stage'} open={openStage} onPress={() => { setOpenStage(v => !v); setOpenSource(false); setOpenPerson(false); }} icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />} />
-            <Trigger label={source || 'Source'} open={openSource} onPress={() => { setOpenSource(v => !v); setOpenStage(false); setOpenPerson(false); }} />
+            <Btn
+              label={activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}
+              variant="secondary"
+              small
+              onPress={openFilters}
+              icon={<Filter size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+            />
           </View>
 
-          {openPerson && (
-            <Dropdown style={{ width: '100%' }} maxHeight={300} value={personVal}
-              onSelect={v => { setPersonVal(v); setOpenPerson(false); }}
-              options={personOptions} />
-          )}
-          {openStage && (
-            <Dropdown style={{ width: '100%' }} maxHeight={280} value={stage}
-              onSelect={v => { setStage(v); setOpenStage(false); }}
-              options={[{ label: 'All stages', value: '' }, ...B2C_LEAD_STAGES.map(x => ({ label: x, value: x }))]} />
-          )}
-          {openSource && (
-            <Dropdown style={{ width: '100%' }} maxHeight={280} value={source}
-              onSelect={v => { setSource(v); setOpenSource(false); }}
-              options={[{ label: 'All sources', value: '' }, ...B2C_LEAD_SOURCES.map(x => ({ label: x, value: x }))]} />
-          )}
-
-          {(stage !== '' || source !== '' || personVal !== '') && (
+          {activeFilterCount > 0 && (
             <View style={s.chipRow}>
               {personVal !== '' && <FilterChip label={person?.name || 'View'} onRemove={() => setPersonVal('')} />}
               {stage !== '' && <FilterChip label={stage} onRemove={() => setStage('')} />}
               {source !== '' && <FilterChip label={source} onRemove={() => setSource('')} />}
+              {grade !== '' && <FilterChip label={`Std: ${grade}`} onRemove={() => setGrade('')} />}
+              {board !== '' && <FilterChip label={`Board: ${board}`} onRemove={() => setBoard('')} />}
             </View>
           )}
         </View>
@@ -319,6 +339,82 @@ export const B2CLeadsListScreen = () => {
               </Text>
             </View>
           )}
+        </View>
+      </FormModal>
+
+      {/* Filters modal — view-as, stage, source, std and board all live here together,
+          edited as a draft and only applied (one refetch) when Apply is tapped. */}
+      <FormModal
+        visible={showFilters}
+        title="Filters"
+        onClose={() => setShowFilters(false)}
+        footer={
+          <>
+            <Btn label="Clear all" variant="secondary" onPress={clearFilters} style={{ flex: 1 }} />
+            <Btn label="Apply" onPress={applyFilters} style={{ flex: 1 }} />
+          </>
+        }
+      >
+        <View style={{ gap: 12 }}>
+          {isAdmin && (
+            <View>
+              <Trigger
+                label={draftPerson?.name || 'Everyone'}
+                open={openPerson}
+                onPress={() => { setOpenPerson(v => !v); setOpenStage(false); setOpenSource(false); }}
+                icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+                style={{ width: '100%' }}
+              />
+              {openPerson && (
+                <Dropdown style={{ width: '100%', marginTop: 6 }} maxHeight={220} value={draftPersonVal}
+                  onSelect={v => { setDraftPersonVal(v); setOpenPerson(false); }}
+                  options={personOptions} />
+              )}
+            </View>
+          )}
+
+          <View>
+            <Trigger
+              label={draftStage || 'Stage'}
+              open={openStage}
+              onPress={() => { setOpenStage(v => !v); setOpenSource(false); setOpenPerson(false); }}
+              icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              style={{ width: '100%' }}
+            />
+            {openStage && (
+              <Dropdown style={{ width: '100%', marginTop: 6 }} maxHeight={220} value={draftStage}
+                onSelect={v => { setDraftStage(v); setOpenStage(false); }}
+                options={[{ label: 'All stages', value: '' }, ...B2C_LEAD_STAGES.map(x => ({ label: x, value: x }))]} />
+            )}
+          </View>
+
+          <View>
+            <Trigger
+              label={draftSource || 'Source'}
+              open={openSource}
+              onPress={() => { setOpenSource(v => !v); setOpenStage(false); setOpenPerson(false); }}
+              style={{ width: '100%' }}
+            />
+            {openSource && (
+              <Dropdown style={{ width: '100%', marginTop: 6 }} maxHeight={220} value={draftSource}
+                onSelect={v => { setDraftSource(v); setOpenSource(false); }}
+                options={[{ label: 'All sources', value: '' }, ...B2C_LEAD_SOURCES.map(x => ({ label: x, value: x }))]} />
+            )}
+          </View>
+
+          <Input
+            label="Std"
+            value={draftGrade}
+            onChangeText={setDraftGrade}
+            placeholder="e.g. 9"
+            left={<GraduationCap size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+          />
+          <Input
+            label="Board"
+            value={draftBoard}
+            onChangeText={setDraftBoard}
+            placeholder="e.g. CBSE"
+          />
         </View>
       </FormModal>
     </Screen>

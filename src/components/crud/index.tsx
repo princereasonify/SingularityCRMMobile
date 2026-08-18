@@ -409,6 +409,13 @@ export const FormModal = ({ visible, title, onClose, children, footer, wide }: {
               contentContainerStyle={s.mbody}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              // RN's ScrollView auto-adjusts its keyboard inset on iOS by default now, which
+              // fights the KeyboardAvoidingView above it — both try to shift the focused field
+              // into view at once, so a field far down a tall form (e.g. this Filters modal's
+              // Std/Board, below three dropdown triggers) visibly jumps/flickers and can drop
+              // focus mid-keystroke. Disabling this lets KeyboardAvoidingView be the only one
+              // driving the shift, which is what this modal was actually built around.
+              automaticallyAdjustKeyboardInsets={false}
             >
               {children}
             </ScrollView>

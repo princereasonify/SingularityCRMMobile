@@ -74,7 +74,10 @@ export const B2CPipelineScreen = () => {
         counselorId: person?.kind === 'counselor' ? person.counselorId : undefined,
       });
       setLeads(res.data?.items ?? []);
-    } catch {
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[B2CPipelineScreen] fetchLeads failed:', err);
+      }
       setLeads([]);
     } finally {
       setLoading(false);

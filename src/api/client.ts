@@ -155,6 +155,22 @@ type RetriableConfig = AxiosRequestConfig & { _retried?: boolean };
 
 apiClient.interceptors.response.use(
   (response) => {
+    // Axios's own JSON parsing (transitional.silentJSONParsing, default true) swallows a parse
+    // failure and hands back the raw string instead of throwing — so a malformed/truncated body
+    // silently becomes `response.data` as text. Every screen's `res.data?.items ?? []` then reads
+    // `.items` off that string, gets `undefined`, and renders "no results" with no error anywhere.
+    // Re-parse defensively so a bad body surfaces as a real, loggable failure instead of a fake
+    // empty list.
+    if (typeof response.data === 'string' && response.data.length > 0) {
+      try {
+        response.data = JSON.parse(response.data);
+      } catch {
+        if (__DEV__) {
+          console.error('[API] Non-JSON response body from', response.config?.url, '\n', response.data.slice(0, 500));
+        }
+        return Promise.reject(new Error(`Invalid JSON response from ${response.config?.url}`));
+      }
+    }
     // Unwrap ApiResponse<T> — backend always returns { success, data, message }
     // so callers can access res.data directly as the typed payload
     if (response.data && typeof response.data === 'object' && 'success' in response.data) {

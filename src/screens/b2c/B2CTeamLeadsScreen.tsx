@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Filter, Users, Phone, MapPin } from 'lucide-react-native';
+import { Filter, Users, Phone, MapPin, GraduationCap } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge,
+  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, Input, FormModal,
 } from '../../components/crud';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
@@ -30,12 +30,37 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('');
+  const [grade, setGrade] = useState('');
+  const [board, setBoard] = useState('');
   const [agentId, setAgentId] = useState(''); // '' = all my agents; otherwise the agent id as a string
-  const [openStage, setOpenStage] = useState(false);
-  const [openAgent, setOpenAgent] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Every filter (agent, stage, std, board) lives behind one "Filters" button — edited as a
+  // draft inside the modal and only committed on Apply, so typing "9" into Std doesn't fire
+  // a request per keystroke.
+  const [showFilters, setShowFilters] = useState(false);
+  const [openAgent, setOpenAgent] = useState(false);
+  const [openStage, setOpenStage] = useState(false);
+  const [draftAgentId, setDraftAgentId] = useState('');
+  const [draftStage, setDraftStage] = useState('');
+  const [draftGrade, setDraftGrade] = useState('');
+  const [draftBoard, setDraftBoard] = useState('');
+  const activeFilterCount = [agentId, stage, grade, board].filter(v => v !== '').length;
+
+  const openFilters = () => {
+    setDraftAgentId(agentId); setDraftStage(stage); setDraftGrade(grade); setDraftBoard(board);
+    setOpenAgent(false); setOpenStage(false);
+    setShowFilters(true);
+  };
+  const applyFilters = () => {
+    setAgentId(draftAgentId); setStage(draftStage); setGrade(draftGrade); setBoard(draftBoard);
+    setShowFilters(false);
+  };
+  const clearFilters = () => {
+    setDraftAgentId(''); setDraftStage(''); setDraftGrade(''); setDraftBoard('');
+  };
 
   useEffect(() => {
     b2cUserService.getMyTeam()
@@ -49,17 +74,22 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
         page: pg, pageSize: PAGE_SIZE,
         search: search || undefined,
         stage: stage || undefined,
+        grade: grade || undefined,
+        board: board || undefined,
         agentId: agentId ? Number(agentId) : undefined,
       });
       setLeads(res.data?.items ?? []);
       setTotalPages(res.data?.totalPages ?? 1);
       setTotalCount(res.data?.totalCount ?? 0);
-    } catch {
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[B2CTeamLeadsScreen] fetchLeads failed:', err);
+      }
       setLeads([]); setTotalPages(1); setTotalCount(0);
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [search, stage, agentId]);
+  }, [search, stage, grade, board, agentId]);
 
   useEffect(() => {
     setLoading(true); setPage(1); fetchLeads(1);
@@ -75,6 +105,7 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
   const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, totalCount);
   const agentLabel = agentId ? (team.find(a => String(a.id) === agentId)?.name ?? 'Agent') : 'Agent';
+  const draftAgentLabel = draftAgentId ? (team.find(a => String(a.id) === draftAgentId)?.name ?? 'Agent') : 'All my agents';
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -86,25 +117,21 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={s.searchRow}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search students…" style={{ flex: 1, minWidth: 180 }} />
-            <Trigger label={agentLabel} open={openAgent} onPress={() => { setOpenAgent(v => !v); setOpenStage(false); }} icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />} />
-            <Trigger label={stage || 'Stage'} open={openStage} onPress={() => { setOpenStage(v => !v); setOpenAgent(false); }} icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />} />
+            <Btn
+              label={activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}
+              variant="secondary"
+              small
+              onPress={openFilters}
+              icon={<Filter size={14} color={T.text} strokeWidth={ICON_STROKE} />}
+            />
           </View>
-
-          {openAgent && (
-            <Dropdown style={{ width: '100%' }} maxHeight={280} value={agentId}
-              onSelect={v => { setAgentId(v); setOpenAgent(false); }}
-              options={[{ label: 'All my agents', value: '' }, ...team.map(a => ({ label: a.name, value: String(a.id) }))]} />
-          )}
-          {openStage && (
-            <Dropdown style={{ width: '100%' }} maxHeight={280} value={stage}
-              onSelect={v => { setStage(v); setOpenStage(false); }}
-              options={[{ label: 'All stages', value: '' }, ...B2C_LEAD_STAGES.map(x => ({ label: x, value: x }))]} />
-          )}
 
           <View style={s.countRow}>
             <Text style={[s.count, { color: T.dim }]}>{totalCount} lead{totalCount === 1 ? '' : 's'} found</Text>
             {agentId !== '' && <FilterChip label={agentLabel} onRemove={() => setAgentId('')} />}
             {stage !== '' && <FilterChip label={stage} onRemove={() => setStage('')} />}
+            {grade !== '' && <FilterChip label={`Std: ${grade}`} onRemove={() => setGrade('')} />}
+            {board !== '' && <FilterChip label={`Board: ${board}`} onRemove={() => setBoard('')} />}
           </View>
         </View>
 
@@ -135,6 +162,11 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
                     <Text style={[s.sub, { color: lead.assignedAgentName ? T.sub : T.dim }]} numberOfLines={1}>
                       {lead.assignedAgentName || 'Unassigned'}
                     </Text>
+                    {!!(lead.grade || lead.board) && (
+                      <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
+                        {[lead.grade, lead.board].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
                   </View>
                 </ListCard>
               ))}
@@ -150,6 +182,66 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
         )}
         <View style={{ height: 24 }} />
       </ScrollView>
+
+      {/* Filters modal — agent, stage, std and board all live here together, edited as a
+          draft and only applied (one refetch) when Apply is tapped. */}
+      <FormModal
+        visible={showFilters}
+        title="Filters"
+        onClose={() => setShowFilters(false)}
+        footer={
+          <>
+            <Btn label="Clear all" variant="secondary" onPress={clearFilters} style={{ flex: 1 }} />
+            <Btn label="Apply" onPress={applyFilters} style={{ flex: 1 }} />
+          </>
+        }
+      >
+        <View style={{ gap: 12 }}>
+          <View>
+            <Trigger
+              label={draftAgentLabel}
+              open={openAgent}
+              onPress={() => { setOpenAgent(v => !v); setOpenStage(false); }}
+              icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              style={{ width: '100%' }}
+            />
+            {openAgent && (
+              <Dropdown style={{ width: '100%', marginTop: 6 }} maxHeight={220} value={draftAgentId}
+                onSelect={v => { setDraftAgentId(v); setOpenAgent(false); }}
+                options={[{ label: 'All my agents', value: '' }, ...team.map(a => ({ label: a.name, value: String(a.id) }))]} />
+            )}
+          </View>
+
+          <View>
+            <Trigger
+              label={draftStage || 'Stage'}
+              open={openStage}
+              onPress={() => { setOpenStage(v => !v); setOpenAgent(false); }}
+              icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              style={{ width: '100%' }}
+            />
+            {openStage && (
+              <Dropdown style={{ width: '100%', marginTop: 6 }} maxHeight={220} value={draftStage}
+                onSelect={v => { setDraftStage(v); setOpenStage(false); }}
+                options={[{ label: 'All stages', value: '' }, ...B2C_LEAD_STAGES.map(x => ({ label: x, value: x }))]} />
+            )}
+          </View>
+
+          <Input
+            label="Std"
+            value={draftGrade}
+            onChangeText={setDraftGrade}
+            placeholder="e.g. 9"
+            left={<GraduationCap size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+          />
+          <Input
+            label="Board"
+            value={draftBoard}
+            onChangeText={setDraftBoard}
+            placeholder="e.g. CBSE"
+          />
+        </View>
+      </FormModal>
     </SafeAreaView>
   );
 };

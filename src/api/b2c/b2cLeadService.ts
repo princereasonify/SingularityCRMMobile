@@ -30,6 +30,8 @@ export interface B2CLeadQuery {
   agentId?: number;
   counselorId?: number;
   area?: string;
+  grade?: string;
+  board?: string;
 }
 
 export const b2cLeadService = {
