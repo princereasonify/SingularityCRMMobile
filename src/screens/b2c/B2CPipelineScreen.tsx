@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Phone, MapPin, IndianRupee, Check, ChevronDown, ChevronRight, Users } from 'lucide-react-native';
-import { Screen, Card, SectionLabel } from '../../components/ui';
+import { Screen, Card } from '../../components/ui';
 import { SearchBar, Trigger, Dropdown, ListCard, StatusBadge } from '../../components/crud';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
-import { b2cUserService } from '../../api/b2c/b2cUserService';
-import { b2cCounselorService } from '../../api/b2c/b2cCounselorService';
+import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
 import { B2CLeadListDto } from '../../types/b2c';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -37,11 +36,6 @@ const idxOf = (stage: string) => (stage in ORDER ? ORDER[stage] : -1);
 
 const priorityColor = (p: string, T: any) => (p === 'Hot' ? T.danger : p === 'Warm' ? T.warning : T.dim);
 
-// Admin "view as" selection — null = everyone, else a specific agent or counselor.
-type Person =
-  | { kind: 'agent'; agentId: number; name: string; isManager?: boolean }
-  | { kind: 'counselor'; counselorId: number; name: string };
-
 export const B2CPipelineScreen = () => {
   const T = useAppTheme();
   const nav = useNavigation<any>();
@@ -56,25 +50,19 @@ export const B2CPipelineScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Admin view-as filter.
-  const [agents, setAgents] = useState<{ id: number; name: string; isManager?: boolean }[]>([]);
-  const [counselors, setCounselors] = useState<{ id: number; name: string }[]>([]);
+  // Admin view-as filter — web parity: B2CPipeline.jsx's <PersonFilter>. This
+  // screen is reachable by Agent/Counselor too, who never render the filter —
+  // `enabled: isAdmin` skips the (B2CAdmin-only, otherwise-403) roster fetch for them.
+  const { agents, counselors } = useFieldStaff(isAdmin);
   const [personVal, setPersonVal] = useState(''); // encoded 'a:<id>' | 'c:<id>' | ''
-  const [person, setPerson] = useState<Person | null>(null);
   const [openFilter, setOpenFilter] = useState(false);
+  const person: FieldPersonSelection | null = useMemo(
+    () => resolvePersonSelection(personVal, agents, counselors),
+    [personVal, agents, counselors],
+  );
 
   // Collapsed stage keys (default: everything expanded).
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    b2cUserService.getUsers({ role: 'Agent', pageSize: 200 })
-      .then(r => setAgents((((r.data as any)?.items ?? r.data ?? []) as any[]).map(u => ({ id: u.id, name: u.name, isManager: !!u.isManager }))))
-      .catch(() => {});
-    b2cCounselorService.getCounselors({ pageSize: 200 })
-      .then(r => setCounselors((((r.data as any)?.items ?? []) as any[]).map(c => ({ id: c.id, name: c.name }))))
-      .catch(() => {});
-  }, [isAdmin]);
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -101,25 +89,9 @@ export const B2CPipelineScreen = () => {
     return () => clearTimeout(t);
   }, [fetchLeads, search]);
 
-  const onSelectPerson = (v: string) => {
-    setOpenFilter(false);
-    setPersonVal(v);
-    if (!v) { setPerson(null); return; }
-    const [kind, id] = v.split(':');
-    if (kind === 'a') {
-      const a = agents.find(x => String(x.id) === id);
-      setPerson({ kind: 'agent', agentId: Number(id), name: a?.name || 'Agent', isManager: a?.isManager });
-    } else {
-      const c = counselors.find(x => String(x.id) === id);
-      setPerson({ kind: 'counselor', counselorId: Number(id), name: c?.name || 'Counselor' });
-    }
-  };
+  const onSelectPerson = (v: string) => { setOpenFilter(false); setPersonVal(v); };
 
-  const filterOptions = useMemo(() => [
-    { label: 'Everyone', value: '' },
-    ...agents.map(a => ({ label: `${a.name}${a.isManager ? ' • Manager' : ''}`, value: `a:${a.id}` })),
-    ...counselors.map(c => ({ label: c.name, value: `c:${c.id}` })),
-  ], [agents, counselors]);
+  const filterOptions = useMemo(() => buildPersonFilterOptions(agents, counselors), [agents, counselors]);
 
   const filterLabel = person ? person.name : 'Everyone';
 

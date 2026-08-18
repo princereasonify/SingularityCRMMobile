@@ -26,7 +26,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
-import { formatDate, formatDateTime, formatRelativeDate, formatFullCurrency } from '../../utils/formatting';
+import { formatDate, formatDateTime, formatFullCurrency } from '../../utils/formatting';
 import { rf } from '../../utils/responsive';
 
 const DASH = '—';
@@ -55,7 +55,7 @@ const objectionColor = (T: AppTheme, status?: string): string => {
 
 const emptyEdit = {
   studentName: '', mobileNumber: '', email: '', parentName: '', parentMobile: '', parentEmail: '',
-  grade: '', schoolName: '', city: '', state: '', area: '', pincode: '',
+  grade: '', board: '', schoolName: '', city: '', state: '', area: '', pincode: '',
   source: 'Website' as B2CLeadSource, priority: 'Warm' as B2CLeadPriority,
   enrollmentTimeline: 'Immediate' as B2CEnrollmentTimeline, notes: '',
 };
@@ -74,8 +74,6 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const isAgent = role === 'Agent';
   const isCounselor = role === 'Counselor';
   const canAssignCounselor = isAdmin;
-  const canConvert = isAdmin || isAgent;
-  const canUpdateStage = isAdmin || isAgent || isCounselor;
 
   const [lead, setLead] = useState<B2CLeadDetailDto | null>(null);
   const [activities, setActivities] = useState<B2CActivityListDto[]>([]);
@@ -141,11 +139,14 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   // Extended lead fields the detail response carries but the shared DTO doesn't declare.
   const lx: any = lead || {};
 
-  // Role-aware stage options (web parity).
+  // Role-aware stage options (web parity). 'ConfirmLogin' is not a real stored stage — it's a
+  // pseudo-option that hands the counselor off to the same convert/enrollment wizard the Agent's
+  // "Convert" button opens (see handleUpdateStage), since a lead can't be moved directly to
+  // Converted via the plain stage-update endpoint.
   const stageOptions = isAgent
     ? ['New', 'Contacted', 'Interested', 'CounselingBooked', 'FollowUp', 'NotInterested']
     : isCounselor
-      ? ['CounselingDone', 'FollowUp']
+      ? ['CounselingDone', 'FollowUp', 'NotInterested', 'ConfirmLogin']
       : B2C_LEAD_STAGES.filter(s => s !== 'Converted');
 
   // ── Modal openers ──
@@ -163,7 +164,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     setEditForm({
       studentName: lead.studentName || '', mobileNumber: lead.mobileNumber || '', email: lead.email || '',
       parentName: lx.parentName || '', parentMobile: lx.parentMobile || '', parentEmail: lx.parentEmail || '',
-      grade: lx.grade || '', schoolName: lx.schoolName || '', city: lead.city || '', state: lead.state || '',
+      grade: lx.grade || '', board: lx.board || '', schoolName: lx.schoolName || '', city: lead.city || '', state: lead.state || '',
       area: lx.area || '', pincode: lead.pincode || '',
       source: (lead.source as B2CLeadSource) || 'Website', priority: (lead.priority as B2CLeadPriority) || 'Warm',
       enrollmentTimeline: (lead.enrollmentTimeline as B2CEnrollmentTimeline) || 'Immediate', notes: lead.notes || '',
@@ -196,6 +197,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const handleUpdateStage = async () => {
     // Booking counseling folds in the counselor + date/time + objection → escalate flow.
     if (stageForm.stage === 'CounselingBooked') { await handleEscalate(); return; }
+    // Counselor's "Confirm Login" hands off to the same convert/enrollment wizard the Agent's
+    // Convert button opens — the backend blocks a direct PATCH to Converted either way.
+    if (stageForm.stage === 'ConfirmLogin') { setModal(null); navigation.navigate('B2CConvert', { leadId }); return; }
     if (!stageForm.notes.trim()) return;
     setSaving(true);
     try {
@@ -266,6 +270,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         parentMobile: editForm.parentMobile.trim() || null,
         parentEmail: editForm.parentEmail.trim() || null,
         grade: editForm.grade.trim() || null,
+        board: editForm.board.trim() || null,
         schoolName: editForm.schoolName.trim() || null,
         city: editForm.city.trim() || undefined,
         state: editForm.state.trim() || undefined,
@@ -319,6 +324,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     { icon: <Mail size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Email', value: lead.email || DASH, onPress: lead.email ? () => Linking.openURL(`mailto:${lead.email}`) : undefined },
     { icon: <Users size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Parent', value: lx.parentName || DASH },
     { icon: <GraduationCap size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Standard', value: lx.grade || DASH },
+    { icon: <GraduationCap size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Board', value: lx.board || DASH },
     { icon: <School size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'School', value: lx.schoolName || DASH },
     { icon: <MapPin size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Address', value: `${lx.area ? lx.area + ', ' : ''}${lead.city || DASH}${lead.state ? ', ' + lead.state : ''}${lead.pincode ? ' - ' + lead.pincode : ''}` },
     { icon: <Phone size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Parent Mobile', value: lx.parentMobile || DASH },
@@ -329,6 +335,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   ] : [];
 
   const stageBooking = stageForm.stage === 'CounselingBooked';
+  const stageConfirmLogin = stageForm.stage === 'ConfirmLogin';
 
   return (
     <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
@@ -353,23 +360,34 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
       ) : (
         <>
           {/* Actions */}
-          <View style={s.actionRow}>
-            {(isAdmin || isAgent) && !isConverted && (
-              <Btn label="Edit" variant="secondary" small onPress={openEdit} icon={<Edit2 size={13} color={T.text} strokeWidth={ICON_STROKE} />} />
-            )}
-            {canUpdateStage && !isConverted && (
-              <Btn label="Update Stage" variant="secondary" small onPress={openStage} icon={<GitBranch size={13} color={T.text} strokeWidth={ICON_STROKE} />} />
-            )}
-            {(isAdmin || isAgent || isCounselor) && !isConverted && (
-              <Btn label="Log Activity" variant="soft" small onPress={openActivity} icon={<Clock size={13} color={T.accent} strokeWidth={ICON_STROKE} />} />
-            )}
-            {canConvert && !isConverted && (
-              <Btn label="Convert" variant="success" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} />
-            )}
-            {(isAdmin || (isAgent && lead.assignedAgentId === user?.id)) && (
-              <Btn label="Delete" variant="dangerGhost" small onPress={() => setShowDelete(true)} icon={<Trash2 size={13} color={T.danger} strokeWidth={ICON_STROKE} />} />
-            )}
-          </View>
+          {/* Edit / Update Stage / Log Activity / Convert all 400 server-side for an Agent who
+              isn't the lead's assigned owner (LoadLeadForAgentAsync etc.) — a manager can still
+              VIEW a team member's lead (see GetLeadByIdAsync's isTeamLead check), so gating on
+              role alone showed these buttons on a lead the tap would then fail against. A
+              Counselor never reaches this screen for a lead that isn't theirs (GetLeadByIdAsync
+              hard-blocks that at the read level), so only Agent needs the extra check. */}
+          {(() => {
+            const isOwnLead = isAdmin || isCounselor || (isAgent && lead.assignedAgentId === user?.id);
+            return (
+              <View style={s.actionRow}>
+                {isOwnLead && !isConverted && (
+                  <Btn label="Edit" variant="secondary" small onPress={openEdit} icon={<Edit2 size={13} color={T.text} strokeWidth={ICON_STROKE} />} />
+                )}
+                {isOwnLead && !isConverted && (
+                  <Btn label="Update Stage" variant="secondary" small onPress={openStage} icon={<GitBranch size={13} color={T.text} strokeWidth={ICON_STROKE} />} />
+                )}
+                {isOwnLead && !isConverted && (
+                  <Btn label="Log Activity" variant="soft" small onPress={openActivity} icon={<Clock size={13} color={T.accent} strokeWidth={ICON_STROKE} />} />
+                )}
+                {isOwnLead && !isConverted && (
+                  <Btn label="Convert" variant="success" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} />
+                )}
+                {(isAdmin || (isAgent && lead.assignedAgentId === user?.id)) && (
+                  <Btn label="Delete" variant="dangerGhost" small onPress={() => setShowDelete(true)} icon={<Trash2 size={13} color={T.danger} strokeWidth={ICON_STROKE} />} />
+                )}
+              </View>
+            );
+          })()}
 
           {/* Student Information */}
           <Card style={{ marginTop: 12 }}>
@@ -535,25 +553,32 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         </>
       )}
 
-      {/* Update Stage modal (folds in Book Counseling when CounselingBooked) */}
+      {/* Update Stage modal (folds in Book Counseling when CounselingBooked, and hands off to the
+          convert wizard when the counselor picks the "Confirm Login" pseudo-stage) */}
       <FormModal
         visible={modal === 'stage'}
-        title={stageBooking ? 'Book Counseling' : 'Update Stage'}
+        title={stageBooking ? 'Book Counseling' : stageConfirmLogin ? 'Confirm Login' : 'Update Stage'}
         onClose={() => setModal(null)}
         footer={<>
           <Btn label="Cancel" variant="secondary" onPress={() => setModal(null)} style={{ flex: 1 }} />
           <Btn
-            label={saving ? 'Saving…' : stageBooking ? 'Book Counseling' : 'Update Stage'}
+            label={saving ? 'Saving…' : stageBooking ? 'Book Counseling' : stageConfirmLogin ? 'Continue' : 'Update Stage'}
             onPress={handleUpdateStage}
             loading={saving}
-            disabled={saving || (stageBooking ? !escForm.counselorId : !stageForm.notes.trim())}
+            disabled={saving || (stageBooking ? !escForm.counselorId : stageConfirmLogin ? false : !stageForm.notes.trim())}
             style={{ flex: 1 }}
           />
         </>}
       >
         <View style={{ gap: 12 }}>
           <Field label="New Stage">
-            {renderSelect('stage', stageOptions.map(x => ({ label: x, value: x })), stageForm.stage, v => setStageForm(f => ({ ...f, stage: v })), 'Select stage')}
+            {renderSelect(
+              'stage',
+              stageOptions.map(x => ({ label: x === 'ConfirmLogin' ? 'Confirm Login' : x, value: x })),
+              stageForm.stage,
+              v => setStageForm(f => ({ ...f, stage: v })),
+              'Select stage',
+            )}
           </Field>
 
           {stageBooking ? (
@@ -580,6 +605,8 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                 </View>
               </Field>
             </>
+          ) : stageConfirmLogin ? (
+            <Text style={[s.hint, { color: T.sub }]}>This opens the enrollment &amp; payment wizard, the same one Agents use to convert a lead — no notes needed here.</Text>
           ) : (
             <Field label="Details">
               <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
@@ -674,6 +701,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
             <View style={{ width: fieldW }}><Input label="Email" value={editForm.email} onChangeText={v => setEdit('email', v)} keyboardType="email-address" autoCapitalize="none" /></View>
             <View style={{ width: fieldW }}><Input label="Parent Name" value={editForm.parentName} onChangeText={v => setEdit('parentName', v)} /></View>
             <View style={{ width: fieldW }}><Input label="Standard / Grade" value={editForm.grade} onChangeText={v => setEdit('grade', v)} placeholder="e.g. 9" /></View>
+            <View style={{ width: fieldW }}><Input label="Board" value={editForm.board} onChangeText={v => setEdit('board', v)} placeholder="CBSE / ICSE / State" /></View>
             <View style={{ width: fieldW }}><Input label="Parent Mobile" value={editForm.parentMobile} onChangeText={v => setEdit('parentMobile', v)} keyboardType="phone-pad" /></View>
             <View style={{ width: fieldW }}><Input label="Parent Email" value={editForm.parentEmail} onChangeText={v => setEdit('parentEmail', v)} keyboardType="email-address" autoCapitalize="none" /></View>
             <View style={{ width: '100%' }}><Input label="School" value={editForm.schoolName} onChangeText={v => setEdit('schoolName', v)} /></View>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Image, Alert, PermissionsAndroid, Platform, Linking,
   ActivityIndicator, TouchableOpacity,
@@ -59,14 +59,18 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
 
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // The Visit activity id, once created — kept across a retry so a selfie-upload
+  // failure (flaky field connectivity) doesn't create a second, duplicate Visit
+  // when the agent taps Submit again; the retry re-attaches to the same activity.
+  const pendingActivityId = useRef<number | null>(null);
 
   // ─── Load the assigned-lead picker when no lead was passed in ───────────────
   useEffect(() => {
     if (paramLeadId != null) return;
     b2cLeadService.getLeads({ pageSize: 100 })
       .then(res => setLeadOptions(res.data?.items ?? []))
-      .catch(() => {});
-  }, [paramLeadId]);
+      .catch(() => toast.error('Could not load your assigned leads.'));
+  }, [paramLeadId, toast]);
 
   // ─── Load the selected lead's detail ────────────────────────────────────────
   useEffect(() => {
@@ -247,31 +251,38 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     if (!leadId || !coords || !selfie || !otpVerified) return;
     setSubmitting(true);
     try {
-      const res = await b2cActivityService.createActivity({
-        leadId,
-        type: 'Visit',
-        notes: notes.trim() || undefined,
-        latitude: coords.lat,
-        longitude: coords.lng,
-        authMethod: 'OTP',
-        completedAt: new Date().toISOString(),
-        // Manual student-ID entry (when no ID card is photographed).
-        studentIdSchoolName: studentManual.schoolName.trim() || undefined,
-        studentIdBoard: studentManual.board.trim() || undefined,
-        studentIdStandard: studentManual.standard.trim() || undefined,
-      });
-      const activityId = res.data?.id;
-      if (!activityId) throw new Error('The visit was created but no id was returned.');
+      // A retry after a selfie-upload failure must not create a second Visit —
+      // reuse the activity id from the first attempt if we already have one.
+      let activityId = pendingActivityId.current;
+      if (!activityId) {
+        const res = await b2cActivityService.createActivity({
+          leadId,
+          type: 'Visit',
+          notes: notes.trim() || undefined,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          authMethod: 'OTP',
+          completedAt: new Date().toISOString(),
+          // Manual student-ID entry (when no ID card is photographed).
+          studentIdSchoolName: studentManual.schoolName.trim() || undefined,
+          studentIdBoard: studentManual.board.trim() || undefined,
+          studentIdStandard: studentManual.standard.trim() || undefined,
+        });
+        activityId = res.data?.id ?? null;
+        if (!activityId) throw new Error('The visit was created but no id was returned.');
+        pendingActivityId.current = activityId;
+      }
       await b2cActivityService.uploadSelfie(activityId, selfie);
       // Attach the student ID-card image when captured (optional).
       if (studentIdPhoto) {
         try { await b2cActivityService.uploadStudentId(activityId, studentIdPhoto); }
-        catch { /* ID image optional; visit already submitted */ }
+        catch { toast.error('Visit submitted, but the student ID photo failed to upload.'); }
       }
+      pendingActivityId.current = null;
       toast.success('Visit submitted');
       navigation.goBack();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || err?.message || 'Failed to submit the visit.');
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to submit the visit. Tap Submit to retry.');
     } finally {
       setSubmitting(false);
     }

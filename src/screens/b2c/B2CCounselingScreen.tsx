@@ -8,8 +8,7 @@ import {
 } from '../../components/crud';
 import { StatTile, Chip } from '../../components/ui';
 import { b2cObjectionService, OBJECTION_TYPES } from '../../api/b2c/b2cObjectionService';
-import { b2cUserService } from '../../api/b2c/b2cUserService';
-import { b2cCounselorService } from '../../api/b2c/b2cCounselorService';
+import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
@@ -54,7 +53,6 @@ interface Objection {
   status: string;
   aiBrief?: string; aiPostSession?: string; aiGeneratedAt?: string;
 }
-interface Staff { id: number; name: string; isManager?: boolean; }
 
 export const B2CCounselingScreen = ({ navigation }: any) => {
   const T = useAppTheme();
@@ -82,9 +80,13 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
   const [openPerson, setOpenPerson] = useState(false);
   const [openType, setOpenType] = useState(false);
 
-  // Staff for the admin "view as" filter
-  const [agents, setAgents] = useState<Staff[]>([]);
-  const [counselors, setCounselors] = useState<Staff[]>([]);
+  // Staff for the admin "view as" filter — this screen is B2CAdmin-only at the
+  // route level (registered only in the Admin drawer), so no `enabled` guard needed.
+  const { agents, counselors } = useFieldStaff();
+  const person: FieldPersonSelection | null = useMemo(
+    () => resolvePersonSelection(personVal, agents, counselors),
+    [personVal, agents, counselors],
+  );
 
   // AI brief modal
   const [briefRow, setBriefRow] = useState<Objection | null>(null);
@@ -95,13 +97,12 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
 
   const fetchQueue = useCallback(async (pg = 1) => {
     try {
-      const [kind, id] = personVal ? personVal.split(':') : [];
       const res = await b2cObjectionService.getQueue({
         page: pg, pageSize: PAGE_SIZE,
         status: status || undefined,
         type: type || undefined,
-        agentId: kind === 'a' ? Number(id) : undefined,
-        counselorId: kind === 'c' ? Number(id) : undefined,
+        agentId: person?.kind === 'agent' ? person.agentId : undefined,
+        counselorId: person?.kind === 'counselor' ? person.counselorId : undefined,
       });
       setRows(res.data?.items ?? []);
       setTotalCount(res.data?.totalCount ?? 0);
@@ -111,35 +112,11 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [status, type, personVal]);
+  }, [status, type, person]);
 
   useEffect(() => { setLoading(true); setPage(1); fetchQueue(1); }, [fetchQueue]);
 
-  useEffect(() => {
-    Promise.all([
-      b2cUserService.getUsers({ role: 'Agent', pageSize: 200 }).catch(() => ({ data: {} as any })),
-      b2cCounselorService.getCounselors({ pageSize: 200 }).catch(() => ({ data: {} as any })),
-    ]).then(([u, c]) => {
-      const au: any = u.data;
-      const cu: any = c.data;
-      setAgents(((au?.items ?? au ?? []) as any[]).map(a => ({ id: a.id, name: a.name, isManager: !!a.isManager })));
-      setCounselors(((cu?.items ?? cu ?? []) as any[]).map(x => ({ id: x.id, name: x.name })));
-    }).catch(() => {});
-  }, []);
-
-  const personOptions = useMemo(() => [
-    { value: '', label: 'Everyone' },
-    ...agents.map(a => ({ value: `a:${a.id}`, label: `${a.name}${a.isManager ? ' • Manager' : ''}` })),
-    ...counselors.map(c => ({ value: `c:${c.id}`, label: c.name })),
-  ], [agents, counselors]);
-
-  const selectedStaff = useMemo(() => {
-    if (!personVal) return null;
-    const [kind, id] = personVal.split(':');
-    const list = kind === 'a' ? agents : counselors;
-    const s = list.find(x => String(x.id) === id);
-    return s ? { ...s, kind } : null;
-  }, [personVal, agents, counselors]);
+  const personOptions = useMemo(() => buildPersonFilterOptions(agents, counselors), [agents, counselors]);
 
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
@@ -196,7 +173,7 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
           </View>
           <View style={s.filterRow}>
             <Trigger
-              label={selectedStaff?.name || 'Everyone'}
+              label={person?.name || 'Everyone'}
               open={openPerson}
               onPress={() => { setOpenPerson(v => !v); setOpenType(false); }}
               icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
@@ -232,16 +209,16 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
           <View style={s.countRow}>
             <Text style={[s.count, { color: T.dim }]}>{totalCount} record{totalCount === 1 ? '' : 's'}</Text>
             {type !== '' && <FilterChip label={typeLabel(type)} onRemove={() => setType('')} />}
-            {personVal !== '' && <FilterChip label={selectedStaff?.name || 'View'} onRemove={() => setPersonVal('')} />}
+            {personVal !== '' && <FilterChip label={person?.name || 'View'} onRemove={() => setPersonVal('')} />}
           </View>
         </View>
 
-        {selectedStaff && (
+        {person && (
           <View style={s.viewingRow}>
             <Text style={[s.viewing, { color: T.sub }]} numberOfLines={1}>
-              Showing counseling for <Text style={{ color: T.text, fontWeight: '700' }}>{selectedStaff.name}</Text>
+              Showing counseling for <Text style={{ color: T.text, fontWeight: '700' }}>{person.name}</Text>
             </Text>
-            {selectedStaff.kind === 'a' && selectedStaff.isManager && <StatusBadge label="Agent + Manager" color={T.accent} />}
+            {person.kind === 'agent' && person.isManager && <StatusBadge label="Agent + Manager" color={T.accent} />}
           </View>
         )}
 

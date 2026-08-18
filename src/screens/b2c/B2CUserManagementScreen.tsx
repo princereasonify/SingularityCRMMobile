@@ -8,6 +8,8 @@ import {
   Fab, Btn, IconBtn, Input, Field, Checkbox, Toggle, FormModal, ConfirmModal,
 } from '../../components/crud';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
+import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
+import { B2CUserListDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
@@ -20,20 +22,8 @@ const initialsOf = (name?: string) =>
 type RoleFilter = '' | 'Agent' | 'Counselor';
 type StatusFilter = '' | 'active' | 'inactive';
 
-interface B2CUser {
-  id: number;
-  name: string;
-  email?: string;
-  mobile?: string;
-  address?: string;
-  bio?: string;
-  role: string;
-  isActive: boolean;
-  isManager?: boolean;
-  teamSize?: number;
-  teamAgentIds?: number[];
-  managerName?: string;
-}
+// Local alias — this screen only ever deals with the roster list shape.
+type B2CUser = B2CUserListDto;
 
 const emptyCreate = {
   name: '', email: '', mobile: '', address: '', password: '',
@@ -79,8 +69,7 @@ export const B2CUserManagementScreen = () => {
   const load = useCallback(async () => {
     try {
       const res = await b2cUserService.getUsers({ page: 1, pageSize: 500, role: role || undefined });
-      const list: B2CUser[] = res.data?.items ?? res.data ?? [];
-      setUsers(list);
+      setUsers(res.data?.items ?? []);
     } catch {
       setUsers([]);
     } finally {
@@ -92,7 +81,7 @@ export const B2CUserManagementScreen = () => {
   useEffect(() => { setPage(1); }, [search, status, role]);
   useEffect(() => {
     b2cUserService.getUsers({ page: 1, pageSize: 200, role: 'Agent' })
-      .then(res => setAllAgents(res.data?.items ?? res.data ?? []))
+      .then(res => setAllAgents(res.data?.items ?? []))
       .catch(() => setAllAgents([]));
   }, []);
 
@@ -127,6 +116,7 @@ export const B2CUserManagementScreen = () => {
         agentIds: createForm.role === 'Agent' && createForm.isManager ? createForm.agentIds : undefined,
       });
       setShowCreate(false);
+      invalidateFieldStaff();
       toast.success('User created');
       setLoading(true); load();
     } catch (err: any) {
@@ -164,6 +154,7 @@ export const B2CUserManagementScreen = () => {
         agentIds: editUser.role === 'Agent' && editForm.isManager ? editForm.agentIds : undefined,
       });
       setEditUser(null);
+      invalidateFieldStaff();
       toast.success('User updated');
       setLoading(true); load();
     } catch (err: any) {
@@ -177,6 +168,7 @@ export const B2CUserManagementScreen = () => {
     if (u.isActive) { setToggleTarget(u); return; }
     try {
       await b2cUserService.toggleUser(u.id);
+      invalidateFieldStaff();
       toast.success('User activated');
       setLoading(true); load();
     } catch (err: any) {
@@ -190,6 +182,7 @@ export const B2CUserManagementScreen = () => {
     try {
       await b2cUserService.toggleUser(toggleTarget.id);
       setToggleTarget(null);
+      invalidateFieldStaff();
       toast.success('User deactivated');
       setLoading(true); load();
     } catch (err: any) {
@@ -204,6 +197,7 @@ export const B2CUserManagementScreen = () => {
     try {
       await b2cUserService.deleteUser(deleteTarget.id);
       setDeleteTarget(null);
+      invalidateFieldStaff();
       toast.success('User deleted');
       setLoading(true); load();
     } catch (err: any) {

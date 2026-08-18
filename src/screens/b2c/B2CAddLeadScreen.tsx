@@ -19,7 +19,7 @@ import { rf } from '../../utils/responsive';
 const sourceLabel = (s: string) => s.replace(/([A-Z])/g, ' $1').trim();
 
 const emptyForm = {
-  studentName: '', parentName: '', grade: '',
+  studentName: '', parentName: '', grade: '', board: '',
   mobileNumber: '', email: '', schoolName: '',
   area: '', city: '', state: '', pincode: '',
   enrollmentTimeline: 'Immediate' as B2CEnrollmentTimeline,
@@ -68,6 +68,7 @@ export const B2CAddLeadScreen = () => {
           studentName: l.studentName ?? '',
           parentName: l.parentName ?? '',
           grade: l.grade ?? '',
+          board: l.board ?? '',
           mobileNumber: l.mobileNumber ?? '',
           email: l.email ?? '',
           schoolName: l.schoolName ?? '',
@@ -91,16 +92,19 @@ export const B2CAddLeadScreen = () => {
   const set = (key: string, val: any) => {
     setForm(f => ({ ...f, [key]: val }));
     if (errors[key]) setErrors(e => ({ ...e, [key]: '' }));
-    if (key === 'mobileNumber') { setDupResult(null); setOverrideDuplicate(false); }
+    // A duplicate now requires BOTH the full name and the mobile number to match, so
+    // either field changing invalidates the last check.
+    if (key === 'mobileNumber' || key === 'studentName') { setDupResult(null); setOverrideDuplicate(false); }
   };
 
-  const handleMobileBlur = async () => {
+  const checkForDuplicate = async () => {
     if (isEdit) return;
     const mobile = form.mobileNumber.trim();
-    if (mobile.length < 10) { setDupResult(null); return; }
+    const studentName = form.studentName.trim();
+    if (mobile.length < 10 || !studentName) { setDupResult(null); return; }
     setDupChecking(true);
     try {
-      const res = await b2cLeadService.checkDuplicate(mobile, form.email.trim() || undefined);
+      const res = await b2cLeadService.checkDuplicate(mobile, studentName, form.email.trim() || undefined);
       setDupResult(res.data ?? null);
       setOverrideDuplicate(false);
     } catch {
@@ -136,6 +140,7 @@ export const B2CAddLeadScreen = () => {
           priority: form.priority,
           email: form.email.trim() || null,
           grade: form.grade.trim() || null,
+          board: form.board.trim() || null,
           schoolName: form.schoolName.trim() || null,
           area: form.area.trim() || null,
           city: form.city.trim(),
@@ -156,6 +161,7 @@ export const B2CAddLeadScreen = () => {
           mobileNumber: form.mobileNumber.trim(),
           email: form.email.trim() || null,
           grade: form.grade.trim() || null,
+          board: form.board.trim() || null,
           schoolName: form.schoolName.trim() || null,
           area: form.area.trim() || null,
           city: form.city.trim(),
@@ -211,10 +217,11 @@ export const B2CAddLeadScreen = () => {
       <Card style={s.card}>
         <Text style={[s.sectionTitle, { color: T.accent }]}>Student & Parent</Text>
         <View style={s.grid}>
-          <Input label="Student Name *" value={form.studentName} onChangeText={v => set('studentName', v)} error={errors.studentName} placeholder="Student full name" containerStyle={{ width: colW as any }} />
+          <Input label="Student Name *" value={form.studentName} onChangeText={v => set('studentName', v)} onBlur={checkForDuplicate} error={errors.studentName} placeholder="First Middle Last" containerStyle={{ width: colW as any }} />
           <Input label="Parent Name" value={form.parentName} onChangeText={v => set('parentName', v)} placeholder="Parent / guardian name" containerStyle={{ width: colW as any }} />
           <Input label="Standard / Class" value={form.grade} onChangeText={v => set('grade', v)} placeholder="e.g. 9" containerStyle={{ width: colW as any }} />
-          <Input label="Mobile *" value={form.mobileNumber} onChangeText={v => set('mobileNumber', v)} onBlur={handleMobileBlur} error={errors.mobileNumber} keyboardType="phone-pad" placeholder="10-digit mobile" containerStyle={{ width: colW as any }} />
+          <Input label="Board" value={form.board} onChangeText={v => set('board', v)} placeholder="CBSE / ICSE / State" containerStyle={{ width: colW as any }} />
+          <Input label="Mobile *" value={form.mobileNumber} onChangeText={v => set('mobileNumber', v)} onBlur={checkForDuplicate} error={errors.mobileNumber} keyboardType="phone-pad" placeholder="10-digit mobile" containerStyle={{ width: colW as any }} />
           <Input label="Email" value={form.email} onChangeText={v => set('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" containerStyle={{ width: colW as any }} />
           <Input label="School" value={form.schoolName} onChangeText={v => set('schoolName', v)} placeholder="School name" containerStyle={{ width: colW as any }} />
         </View>
@@ -231,7 +238,7 @@ export const B2CAddLeadScreen = () => {
               <Text style={[s.dupMsg, { color: T.sub }]}>
                 {dupResult?.message
                   || (isHardDup
-                    ? 'A lead with this mobile already exists — you cannot create another.'
+                    ? 'A lead with this name and mobile already exists — you cannot create another.'
                     : 'A lead with this mobile may already exist. Submitting will create anyway.')}
                 {dupResult?.existingStudentName ? `\nExisting: ${dupResult.existingStudentName}${dupResult.existingStage ? ` · ${dupResult.existingStage}` : ''}${dupResult.existingAgentName ? ` · ${dupResult.existingAgentName}` : ''}` : ''}
               </Text>

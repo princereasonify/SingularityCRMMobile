@@ -421,27 +421,32 @@ export const FormModal = ({ visible, title, onClose, children, footer, wide }: {
 };
 
 /** Confirm/delete/success modal: centred icon tile + title + text + actions. */
-export const ConfirmModal = ({ visible, title, message, icon, tone = 'danger', confirmLabel, onConfirm, onCancel }: {
+export const ConfirmModal = ({ visible, title, message, icon, tone = 'danger', confirmLabel, onConfirm, onCancel, loading = false }: {
   visible: boolean; title: string; message: string; icon: React.ReactNode;
   tone?: 'danger' | 'success' | 'accent'; confirmLabel: string;
   onConfirm: () => void; onCancel: () => void;
+  /** While true, the confirm button shows a spinner and both buttons are disabled —
+   *  without this, a slow async onConfirm lets a fast double-tap fire it twice. */
+  loading?: boolean;
 }) => {
   const T = useAppTheme();
   const tint = tone === 'danger' ? T.danger : tone === 'success' ? T.success : T.accent;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={s.scrim} onPress={onCancel}>
+      <Pressable style={s.scrim} onPress={loading ? undefined : onCancel}>
         <Pressable onPress={() => {}} style={[s.modal, { backgroundColor: T.card, maxWidth: 340 }]}>
           <View style={[s.mbody, { alignItems: 'center' }]}>
             <View style={[s.mi, { backgroundColor: tint + '1F' }]}>{icon}</View>
             <Text style={[s.mtitle, { color: T.text, textAlign: 'center' }]}>{title}</Text>
             <Text style={[s.mtext, { color: T.sub }]}>{message}</Text>
             <View style={s.confirmRow}>
-              <Btn label="Cancel" variant="secondary" onPress={onCancel} style={{ flex: 1 }} />
+              <Btn label="Cancel" variant="secondary" onPress={onCancel} disabled={loading} style={{ flex: 1 }} />
               <Btn
                 label={confirmLabel}
                 variant={tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : 'primary'}
                 onPress={onConfirm}
+                loading={loading}
+                disabled={loading}
                 style={{ flex: 1 }}
               />
             </View>

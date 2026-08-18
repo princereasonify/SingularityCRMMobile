@@ -1,4 +1,6 @@
 import { apiClient } from '../client';
+import { PaginatedResult } from '../../types';
+import { B2CUserListDto } from '../../types/b2c';
 
 /**
  * B2C user management API — mirrors B2CUsersController.cs (base "api/b2c/users").
@@ -17,7 +19,8 @@ export interface UpdateB2CUserBody {
 }
 
 export const b2cUserService = {
-  getUsers: (params?: B2CUserQuery) => apiClient.get<any>(BASE, { params }),
+  getUsers: (params?: B2CUserQuery) =>
+    apiClient.get<PaginatedResult<B2CUserListDto>>(BASE, { params }),
   getUserById: (id: number) => apiClient.get<any>(`${BASE}/${id}`),
   createUser: (data: CreateB2CUserBody) => apiClient.post<any>(BASE, data),
   updateUser: (id: number, data: UpdateB2CUserBody) => apiClient.put<any>(`${BASE}/${id}`, data),

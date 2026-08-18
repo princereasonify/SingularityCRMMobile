@@ -69,8 +69,9 @@ export const b2cLeadService = {
     apiClient.post<B2CLeadDetailDto>(`${BASE}/${id}/convert`, data),
 
   // POST with the values on the query string (body is null) — matches the controller signature.
-  checkDuplicate: (mobile: string, email?: string) =>
-    apiClient.post<DuplicateCheckResult>(`${BASE}/duplicate-check`, null, { params: { mobile, email } }),
+  // A hard duplicate now requires BOTH the full student name and the mobile to match.
+  checkDuplicate: (mobile: string, studentName?: string, email?: string) =>
+    apiClient.post<DuplicateCheckResult>(`${BASE}/duplicate-check`, null, { params: { mobile, studentName, email } }),
 
   // B2CAdmin only. `file` is a RN document/asset { uri, name, type } appended to FormData.
   bulkUpload: (file: any, defaultAgentId?: number) => {

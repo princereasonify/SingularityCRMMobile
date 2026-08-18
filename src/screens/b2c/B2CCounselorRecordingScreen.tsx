@@ -63,6 +63,11 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
 
   const [uploadPct, setUploadPct] = useState(0);
   const [feedback, setFeedback] = useState<B2CCounselingFeedbackDto | null>(null);
+  // True when the last upload attempt failed — the recorded audio at audioPath.current
+  // is still on-device and must not be discarded, since the conversation it captured
+  // can't be re-recorded. The 'ready' phase then offers "Retry upload" instead of
+  // "Start recording".
+  const [uploadFailed, setUploadFailed] = useState(false);
 
   const [sessions, setSessions] = useState<B2CCounselingFeedbackDto[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -151,6 +156,7 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
       AudioRecorderPlayer.setSubscriptionDuration(0.5);
       const uri = await AudioRecorderPlayer.startRecorder();
       audioPath.current = uri;
+      setUploadFailed(false);
       setElapsed(0);
       setPhase('recording');
       AudioRecorderPlayer.addRecordBackListener(e => {
@@ -178,6 +184,7 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
         } else if (attempts >= POLL_MAX_ATTEMPTS) {
           stopPoll();
           setPhase('done');
+          loadSessions();
           Alert.alert('Still analyzing', 'The AI coach is taking longer than usual. Check "My sessions" shortly.');
         }
       } catch {
@@ -185,6 +192,38 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
       }
     }, POLL_INTERVAL_MS);
   }, [stopPoll, loadSessions]);
+
+  // Shared by the initial upload and a manual retry — a failed upload must leave
+  // audioPath.current intact so tapping "Retry upload" can re-attempt the SAME
+  // recorded file rather than silently losing it.
+  const attemptUpload = useCallback(async (path: string) => {
+    if (recordingId == null) return;
+    setPhase('uploading');
+    setUploadPct(0);
+    try {
+      const res = await b2cRecordingService.uploadAudio(
+        recordingId,
+        { uri: path, name: `session-${recordingId}-${Date.now()}.m4a`, type: 'audio/mp4' },
+        setUploadPct,
+      );
+      audioPath.current = null;
+      setUploadFailed(false);
+      // Upload may already return the finished feedback; otherwise poll for it.
+      const fb = res.data;
+      if (fb && (fb.generatedAt || fb.overallScore > 0)) {
+        setFeedback(fb);
+        setPhase('done');
+        loadSessions();
+      } else {
+        setPhase('analyzing');
+        beginPolling(recordingId);
+      }
+    } catch (err: any) {
+      setPhase('ready');
+      setUploadFailed(true);
+      Alert.alert('Upload failed', err?.response?.data?.message || err?.message || 'Could not upload the recording. Tap "Retry upload" to try again — your recording is safe.');
+    }
+  }, [recordingId, beginPolling, loadSessions]);
 
   const stopRecording = useCallback(async () => {
     if (recordingId == null) return;
@@ -199,30 +238,13 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
       return;
     }
     if (!path) { setPhase('ready'); return; }
+    audioPath.current = path;
+    await attemptUpload(path);
+  }, [recordingId, attemptUpload]);
 
-    setPhase('uploading');
-    setUploadPct(0);
-    try {
-      const res = await b2cRecordingService.uploadAudio(
-        recordingId,
-        { uri: path, name: `session-${recordingId}-${Date.now()}.m4a`, type: 'audio/mp4' },
-        setUploadPct,
-      );
-      // Upload may already return the finished feedback; otherwise poll for it.
-      const fb = res.data;
-      if (fb && (fb.generatedAt || fb.overallScore > 0)) {
-        setFeedback(fb);
-        setPhase('done');
-        loadSessions();
-      } else {
-        setPhase('analyzing');
-        beginPolling(recordingId);
-      }
-    } catch (err: any) {
-      setPhase('ready');
-      Alert.alert('Upload failed', err?.response?.data?.message || err?.message || 'Could not upload the recording.');
-    }
-  }, [recordingId, beginPolling, loadSessions]);
+  const retryUpload = useCallback(() => {
+    if (audioPath.current) attemptUpload(audioPath.current);
+  }, [attemptUpload]);
 
   const openSession = useCallback(async (id: number) => {
     try {
@@ -301,11 +323,29 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
             </View>
             <Text style={[s.timer, { color: phase === 'recording' ? T.danger : T.text }]}>{mmss(elapsed)}</Text>
             {phase === 'ready' ? (
-              <Btn
-                label="Start recording"
-                onPress={startRecording}
-                icon={<Mic size={16} color="#FFF" strokeWidth={2.2} />}
-              />
+              uploadFailed ? (
+                <>
+                  <Text style={[s.hint, { color: T.danger }]}>
+                    The upload failed, but your recording is still saved on this device.
+                  </Text>
+                  <Btn
+                    label="Retry upload"
+                    onPress={retryUpload}
+                    icon={<Mic size={16} color="#FFF" strokeWidth={2.2} />}
+                  />
+                  <Btn
+                    label="Discard & record a new session"
+                    variant="secondary"
+                    onPress={() => { audioPath.current = null; setUploadFailed(false); startRecording(); }}
+                  />
+                </>
+              ) : (
+                <Btn
+                  label="Start recording"
+                  onPress={startRecording}
+                  icon={<Mic size={16} color="#FFF" strokeWidth={2.2} />}
+                />
+              )
             ) : (
               <Btn
                 label="Stop & analyze"
@@ -408,6 +448,29 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
               icon={<Sparkles size={14} color={T.text} strokeWidth={2.2} />}
             />
           </>
+        )}
+
+        {/* Analysis timed out — the recording was uploaded and will keep processing;
+            it just isn't ready yet. Give the user something actionable instead of a
+            blank screen. */}
+        {phase === 'done' && !feedback && (
+          <Card style={[s.cardGap, { alignItems: 'center' }]}>
+            <SectionLabel>Still Analyzing</SectionLabel>
+            <Text style={[s.hint, { color: T.sub, textAlign: 'center' }]}>
+              The AI coach is taking longer than usual. Your recording was uploaded — check "My sessions" below in a few minutes.
+            </Text>
+            <Btn
+              label="Record another session"
+              variant="secondary"
+              onPress={() => {
+                setRecordingId(null); setConsent(false);
+                setElapsed(0); setUploadPct(0);
+                if (paramLeadId == null) setSelectedLeadId(null);
+                setPhase('setup');
+              }}
+              icon={<Sparkles size={14} color={T.text} strokeWidth={2.2} />}
+            />
+          </Card>
         )}
 
         {/* My sessions */}

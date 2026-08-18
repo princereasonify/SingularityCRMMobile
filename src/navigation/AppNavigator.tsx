@@ -138,6 +138,8 @@ import { B2CMyDayScreen } from '../screens/b2c/B2CMyDayScreen';
 import { B2CRoutePlannerScreen } from '../screens/b2c/B2CRoutePlannerScreen';
 import { B2CActivityLogScreen } from '../screens/b2c/B2CActivityLogScreen';
 import { B2CMyLeavesScreen } from '../screens/b2c/B2CMyLeavesScreen';
+import { B2CMyAllowancesScreen } from '../screens/b2c/B2CMyAllowancesScreen';
+import { B2CMyExpensesScreen } from '../screens/b2c/B2CMyExpensesScreen';
 import { B2CMyPerformanceScreen } from '../screens/b2c/B2CMyPerformanceScreen';
 import { B2CWeeklyPlanScreen } from '../screens/b2c/B2CWeeklyPlanScreen';
 import { B2CReengagementScreen } from '../screens/b2c/B2CReengagementScreen';
@@ -614,6 +616,8 @@ function AgentDrawer() {
       <Drawer.Screen name="Weekly Plan" component={B2CWeeklyPlanScreen} />
       <Drawer.Screen name="Activity Log" component={B2CActivityLogScreen} />
       <Drawer.Screen name="Leaves" component={B2CMyLeavesScreen} />
+      <Drawer.Screen name="My Allowances" component={B2CMyAllowancesScreen} />
+      <Drawer.Screen name="My Expenses" component={B2CMyExpensesScreen} />
       <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
       {/* Native geo-verified visit capture. Also reachable from a lead's detail (with leadId). */}
       <Drawer.Screen name="Visit" component={B2CAgentVisitScreen} />
@@ -652,6 +656,8 @@ function CounselorDrawer() {
       <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
       <Drawer.Screen name="Activity Log" component={B2CActivityLogScreen} />
       <Drawer.Screen name="Leaves" component={B2CMyLeavesScreen} />
+      <Drawer.Screen name="My Allowances" component={B2CMyAllowancesScreen} />
+      <Drawer.Screen name="My Expenses" component={B2CMyExpensesScreen} />
       <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
       {/* Native session recording + AI coaching (labelled "AI Coach" in the sidebar). */}
       <Drawer.Screen name="Recording" component={B2CCounselorRecordingScreen} />

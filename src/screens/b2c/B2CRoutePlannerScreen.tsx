@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions, Alert, Linking, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, Alert, Linking, TouchableOpacity, PermissionsAndroid, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Geolocation from '@react-native-community/geolocation';
 import {
@@ -168,13 +168,42 @@ export const B2CRoutePlannerScreen = () => {
       areaOf(l as any).toLowerCase().includes(q));
   }, [leads, search]);
 
-  const getOrigin = () => new Promise<Coord | null>((resolve) => {
-    Geolocation.getCurrentPosition(
-      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 },
-    );
-  });
+  // Same pattern as B2CAgentVisitScreen — without this, Geolocation.getCurrentPosition
+  // fails silently on Android if location permission was never granted, and the
+  // optimiser falls back to the first stop with no explanation of why.
+  const askLocationPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const permission = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
+      if (await PermissionsAndroid.check(permission)) return true;
+      const result = await PermissionsAndroid.request(permission, {
+        title: 'Location Permission Required',
+        message: 'The app needs your location to start the route from where you are.',
+        buttonPositive: 'Allow', buttonNegative: 'Deny',
+      });
+      if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+        Alert.alert('Location', 'Access is blocked. Please enable it in Settings.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]);
+        return false;
+      }
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    } catch {
+      return false;
+    }
+  };
+
+  const getOrigin = async (): Promise<Coord | null> => {
+    if (!(await askLocationPermission())) return null;
+    return new Promise<Coord | null>((resolve) => {
+      Geolocation.getCurrentPosition(
+        p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 },
+      );
+    });
+  };
 
   const optimize = async () => {
     if (selected.size === 0) return;

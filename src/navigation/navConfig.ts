@@ -417,6 +417,8 @@ export const Agent_NAV: NavGroup[] = [
     label: 'Finance',
     items: [
       { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+      { route: 'My Allowances', label: 'My Allowances', icon: 'Allowance' },
+      { route: 'My Expenses', label: 'My Expenses', icon: 'Payment' },
       { route: 'My Performance', label: 'My Performance', icon: 'Performance' },
     ],
   },
@@ -454,6 +456,8 @@ export const Counselor_NAV: NavGroup[] = [
     label: 'Finance',
     items: [
       { route: 'Leaves', label: 'Leaves', icon: 'Leaves' },
+      { route: 'My Allowances', label: 'My Allowances', icon: 'Allowance' },
+      { route: 'My Expenses', label: 'My Expenses', icon: 'Payment' },
       { route: 'My Performance', label: 'My Performance', icon: 'Performance' },
     ],
   },

@@ -8,6 +8,7 @@ import {
 } from '../../components/crud';
 import { Chip } from '../../components/ui';
 import { b2cCounselorService } from '../../api/b2c/b2cCounselorService';
+import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CCounselorListDto, B2CCounselorDetailDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -41,6 +42,7 @@ export const B2CCounselorsListScreen = () => {
 
   // Detail + edit
   const [detail, setDetail] = useState<B2CCounselorDetailDto | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', mobile: '', bio: '', specializations: [] as string[], isActive: true });
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
@@ -65,10 +67,13 @@ export const B2CCounselorsListScreen = () => {
   };
 
   const openDetail = async (id: number) => {
+    setDetailLoading(true);
     try {
       const res = await b2cCounselorService.getCounselorById(id);
       setDetail(res.data); setEditing(false);
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('Could not load this counselor.');
+    } finally { setDetailLoading(false); }
   };
 
   const startEdit = () => {
@@ -92,6 +97,7 @@ export const B2CCounselorsListScreen = () => {
         bio: createForm.bio.trim() || null,
       });
       setShowCreate(false); setCreateForm(emptyCreate);
+      invalidateFieldStaff();
       toast.success('Counsellor created');
       setPage(1); setLoading(true); fetchList(1);
     } catch (err: any) {
@@ -100,17 +106,18 @@ export const B2CCounselorsListScreen = () => {
   };
 
   const handleUpdate = async () => {
-    if (!detail) return;
+    if (!detail || !editForm.name.trim()) return;
     setSaving(true);
     try {
       await b2cCounselorService.updateCounselor(detail.id, {
         name: editForm.name.trim(),
-        mobile: editForm.mobile.trim() || undefined,
+        mobile: editForm.mobile.trim(),
         bio: editForm.bio.trim() || null,
         specializations: editForm.specializations,
         isActive: editForm.isActive,
       });
       setDetail(null); setEditing(false);
+      invalidateFieldStaff();
       toast.success('Counsellor updated');
       fetchList(page);
     } catch (err: any) {
@@ -123,6 +130,7 @@ export const B2CCounselorsListScreen = () => {
     try {
       await b2cCounselorService.deleteCounselor(confirmDelete.id);
       setConfirmDelete(null); setDetail(null);
+      invalidateFieldStaff();
       toast.success('Counsellor deleted');
       fetchList(page);
     } catch (err: any) {
@@ -205,11 +213,14 @@ export const B2CCounselorsListScreen = () => {
       </FormModal>
 
       {/* Detail / edit modal */}
-      <FormModal visible={!!detail} title={editing ? 'Edit Counselor' : (detail?.name || 'Counselor')} onClose={() => { setDetail(null); setEditing(false); }}
-        footer={editing
-          ? <><Btn label="Cancel" variant="secondary" onPress={() => setEditing(false)} style={{ flex: 1 }} /><Btn label={saving ? 'Saving…' : 'Save'} onPress={handleUpdate} loading={saving} disabled={saving} style={{ flex: 1 }} /></>
+      <FormModal visible={detailLoading || !!detail} title={editing ? 'Edit Counselor' : (detail?.name || 'Counselor')} onClose={() => { setDetail(null); setEditing(false); }}
+        footer={!detail ? undefined : editing
+          ? <><Btn label="Cancel" variant="secondary" onPress={() => setEditing(false)} style={{ flex: 1 }} /><Btn label={saving ? 'Saving…' : 'Save'} onPress={handleUpdate} loading={saving} disabled={saving || !editForm.name.trim()} style={{ flex: 1 }} /></>
           : <><Btn label="Delete" variant="dangerGhost" onPress={() => detail && setConfirmDelete({ id: detail.id, name: detail.name })} icon={<Trash2 size={14} color={T.danger} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} /><Btn label="Edit" onPress={startEdit} icon={<Edit2 size={14} color="#FFF" strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} /></>}
       >
+        {detailLoading && !detail && (
+          <ActivityIndicator color={T.accent} style={{ marginVertical: 24 }} />
+        )}
         {detail && !editing && (
           <View style={{ gap: 12 }}>
             <View style={s.dHeader}>

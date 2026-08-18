@@ -93,6 +93,8 @@ export interface B2CLeadListDto {
   mobileNumber: string;
   city: string;
   state: string;
+  grade?: string | null;
+  board?: string | null;
   stage: string;
   priority: string;
   leadScore: number;
@@ -178,6 +180,7 @@ export interface CreateB2CLeadRequest {
   dateOfBirth?: string | null;
   gender?: string | null;
   grade?: string | null;
+  board?: string | null;
   schoolName?: string | null;
   area?: string | null;
   city: string;
@@ -202,6 +205,7 @@ export interface UpdateB2CLeadRequest {
   dateOfBirth?: string | null;
   gender?: string | null;
   grade?: string | null;
+  board?: string | null;
   schoolName?: string | null;
   area?: string | null;
   city?: string;
@@ -264,6 +268,38 @@ export interface B2CBulkJobDto {
   completedAt?: string | null;
 }
 
+// ─── User DTOs (B2CUserDtos.cs) — agents, managers ──────────────────────────────
+
+export interface B2CUserListDto {
+  id: number;
+  name: string;
+  email: string;
+  mobile?: string | null;
+  role: string;
+  address?: string | null;
+  isActive: boolean;
+  createdAt: string;
+
+  // Manager info
+  isManager: boolean;
+  managerId?: number | null;
+  managerName?: string | null;
+  teamSize: number;
+  teamAgentIds: number[];
+
+  /** The city this person actually works, derived from their assigned leads' cities
+   *  (most frequent wins). Null when they have no leads yet. Drives the
+   *  "Name · City · N students" admin "view as" filter label. */
+  primaryCity?: string | null;
+
+  // Counselor-only extras (null for agents)
+  counselorId?: number | null;
+  bio?: string | null;
+  /** Open (non-converted, non-deleted) student leads currently assigned to them. */
+  activeLeadsCount?: number | null;
+  avgAiScore?: number | null;
+}
+
 // ─── Counselor DTOs ────────────────────────────────────────────────────────────
 
 export interface B2CCounselorListDto {
@@ -273,7 +309,11 @@ export interface B2CCounselorListDto {
   email: string;
   specializations: string[];
   isActive: boolean;
+  /** Open (non-converted, non-deleted) student leads currently assigned to them. */
   activeLeadsCount: number;
+  /** The city this counselor actually works, derived from their assigned leads'
+   *  cities (most frequent wins). Null when they have no leads yet. */
+  primaryCity?: string | null;
   avgAiScore?: number | null;
   createdAt: string;
 }

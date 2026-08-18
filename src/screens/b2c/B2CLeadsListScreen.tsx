@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Alert, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Filter, Plus, Phone, MapPin, Upload, FileSpreadsheet, User } from 'lucide-react-native';
+import { Filter, Plus, Phone, MapPin, Upload, FileSpreadsheet, User, Users, GraduationCap } from 'lucide-react-native';
 import { pick, types } from '@react-native-documents/picker';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
 import {
-  Btn, Field, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, Fab, FormModal,
+  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, Fab, FormModal,
 } from '../../components/crud';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { B2CLeadListDto, B2C_LEAD_STAGES, B2C_LEAD_SOURCES } from '../../types/b2c';
+import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
@@ -19,7 +20,7 @@ const PAGE_SIZE = 20;
 const DASH = '—';
 
 /** Mirrors the web BULK_COLUMNS constant so uploaders know the exact header order. */
-const BULK_COLUMNS = 'StudentName, MobileNumber, Email, ParentName, ParentMobile, ParentEmail, Grade, SchoolName, City, State, Pincode, Source, EnrollmentTimeline';
+const BULK_COLUMNS = 'StudentName, MobileNumber, Email, ParentName, ParentMobile, ParentEmail, Grade, Board, SchoolName, City, State, Pincode, Source, EnrollmentTimeline';
 
 const initialsOf = (name?: string) =>
   (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
@@ -48,6 +49,7 @@ export const B2CLeadsListScreen = () => {
   const wide = width >= 720;
 
   const role = (user as any)?.role;
+  const isAdmin = role === 'B2CAdmin';
   // Web parity: canCreate / canUpload = ['B2CAdmin', 'Agent'].
   const canCreate = role === 'B2CAdmin' || role === 'Agent';
   const canUpload = role === 'B2CAdmin' || role === 'Agent';
@@ -64,6 +66,18 @@ export const B2CLeadsListScreen = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
+  // Admin "view as" filter — web parity: B2CLeadsList.jsx's <PersonFilter>. This
+  // screen is reachable by Agent/Counselor too, who never render the filter —
+  // `enabled: isAdmin` skips the (B2CAdmin-only, otherwise-403) roster fetch for them.
+  const { agents, counselors } = useFieldStaff(isAdmin);
+  const [personVal, setPersonVal] = useState(''); // '' | 'a:<id>' | 'c:<id>'
+  const [openPerson, setOpenPerson] = useState(false);
+  const person: FieldPersonSelection | null = useMemo(
+    () => resolvePersonSelection(personVal, agents, counselors),
+    [personVal, agents, counselors],
+  );
+  const personOptions = useMemo(() => buildPersonFilterOptions(agents, counselors), [agents, counselors]);
+
   // Bulk upload modal
   const [showBulk, setShowBulk] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -76,6 +90,8 @@ export const B2CLeadsListScreen = () => {
         search: search || undefined,
         stage: stage || undefined,
         source: source || undefined,
+        agentId: person?.kind === 'agent' ? person.agentId : undefined,
+        counselorId: person?.kind === 'counselor' ? person.counselorId : undefined,
       });
       setLeads(res.data?.items ?? []);
       setTotalPages(res.data?.totalPages ?? 1);
@@ -85,7 +101,7 @@ export const B2CLeadsListScreen = () => {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [search, stage, source]);
+  }, [search, stage, source, person]);
 
   // Refetch (reset to page 1) whenever the search/filters change.
   useEffect(() => { setLoading(true); setPage(1); fetchLeads(1); }, [fetchLeads]);
@@ -154,10 +170,23 @@ export const B2CLeadsListScreen = () => {
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={[s.searchRow, wide && { flexWrap: 'nowrap' }]}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search by name, mobile, email…" style={{ flex: 1, minWidth: 180 }} />
-            <Trigger label={stage || 'Stage'} open={openStage} onPress={() => { setOpenStage(v => !v); setOpenSource(false); }} icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />} />
-            <Trigger label={source || 'Source'} open={openSource} onPress={() => { setOpenSource(v => !v); setOpenStage(false); }} />
+            {isAdmin && (
+              <Trigger
+                label={person?.name || 'Everyone'}
+                open={openPerson}
+                onPress={() => { setOpenPerson(v => !v); setOpenStage(false); setOpenSource(false); }}
+                icon={<Users size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+              />
+            )}
+            <Trigger label={stage || 'Stage'} open={openStage} onPress={() => { setOpenStage(v => !v); setOpenSource(false); setOpenPerson(false); }} icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />} />
+            <Trigger label={source || 'Source'} open={openSource} onPress={() => { setOpenSource(v => !v); setOpenStage(false); setOpenPerson(false); }} />
           </View>
 
+          {openPerson && (
+            <Dropdown style={{ width: '100%' }} maxHeight={300} value={personVal}
+              onSelect={v => { setPersonVal(v); setOpenPerson(false); }}
+              options={personOptions} />
+          )}
           {openStage && (
             <Dropdown style={{ width: '100%' }} maxHeight={280} value={stage}
               onSelect={v => { setStage(v); setOpenStage(false); }}
@@ -169,13 +198,21 @@ export const B2CLeadsListScreen = () => {
               options={[{ label: 'All sources', value: '' }, ...B2C_LEAD_SOURCES.map(x => ({ label: x, value: x }))]} />
           )}
 
-          {(stage !== '' || source !== '') && (
+          {(stage !== '' || source !== '' || personVal !== '') && (
             <View style={s.chipRow}>
+              {personVal !== '' && <FilterChip label={person?.name || 'View'} onRemove={() => setPersonVal('')} />}
               {stage !== '' && <FilterChip label={stage} onRemove={() => setStage('')} />}
               {source !== '' && <FilterChip label={source} onRemove={() => setSource('')} />}
             </View>
           )}
         </View>
+
+        {isAdmin && person && (
+          <Text style={[s.viewingNote, { color: T.sub }]}>
+            Viewing <Text style={{ color: T.text, fontWeight: '700' }}>{person.name}</Text>'s leads
+            {person.kind === 'agent' && person.isManager ? '  ·  Agent + Manager' : ''}
+          </Text>
+        )}
 
         {loading ? (
           <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
@@ -201,6 +238,14 @@ export const B2CLeadsListScreen = () => {
                       <MapPin size={10} color={T.dim} strokeWidth={ICON_STROKE} style={{ marginLeft: 6 }} />
                       <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{[lead.city, lead.state].filter(Boolean).join(', ') || DASH}</Text>
                     </View>
+                    {(lead.grade || lead.board) && (
+                      <View style={s.subRow}>
+                        <GraduationCap size={10} color={T.dim} strokeWidth={ICON_STROKE} />
+                        <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
+                          {[lead.grade, lead.board].filter(Boolean).join(' · ')}
+                        </Text>
+                      </View>
+                    )}
                     <View style={s.rowFooter}>
                       <View style={s.agentWrap}>
                         <User size={10} color={lead.assignedAgentName ? T.sub : T.dim} strokeWidth={ICON_STROKE} />
@@ -285,6 +330,7 @@ const s = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   title: { fontSize: rf(22), fontWeight: '700', letterSpacing: -0.4 },
   subtitle: { fontSize: rf(12.5), fontWeight: '500', marginTop: 2 },
+  viewingNote: { fontSize: rf(12), fontWeight: '500', marginTop: -2 },
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },

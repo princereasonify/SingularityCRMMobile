@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator,
   TextInput, Image, TouchableOpacity, Linking,
@@ -15,7 +15,7 @@ import {
 import { StatTile } from '../../components/ui';
 import { b2cGeoService } from '../../api/b2c/b2cGeoService';
 import { b2cActivityService } from '../../api/b2c/b2cActivityService';
-import { b2cUserService } from '../../api/b2c/b2cUserService';
+import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection } from '../../components/b2c/useFieldStaff';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
@@ -51,20 +51,25 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<any>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [severity, setSeverity] = useState('');
   const [reviewed, setReviewed] = useState(''); // '', 'true', 'false'
-  const [agentId, setAgentId] = useState('');   // '' = all
+  const [agentVal, setAgentVal] = useState(''); // '' | 'a:<id>' — '' = all
   const [openAgent, setOpenAgent] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Agents for the filter
-  const [agents, setAgents] = useState<any[]>([]);
+  // Agents for the filter — geo-compliance is an agent-only concept (route/pincode
+  // compliance), so counselors are excluded here (web parity: includeCounselors={false}).
+  // This screen is B2CAdmin-only at the route level, so no `enabled` guard needed.
+  const { agents } = useFieldStaff();
+  const person = useMemo(() => resolvePersonSelection(agentVal, agents, []), [agentVal, agents]);
 
   // Selfies
   const [selfies, setSelfies] = useState<any[]>([]);
   const [selfieLoading, setSelfieLoading] = useState(false);
+  const [selfieLoadError, setSelfieLoadError] = useState(false);
   const [selfieSearch, setSelfieSearch] = useState('');
 
   // Modals
@@ -74,6 +79,9 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   const [error, setError] = useState('');
   const [rejectSelfie, setRejectSelfie] = useState<any>(null);
   const [rejecting, setRejecting] = useState(false);
+  // Which selfie's Approve button is mid-request — guards against a fast double-tap
+  // firing two concurrent approve calls for the same activity.
+  const [decidingId, setDecidingId] = useState<number | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -83,50 +91,48 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
         page: pg, pageSize: PAGE_SIZE,
         severity: severity || undefined,
         reviewed: reviewed === '' ? undefined : reviewed === 'true',
-        agentId: agentId || undefined,
+        agentId: person?.kind === 'agent' ? person.agentId : undefined,
       });
       setRows(res.data?.items ?? []);
       setTotal(res.data?.totalCount ?? 0);
       setSummary(res.data?.summary ?? {});
+      setLoadError(false);
     } catch {
       setRows([]); setTotal(0);
+      setLoadError(true);
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [page, severity, reviewed, agentId]);
+  }, [page, severity, reviewed, person]);
 
   const loadSelfies = useCallback(async () => {
     setSelfieLoading(true);
     try {
       const res = await b2cGeoService.getPendingSelfies();
       setSelfies(res.data ?? []);
+      setSelfieLoadError(false);
     } catch {
       setSelfies([]);
+      setSelfieLoadError(true);
     } finally {
       setSelfieLoading(false);
     }
   }, []);
 
   // Re-fetch violations whenever a filter changes (reset to page 1).
-  useEffect(() => { setLoading(true); setPage(1); loadViolations(1); }, [severity, reviewed, agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setLoading(true); setPage(1); loadViolations(1); }, [severity, reviewed, person]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (tab === 'selfies') loadSelfies(); }, [tab, loadSelfies]);
-
-  useEffect(() => {
-    b2cUserService.getUsers({ role: 'Agent', pageSize: 200 })
-      .then(r => setAgents(r.data?.items ?? r.data ?? []))
-      .catch(() => setAgents([]));
-  }, []);
 
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
     setPage(p); setLoading(true); loadViolations(p);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    if (tab === 'violations') loadViolations(page);
-    else { loadSelfies(); setRefreshing(false); }
+    if (tab === 'violations') await loadViolations(page);
+    else { await loadSelfies(); setRefreshing(false); }
   };
 
   const submitReview = async () => {
@@ -144,6 +150,8 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   };
 
   const decideSelfie = async (activityId: number, approved: boolean) => {
+    if (decidingId === activityId) return;
+    setDecidingId(activityId);
     try {
       await b2cActivityService.approveSelfie(activityId, approved);
       toast.success(approved ? 'Selfie approved' : 'Selfie rejected');
@@ -151,6 +159,8 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
       loadViolations(page); // refresh pending-selfie count in summary
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Could not update selfie');
+    } finally {
+      setDecidingId(null);
     }
   };
 
@@ -162,9 +172,11 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
     setRejectSelfie(null);
   };
 
-  const agentLabel = agentId
-    ? (agents.find(a => String(a.id) === agentId)?.name || 'Agent')
-    : 'All agents';
+  const agentLabel = person?.name || 'All agents';
+  const agentOptions = useMemo(
+    () => buildPersonFilterOptions(agents, [], { includeCounselors: false, allLabel: 'All agents' }),
+    [agents],
+  );
 
   const q = search.trim().toLowerCase();
   const visibleRows = q
@@ -218,12 +230,9 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                 icon={<Filter size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
               />
               {openAgent && (
-                <Dropdown style={{ width: '100%' }} maxHeight={280} value={agentId}
-                  onSelect={v => { setAgentId(v); setOpenAgent(false); }}
-                  options={[
-                    { label: 'All agents', value: '' },
-                    ...agents.map(a => ({ label: `${a.name}${a.isManager ? ' • Manager' : ''}`, value: String(a.id) })),
-                  ]}
+                <Dropdown style={{ width: '100%' }} maxHeight={280} value={agentVal}
+                  onSelect={v => { setAgentVal(v); setOpenAgent(false); }}
+                  options={agentOptions}
                 />
               )}
 
@@ -247,6 +256,11 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
 
             {loading ? (
               <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
+            ) : loadError ? (
+              <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+                <Text style={[s.emptyTitle, { color: T.danger }]}>Couldn't load violations</Text>
+                <Text style={[s.emptyTxt, { color: T.dim }]}>Pull down to retry.</Text>
+              </View>
             ) : visibleRows.length === 0 ? (
               <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
                 <Text style={[s.emptyTitle, { color: T.text }]}>No geo violations 🎉</Text>
@@ -267,16 +281,18 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                           {v.studentCity || DASH} · {v.agentName || DASH}
                         </Text>
                         <View style={s.metaRow}>
-                          <Text style={[s.metaStrong, { color: T.text }]}>{Number(v.distanceKm).toFixed(1)} km</Text>
+                          <Text style={[s.metaStrong, { color: T.text }]}>{v.distanceKm != null ? Number(v.distanceKm).toFixed(1) : DASH} km</Text>
                           <Text style={[s.sub, { color: T.dim }]}>{fmtDate(v.createdAt)}</Text>
                           {v.reviewed
                             ? <Text style={[s.sub, { color: T.success }]} numberOfLines={1}>Reviewed{v.reviewedByName ? ` · ${v.reviewedByName}` : ''}</Text>
                             : <Text style={[s.sub, { color: T.warning }]}>Pending</Text>}
                         </View>
                         <View style={s.actions}>
-                          <Btn label="Map" variant="secondary" small
-                            icon={<MapPin size={13} color={T.text} strokeWidth={ICON_STROKE} />}
-                            onPress={() => Linking.openURL(mapsUrl(v.submittedLatitude, v.submittedLongitude))} />
+                          {v.submittedLatitude != null && v.submittedLongitude != null && (
+                            <Btn label="Map" variant="secondary" small
+                              icon={<MapPin size={13} color={T.text} strokeWidth={ICON_STROKE} />}
+                              onPress={() => Linking.openURL(mapsUrl(v.submittedLatitude, v.submittedLongitude))} />
+                          )}
                           <Btn label="Lead" variant="secondary" small
                             icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
                             onPress={() => navigation.navigate('B2CLeadDetail', { leadId: v.leadId })} />
@@ -305,6 +321,11 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
 
             {selfieLoading ? (
               <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
+            ) : selfieLoadError ? (
+              <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
+                <Text style={[s.emptyTitle, { color: T.danger }]}>Couldn't load selfies</Text>
+                <Text style={[s.emptyTxt, { color: T.dim }]}>Pull down to retry.</Text>
+              </View>
             ) : visibleSelfies.length === 0 ? (
               <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
                 <Text style={[s.emptyTitle, { color: T.text }]}>No selfies awaiting verification</Text>
@@ -330,9 +351,12 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                       <View style={s.actions}>
                         <Btn label="Approve" variant="success" small style={{ flex: 1 }}
                           icon={<Check size={14} color="#FFF" strokeWidth={2.4} />}
+                          loading={decidingId === sfe.activityId}
+                          disabled={decidingId != null}
                           onPress={() => decideSelfie(sfe.activityId, true)} />
                         <Btn label="Reject" variant="danger" small style={{ flex: 1 }}
                           icon={<X size={14} color="#FFF" strokeWidth={2.4} />}
+                          disabled={decidingId != null}
                           onPress={() => setRejectSelfie(sfe)} />
                       </View>
                     </View>
@@ -362,7 +386,7 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
           {!!error && <Text style={[s.errorTxt, { color: T.danger }]}>{error}</Text>}
           {review && (
             <Text style={[s.sub, { color: T.sub }]}>
-              {review.studentName} · {review.agentName} · {Number(review.distanceKm).toFixed(1)} km away
+              {review.studentName} · {review.agentName} · {review.distanceKm != null ? Number(review.distanceKm).toFixed(1) : DASH} km away
             </Text>
           )}
           <View>
@@ -390,6 +414,7 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
         confirmLabel={rejecting ? 'Rejecting…' : 'Reject'}
         onConfirm={confirmRejectSelfie}
         onCancel={() => setRejectSelfie(null)}
+        loading={rejecting}
       />
     </SafeAreaView>
   );
