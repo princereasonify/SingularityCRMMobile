@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   TextInput,
   Modal,
   Pressable,
@@ -20,7 +21,10 @@ import { Check, ChevronLeft, ChevronRight, ChevronDown, X, Search as SearchIcon 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
 import { GradientBackground } from '../common/GradientBackground';
+import { KeyField } from '../common/KeyField';
 import { rf } from '../../utils/responsive';
+
+const NUMERIC_KEYBOARD_TYPES = new Set(['phone-pad', 'number-pad', 'decimal-pad', 'numeric']);
 
 /**
  * CRUD component kit — a 1:1 port of SingularityCRM-CRUD-Components.html.
@@ -87,6 +91,15 @@ export const Btn = ({ label, onPress, variant = 'primary', small, icon, loading,
 };
 
 /** .icon-btn — 32×32 · radius 9 */
+/**
+ * Touch-target padding for controls whose VISUAL size is deliberately smaller than the 44pt
+ * minimum a thumb needs. Expanding the hit area costs no layout — the control still occupies
+ * its designed box — so these can be applied without reflowing a single screen.
+ */
+const HIT_44_FROM_32 = { top: 6, bottom: 6, left: 6, right: 6 };   // 32 + 12 = 44
+const HIT_44_FROM_20 = { top: 12, bottom: 12, left: 12, right: 12 }; // 20 + 24 = 44
+const HIT_VERT_9 = { top: 9, bottom: 9, left: 0, right: 0 };         // 26 + 18 = 44 tall
+
 export type IconBtnKind = 'edit' | 'del' | 'view';
 export const IconBtn = ({ kind, onPress, children, label }: {
   kind: IconBtnKind; onPress: () => void; children: React.ReactNode; label?: string;
@@ -94,7 +107,16 @@ export const IconBtn = ({ kind, onPress, children, label }: {
   const T = useAppTheme();
   const bg = kind === 'edit' ? T.cardAlt : kind === 'del' ? T.danger + '1F' : T.accentSoft;
   return (
-    <TouchableOpacity accessibilityLabel={label} onPress={onPress} activeOpacity={0.7} style={[s.iconBtn, { backgroundColor: bg }]}>
+    <TouchableOpacity
+      accessibilityLabel={label}
+      onPress={onPress}
+      activeOpacity={0.7}
+      // The glyph stays 32pt because that is what the row's rhythm is built around, but the
+      // TOUCH area has to be 44 — Apple's minimum, and the difference between a list of
+      // actions that respond and one that feels broken under a thumb.
+      hitSlop={HIT_44_FROM_32}
+      style={[s.iconBtn, { backgroundColor: bg }]}
+    >
       {children}
     </TouchableOpacity>
   );
@@ -127,30 +149,62 @@ interface InputProps extends TextInputProps {
   left?: React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
 }
+/**
+ * Input — the app's single text-field primitive (used in 70+ screens across B2B and B2C).
+ * Single-line fields open the app's OWN keyboard (`KeyField`) instead of the OS one, so
+ * typing looks and feels identical everywhere on both Android and iOS, matching the
+ * numeric NumField and the login screen's keyboard. `multiline` fields (address / bio /
+ * notes — free-form long text) are the one deliberate exception and keep the native
+ * keyboard: a custom keyboard over a textarea is unusual UX, and RN's multiline auto-grow
+ * needs a real <TextInput> under it. Every other prop (label/error/left/right/
+ * containerStyle/keyboardType/secureTextEntry/maxLength/editable/...) behaves the same as
+ * before, so no existing call site needs to change.
+ */
 export const Input = ({ label, error, right, left, containerStyle, ...p }: InputProps) => {
   const T = useAppTheme();
   const [focus, setFocus] = useState(false);
+
+  if (p.multiline) {
+    return (
+      <Field label={label} style={containerStyle}>
+        <View
+          style={[
+            s.input,
+            { backgroundColor: T.card, borderColor: error ? T.danger : focus ? T.accent : T.line },
+            focus && !error && { shadowColor: T.accent, shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
+          ]}
+        >
+          {left}
+          <TextInput
+            placeholderTextColor={T.dim}
+            onFocus={e => { setFocus(true); p.onFocus?.(e); }}
+            onBlur={e => { setFocus(false); p.onBlur?.(e); }}
+            style={[s.inputTxt, { color: T.text }]}
+            {...p}
+          />
+          {right}
+        </View>
+        {!!error && <Text style={[s.err, { color: T.danger }]}>{error}</Text>}
+      </Field>
+    );
+  }
+
   return (
-    <Field label={label} style={containerStyle}>
-      <View
-        style={[
-          s.input,
-          { backgroundColor: T.card, borderColor: error ? T.danger : focus ? T.accent : T.line },
-          focus && !error && { shadowColor: T.accent, shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
-        ]}
-      >
-        {left}
-        <TextInput
-          placeholderTextColor={T.dim}
-          onFocus={e => { setFocus(true); p.onFocus?.(e); }}
-          onBlur={e => { setFocus(false); p.onBlur?.(e); }}
-          style={[s.inputTxt, { color: T.text }]}
-          {...p}
-        />
-        {right}
-      </View>
-      {!!error && <Text style={[s.err, { color: T.danger }]}>{error}</Text>}
-    </Field>
+    <KeyField
+      label={label}
+      error={error}
+      left={left}
+      right={right}
+      containerStyle={containerStyle}
+      value={p.value ?? ''}
+      onChangeText={p.onChangeText ?? (() => {})}
+      placeholder={p.placeholder}
+      secureTextEntry={p.secureTextEntry}
+      numericFirst={!!p.keyboardType && NUMERIC_KEYBOARD_TYPES.has(p.keyboardType)}
+      maxLength={p.maxLength}
+      disabled={p.editable === false}
+      autoFocus={p.autoFocus}
+    />
   );
 };
 
@@ -183,7 +237,7 @@ export const SearchBar = ({ value, onChangeText, placeholder = 'Search…', styl
 export const Checkbox = ({ on, onToggle, label }: { on: boolean; onToggle: () => void; label?: string }) => {
   const T = useAppTheme();
   return (
-    <TouchableOpacity onPress={onToggle} activeOpacity={0.7} style={s.check}>
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.7} hitSlop={HIT_44_FROM_20} style={s.check}>
       <View style={[s.checkBox, { borderColor: on ? 'transparent' : T.lineStrong }]}>
         {on && <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />}
         {on && <Check size={13} color="#FFF" strokeWidth={3} />}
@@ -197,7 +251,7 @@ export const Checkbox = ({ on, onToggle, label }: { on: boolean; onToggle: () =>
 export const Toggle = ({ on, onToggle }: { on: boolean; onToggle: () => void }) => {
   const T = useAppTheme();
   return (
-    <TouchableOpacity onPress={onToggle} activeOpacity={0.8} style={[s.tg, { backgroundColor: on ? 'transparent' : T.lineStrong }]}>
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.8} hitSlop={HIT_VERT_9} style={[s.tg, { backgroundColor: on ? 'transparent' : T.lineStrong }]}>
       {on && <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />}
       <View style={[s.tgKnob, on ? { right: 3 } : { left: 3 }]} />
     </TouchableOpacity>
@@ -307,7 +361,7 @@ export const FilterChip = ({ label, onRemove }: { label: string; onRemove?: () =
     <View style={[s.chip, { backgroundColor: T.accentSoft }]}>
       <Text style={[s.chipTxt, { color: T.accent }]}>{label}</Text>
       {!!onRemove && (
-        <TouchableOpacity onPress={onRemove} hitSlop={8} style={[s.chipX, { backgroundColor: T.accent + '33' }]}>
+        <TouchableOpacity onPress={onRemove} hitSlop={HIT_44_FROM_20} style={[s.chipX, { backgroundColor: T.accent + '33' }]}>
           <X size={9} color={T.accent} strokeWidth={3} />
         </TouchableOpacity>
       )}
@@ -330,6 +384,7 @@ export const Pagination = ({ page, pageCount, onChange, style }: {
 
   const cell = (key: string, content: React.ReactNode, onPress: () => void, on = false, disabled = false) => (
     <TouchableOpacity
+      hitSlop={HIT_44_FROM_32}
       key={key}
       onPress={onPress}
       disabled={disabled}
@@ -393,35 +448,42 @@ export const FormModal = ({ visible, title, onClose, children, footer, wide }: {
         style={s.kav}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Pressable style={s.scrim} onPress={onClose}>
-          <Pressable
-            onPress={() => {}}
-            style={[s.modal, { backgroundColor: T.card, maxWidth: wide ? 560 : 340 }]}
-          >
-            <View style={[s.mhead, { borderBottomColor: T.line }]}>
-              <Text style={[s.mtitle, { color: T.text }]}>{title}</Text>
-              <TouchableOpacity onPress={onClose} hitSlop={10}>
-                <X size={18} color={T.sub} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={s.mbodyScroll}
-              contentContainerStyle={s.mbody}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              // RN's ScrollView auto-adjusts its keyboard inset on iOS by default now, which
-              // fights the KeyboardAvoidingView above it — both try to shift the focused field
-              // into view at once, so a field far down a tall form (e.g. this Filters modal's
-              // Std/Board, below three dropdown triggers) visibly jumps/flickers and can drop
-              // focus mid-keystroke. Disabling this lets KeyboardAvoidingView be the only one
-              // driving the shift, which is what this modal was actually built around.
-              automaticallyAdjustKeyboardInsets={false}
-            >
-              {children}
-            </ScrollView>
-            {!!footer && <View style={[s.mfoot, { borderTopColor: T.line }]}>{footer}</View>}
-          </Pressable>
-        </Pressable>
+        {/* TouchableWithoutFeedback, not Pressable, on purpose: Pressable renders its own
+            native view with its own gesture responder, which can out-race a nested TextInput
+            for first-responder status — that's what was stealing focus from Std/Board the
+            instant they were tapped (the keyboard never even opened). TouchableWithoutFeedback
+            attaches its handler to the existing child view instead of adding a new one, so it
+            never sits in front of anything nested inside it. */}
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={s.scrim}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={[s.modal, { backgroundColor: T.card, maxWidth: wide ? 560 : 340 }]}>
+                <View style={[s.mhead, { borderBottomColor: T.line }]}>
+                  <Text style={[s.mtitle, { color: T.text }]}>{title}</Text>
+                  <TouchableOpacity onPress={onClose} hitSlop={10}>
+                    <X size={18} color={T.sub} />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  style={s.mbodyScroll}
+                  contentContainerStyle={s.mbody}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  // RN's ScrollView auto-adjusts its keyboard inset on iOS by default now, which
+                  // fights the KeyboardAvoidingView above it — both try to shift the focused field
+                  // into view at once, so a field far down a tall form (e.g. this Filters modal's
+                  // Std/Board, below three dropdown triggers) visibly jumps/flickers and can drop
+                  // focus mid-keystroke. Disabling this lets KeyboardAvoidingView be the only one
+                  // driving the shift, which is what this modal was actually built around.
+                  automaticallyAdjustKeyboardInsets={false}
+                >
+                  {children}
+                </ScrollView>
+                {!!footer && <View style={[s.mfoot, { borderTopColor: T.line }]}>{footer}</View>}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -471,7 +533,8 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     overflow: 'hidden',
   },
-  btnSm: { height: 36, paddingHorizontal: 14, borderRadius: 11 },
+  // 44, not 36: a 'small' button is still a button, and this is the size a thumb needs.
+  btnSm: { height: 44, paddingHorizontal: 14, borderRadius: 11 },
   btnPrimaryShadow: {
     shadowColor: '#8C5A2E', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.28, shadowRadius: 20, elevation: 6,
@@ -506,7 +569,9 @@ const s = StyleSheet.create({
   tg: { width: 44, height: 26, borderRadius: 13, justifyContent: 'center', overflow: 'hidden' },
   tgKnob: { position: 'absolute', top: 3, width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFF' },
   seg: { flexDirection: 'row', gap: 4, padding: 4, borderRadius: 12 },
-  segItem: { flex: 1, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  // 40 inside a 4pt-padded track = a 48pt control; the segments are a primary way to
+  // move around several screens, so they cannot be a 32pt strip.
+  segItem: { flex: 1, height: 40, borderRadius: 9, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   segTxt: { fontSize: rf(12.5), fontWeight: '700' },
 
   // trigger / dropdown

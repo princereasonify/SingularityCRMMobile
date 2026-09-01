@@ -1,43 +1,33 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Region as MapRegion } from 'react-native-maps';
 import { MapPin, RefreshCw, Users, Route as RouteIcon, Clock, ChevronLeft, ChevronRight, Navigation } from 'lucide-react-native';
-import { Btn, IconBtn, SearchBar, Trigger, Dropdown, ListCard, Avatar, StatusBadge } from '../../components/crud';
+import { Btn, SearchBar, Trigger, Dropdown, ListCard, Avatar, StatusBadge } from '../../components/crud';
 import { StatTile, SectionLabel } from '../../components/ui';
 import { b2cTrackingService } from '../../api/b2c/b2cTrackingService';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { isTabletDevice, rf } from '../../utils/responsive';
+import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
+import { isoDate, todayStr, timeOnly } from '../../utils/dates';
 
 const REFRESH_MS = 15000;
 const INDIA_REGION: MapRegion = { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 };
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-const pad = (n: number) => String(n).padStart(2, '0');
-const localDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const todayStr = () => localDateStr(new Date());
-
-const fmtTime = (v?: string | null) => {
-  if (!v) return '';
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return '';
-  let h = d.getHours();
-  const m = pad(d.getMinutes());
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${m} ${ap}`;
-};
+const fmtTime = (v?: string | null) => (v ? timeOnly(v) : '');
 const fmtDuration = (mins?: number | null) => {
   const m = Math.max(0, Number(mins) || 0);
   const h = Math.floor(m / 60);
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 };
-const prettyDate = (iso: string) => {
-  const [y, mo, dd] = iso.split('-').map(Number);
+const prettyDate = (dateStr: string) => {
+  const [y, mo, dd] = dateStr.split('-').map(Number);
   const d = new Date(y, (mo || 1) - 1, dd || 1);
-  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 };
 const initialsOf = (name?: string) =>
@@ -81,11 +71,15 @@ const normalize = (raw: any): LiveUser[] =>
 // ─── Route drill-down for a selected team member ──────────────────────────────
 const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }) => {
   const T = useAppTheme();
+  const r = useResponsive();
   const mapRef = useRef<MapView>(null);
   const [date, setDate] = useState(todayStr());
   const [data, setData] = useState<RouteData | null>(null);
   const [loading, setLoading] = useState(true);
   const roleColor = user.role === 'Counselor' ? T.warning : T.accent;
+  const s = useMemo(() => makeStyles(r), [r]);
+  // Three tiles fit one row on a tablet; on a phone the third would be ~90pt wide and clip.
+  const statW = r.isTablet ? '32%' : '48.5%';
 
   useEffect(() => {
     let cancelled = false;
@@ -116,8 +110,7 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
   const canGoNext = date < todayStr();
   const stepDay = (delta: number) => {
     const [y, mo, dd] = date.split('-').map(Number);
-    const d = new Date(y, (mo || 1) - 1, (dd || 1) + delta);
-    const next = localDateStr(d);
+    const next = isoDate(new Date(y, (mo || 1) - 1, (dd || 1) + delta));
     if (next > todayStr()) return;
     setDate(next);
   };
@@ -128,28 +121,39 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
       <View style={s.dHeader}>
         <Btn label="Back" variant="secondary" small onPress={onBack} icon={<ChevronLeft size={16} color={T.text} strokeWidth={2.2} />} />
         <Avatar initials={initialsOf(user.name)} color={roleColor} />
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, gap: 4 }}>
           <Text style={[s.name, { color: T.text }]} numberOfLines={1}>{user.name || 'Unknown'}</Text>
-          <StatusBadge label={user.role || '—'} color={roleColor} />
+          <View style={s.badgeRow}><StatusBadge label={user.role || '—'} color={roleColor} /></View>
         </View>
       </View>
 
       {/* Date stepper */}
       <View style={[s.dateBar, { backgroundColor: T.card, borderColor: T.line }]}>
-        <IconBtn kind="view" label="Previous day" onPress={() => stepDay(-1)}>
-          <ChevronLeft size={16} color={T.accent} strokeWidth={2.2} />
-        </IconBtn>
-        <Text style={[s.dateTxt, { color: T.text }]}>{prettyDate(date)}</Text>
-        <IconBtn kind="view" label="Next day" onPress={() => canGoNext && stepDay(1)}>
-          <ChevronRight size={16} color={canGoNext ? T.accent : T.dim} strokeWidth={2.2} />
-        </IconBtn>
+        <TouchableOpacity
+          onPress={() => stepDay(-1)}
+          activeOpacity={0.8}
+          accessibilityLabel="Previous day"
+          style={[s.tapBtn, { backgroundColor: T.accentSoft }]}
+        >
+          <ChevronLeft size={18} color={T.accent} strokeWidth={2.2} />
+        </TouchableOpacity>
+        <Text style={[s.dateTxt, { color: T.text }]} numberOfLines={1}>{prettyDate(date)}</Text>
+        <TouchableOpacity
+          onPress={() => canGoNext && stepDay(1)}
+          activeOpacity={0.8}
+          disabled={!canGoNext}
+          accessibilityLabel="Next day"
+          style={[s.tapBtn, { backgroundColor: canGoNext ? T.accentSoft : T.cardAlt }]}
+        >
+          <ChevronRight size={18} color={canGoNext ? T.accent : T.dim} strokeWidth={2.2} />
+        </TouchableOpacity>
       </View>
 
       {/* Stats */}
       <View style={s.statsRow}>
-        <StatTile style={{ flex: 1 }} label="Distance" value={`${Number(data?.totalDistanceKm ?? 0).toFixed(1)} km`} icon={<RouteIcon size={15} color={T.accent} />} />
-        <StatTile style={{ flex: 1 }} label="Duration" value={fmtDuration(data?.durationMinutes)} icon={<Clock size={15} color={T.accent} />} />
-        <StatTile style={{ flex: 1 }} label="Started" value={fmtTime(data?.startedAt) || '—'} icon={<MapPin size={15} color={T.accent} />} />
+        <StatTile style={{ width: statW }} label="Distance" value={`${Number(data?.totalDistanceKm ?? 0).toFixed(1)} km`} icon={<RouteIcon size={15} color={T.accent} />} />
+        <StatTile style={{ width: statW }} label="Duration" value={fmtDuration(data?.durationMinutes)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
+        <StatTile style={{ width: statW }} label="Started" value={fmtTime(data?.startedAt) || '—'} tint={T.success} icon={<MapPin size={15} color={T.success} />} />
       </View>
 
       {/* Route map */}
@@ -164,7 +168,7 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
         </View>
       ) : (
         <>
-          <View style={[s.mapWrap, { borderColor: T.line, backgroundColor: T.cardAlt }, isTabletDevice && s.mapWrapWide]}>
+          <View style={[s.mapWrap, { borderColor: T.line, backgroundColor: T.cardAlt }]}>
             <MapView ref={mapRef} style={StyleSheet.absoluteFillObject} initialRegion={INDIA_REGION}>
               {points.length > 1 && (
                 <Polyline coordinates={points} strokeColor={T.accent} strokeWidth={4} />
@@ -192,6 +196,7 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
 // Manager view: the same live map + tap-to-route, scoped to the manager's team.
 export const B2CTeamTrackingScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const mapRef = useRef<MapView>(null);
 
   const [users, setUsers] = useState<LiveUser[]>([]);
@@ -202,7 +207,10 @@ export const B2CTeamTrackingScreen = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selected, setSelected] = useState<LiveUser | null>(null);
 
-  // Roster of the manager's team — powers the "view a team member's route" picker.
+  const s = useMemo(() => makeStyles(r), [r]);
+
+  // Roster of the manager's team — powers the "view a team member's route" picker, which
+  // works whether or not that person is live right now.
   useEffect(() => {
     b2cUserService.getMyTeam()
       .then(res => setTeam(Array.isArray(res.data) ? res.data : []))
@@ -261,6 +269,52 @@ export const B2CTeamTrackingScreen = () => {
     );
   }
 
+  const liveMap = mapped.length > 0 ? (
+    <View style={[s.mapWrap, { borderColor: T.line, backgroundColor: T.cardAlt }]}>
+      <MapView ref={mapRef} style={StyleSheet.absoluteFillObject} initialRegion={INDIA_REGION}>
+        {mapped.map(u => (
+          <Marker
+            key={u.id}
+            coordinate={{ latitude: Number(u.latitude), longitude: Number(u.longitude) }}
+            pinColor={u.role === 'Counselor' ? T.warning : T.accent}
+            title={u.name || 'Unknown'}
+            description={`${Number(u.distance).toFixed(1)} km${u.lastSeen ? ` · seen ${fmtTime(u.lastSeen)}` : ''}`}
+            onCalloutPress={() => setSelected(u)}
+          />
+        ))}
+      </MapView>
+    </View>
+  ) : null;
+
+  const activeList = (
+    <View style={{ width: '100%' }}>
+      <View style={s.listHead}>
+        <Users size={15} color={T.accent} strokeWidth={2} />
+        <SectionLabel style={{ marginBottom: 0 }}>Active now</SectionLabel>
+      </View>
+      <View style={{ gap: 8 }}>
+        {filtered.map(u => {
+          const roleColor = u.role === 'Counselor' ? T.warning : T.accent;
+          return (
+            <ListCard key={u.id} onPress={() => setSelected(u)}>
+              <Avatar initials={initialsOf(u.name)} color={roleColor} />
+              <View style={{ flex: 1, gap: 3 }}>
+                <View style={s.rowTop}>
+                  <Text style={[s.name, { color: T.text, flex: 1 }]} numberOfLines={1}>{u.name || 'Unknown'}</Text>
+                  <StatusBadge label={u.role || '—'} color={roleColor} />
+                </View>
+                <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
+                  {Number(u.distance).toFixed(1)} km today · {u.lastSeen ? `seen ${fmtTime(u.lastSeen)}` : 'active'}
+                </Text>
+              </View>
+              <Navigation size={16} color={T.dim} strokeWidth={2} />
+            </ListCard>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView
@@ -280,7 +334,7 @@ export const B2CTeamTrackingScreen = () => {
 
         {/* Pick a team member to view their route (independent of who's live) */}
         {team.length > 0 && (
-          <View>
+          <View style={{ zIndex: 20 }}>
             <SectionLabel style={{ marginBottom: 8 }}>View a team member's route</SectionLabel>
             <Trigger
               label="Pick a team member…"
@@ -310,51 +364,11 @@ export const B2CTeamTrackingScreen = () => {
             <Text style={[s.emptyTxt, { color: T.dim }]}>Your team appears here once they start their day. Tap anyone to see their route.</Text>
           </View>
         ) : (
-          <>
-            {/* Live overview map */}
-            {mapped.length > 0 && (
-              <View style={[s.mapWrap, { borderColor: T.line, backgroundColor: T.cardAlt }, isTabletDevice && s.mapWrapWide]}>
-                <MapView ref={mapRef} style={StyleSheet.absoluteFillObject} initialRegion={INDIA_REGION}>
-                  {mapped.map(u => (
-                    <Marker
-                      key={u.id}
-                      coordinate={{ latitude: Number(u.latitude), longitude: Number(u.longitude) }}
-                      pinColor={u.role === 'Counselor' ? T.warning : T.accent}
-                      title={u.name || 'Unknown'}
-                      description={`${Number(u.distance).toFixed(1)} km${u.lastSeen ? ` · seen ${fmtTime(u.lastSeen)}` : ''}`}
-                      onCalloutPress={() => setSelected(u)}
-                    />
-                  ))}
-                </MapView>
-              </View>
-            )}
-
-            {/* Active-now list */}
-            <View style={s.listHead}>
-              <Users size={15} color={T.accent} strokeWidth={2} />
-              <SectionLabel style={{ marginBottom: 0 }}>Active now</SectionLabel>
-            </View>
-            <View style={{ gap: 8 }}>
-              {filtered.map(u => {
-                const roleColor = u.role === 'Counselor' ? T.warning : T.accent;
-                return (
-                  <ListCard key={u.id} onPress={() => setSelected(u)}>
-                    <Avatar initials={initialsOf(u.name)} color={roleColor} />
-                    <View style={{ flex: 1, gap: 3 }}>
-                      <View style={s.rowTop}>
-                        <Text style={[s.name, { color: T.text, flex: 1 }]} numberOfLines={1}>{u.name || 'Unknown'}</Text>
-                        <StatusBadge label={u.role || '—'} color={roleColor} />
-                      </View>
-                      <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
-                        {Number(u.distance).toFixed(1)} km today · {u.lastSeen ? `seen ${fmtTime(u.lastSeen)}` : 'active'}
-                      </Text>
-                    </View>
-                    <Navigation size={16} color={T.dim} strokeWidth={2} />
-                  </ListCard>
-                );
-              })}
-            </View>
-          </>
+          // The map beside the roster on a wide tablet; stacked on a phone.
+          <View style={s.panes}>
+            <View style={s.mapPane}>{liveMap}</View>
+            <View style={s.listPane}>{activeList}</View>
+          </View>
         )}
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -362,29 +376,56 @@ export const B2CTeamTrackingScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
-  safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  count: { fontSize: rf(12), fontWeight: '700' },
-  refresh: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  refreshTxt: { fontSize: rf(11), fontWeight: '600' },
+const makeStyles = (r: ReturnType<typeof useResponsive>) =>
+  StyleSheet.create({
+    safe: { flex: 1 },
+    scroll: {
+      padding: r.gutter, gap: 12,
+      // Centred and capped only on a wide tablet; on a phone maxContentWidth is the window
+      // width, so this is a no-op and the phone layout is unchanged.
+      ...(r.isWide ? { maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' as const } : null),
+    },
+    statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    count: { fontSize: r.rf(12), fontWeight: '700' },
+    refresh: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    refreshTxt: { fontSize: r.rf(11), fontWeight: '600' },
 
-  listHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
-  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+    panes: {
+      flexDirection: r.isWide ? 'row' : 'column',
+      alignItems: 'flex-start',
+      gap: r.gap + 4,
+    },
+    mapPane: { flex: r.isWide ? 1.35 : undefined, width: r.isWide ? undefined : '100%' },
+    listPane: { flex: r.isWide ? 1 : undefined, width: r.isWide ? undefined : '100%' },
 
-  mapWrap: { height: 260, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  mapWrapWide: { height: 420 },
-  pointsNote: { fontSize: rf(11), fontWeight: '600', textAlign: 'center' },
+    listHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 },
+    rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    badgeRow: { flexDirection: 'row' },
+    name: { fontSize: r.rf(13.5), fontWeight: '700' },
+    sub: { fontSize: r.rf(11.5), fontWeight: '500' },
 
-  dHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dateBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 13, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
-  dateTxt: { fontSize: rf(13.5), fontWeight: '700' },
-  statsRow: { flexDirection: 'row', gap: 10 },
+    // A map has to be a map in both orientations — a squashed strip on a landscape iPad tells
+    // you nothing, so the height tracks the window rather than a baked-in constant.
+    mapWrap: {
+      height: Math.round(Math.min(Math.max(r.height * (r.isLandscape ? 0.55 : 0.34), 240), 560)),
+      borderRadius: 16, borderWidth: 1, overflow: 'hidden',
+    },
+    pointsNote: { fontSize: r.rf(11), fontWeight: '600', textAlign: 'center' },
 
-  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 44, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: 18 },
-});
+    dHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    dateBar: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+      borderRadius: 13, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7,
+    },
+    dateTxt: { flex: 1, textAlign: 'center', fontSize: r.rf(13.5), fontWeight: '700' },
+    /** Every touchable is at least the HIG minimum in both dimensions. */
+    tapBtn: { width: MIN_TAP, height: MIN_TAP, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+
+    statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+
+    empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 44, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
+    emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+    emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: r.rf(18) },
+  });
+
+export default B2CTeamTrackingScreen;

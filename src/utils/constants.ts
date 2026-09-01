@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { LeadStage } from '../types';
 import { Colors } from '../theme';
-import { API_BASE_URL as ENV_API_BASE_URL, GOOGLE_MAPS_API_KEY as ENV_GMAPS_KEY } from '@env';
+import { API_BASE_URL as ENV_API_BASE_URL } from '@env';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 /**
@@ -31,17 +31,17 @@ export const IS_LOCAL_API = /\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.|
   API_BASE_URL,
 );
 
-/**
- * Google Maps key for the Places/Geocoding REST calls (AddSchool, HomeLocation).
- * It used to be pasted literally into both screens.
+/*
+ * There is deliberately NO Google Maps key on the client any more.
  *
- * NB this is NOT a secret: react-native-dotenv inlines the value at build time,
- * so it still ships inside the bundle — as it must, since the client makes the
- * call. Centralising it only kills the copy-paste drift and keeps it out of the
- * source tree. The actual protection is an HTTP-referrer/app restriction plus an
- * API allow-list on the key in the Google Cloud console.
+ * Every place, geocoding and directions lookup goes through our own API (`/routes/places/*`,
+ * `/routes/geocode/reverse`, `/routes/directions`), which holds an IP-restricted key. These
+ * are Google *web service* APIs, and the "restrict this key to my Android app" setting does
+ * not cover them — only the Maps SDK — so a key inlined here could never have been secured.
+ * The Maps SDK key that draws the map itself lives in AndroidManifest.xml, where an Android
+ * app restriction does apply.
  */
-export const GOOGLE_MAPS_API_KEY = ENV_GMAPS_KEY;
+
 
 // ─── Color aliases (theme is the single source of truth) ─────────────────────
 export { Colors, getScoreColor, getProgressColor, getStatusColor, getTargetStatusColor } from '../theme';

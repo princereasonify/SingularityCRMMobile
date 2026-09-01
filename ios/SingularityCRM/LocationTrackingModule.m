@@ -8,8 +8,12 @@ RCT_EXTERN_METHOD(checkPermission:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(requestPermission:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 
+// pingPath/batchPath select the tier (B2B vs B2C). The bridge signature must match the Swift
+// selector exactly, so adding parameters here and there is a single, paired change.
 RCT_EXTERN_METHOD(startTracking:(NSString *)token
                   apiBaseUrl:(NSString *)apiBaseUrl
+                  pingPath:(NSString *)pingPath
+                  batchPath:(NSString *)batchPath
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 

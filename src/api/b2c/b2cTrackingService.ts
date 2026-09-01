@@ -10,6 +10,14 @@ export interface B2CPingBody {
   accuracyMetres?: number;
   /** Client capture time (UTC ISO). Lets the server order offline/batched fixes correctly. */
   recordedAt?: string;
+  /** Course over ground, degrees 0–360 — orients the heading arrow on the live map. */
+  bearing?: number;
+  /** Metres above sea level — separates a flyover from the road beneath it when snapping. */
+  altitude?: number;
+  /** Device battery 0–100, so a shift that goes dark reads as a flat phone, not a fault. */
+  batteryLevel?: number;
+  /** OS-reported mock provider. Trusted only to invalidate — see the server's BuildPing. */
+  isMock?: boolean;
 }
 
 export const b2cTrackingService = {

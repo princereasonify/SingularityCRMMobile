@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Phone, MapPin, IndianRupee, Check, ChevronDown, ChevronRight, Users } from 'lucide-react-native';
+import { Phone, MapPin, IndianRupee, Check, ChevronDown, ChevronRight, Users, CalendarClock } from 'lucide-react-native';
 import { Screen, Card } from '../../components/ui';
 import { SearchBar, Trigger, Dropdown, ListCard, StatusBadge } from '../../components/crud';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
@@ -9,7 +9,9 @@ import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldP
 import { B2CLeadListDto } from '../../types/b2c';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { AppTheme } from '../../theme';
+import { appointmentLabel } from '../../utils/dates';
+import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
 
 /**
  * B2CPipelineScreen — mobile mirror of the web B2CPipeline.jsx kanban, adapted to
@@ -19,14 +21,17 @@ import { rf } from '../../utils/responsive';
  * filter that scopes the whole board.
  */
 
-// Ordered active pipeline (terminal stages NotInterested/Lost are not shown).
+// Ordered active pipeline (terminal stages NotInterested/Lost are not shown). Kept in the
+// same order as the web board's COLUMNS — the trail logic depends on it.
 const COLUMNS: { key: string; label: string }[] = [
   { key: 'New', label: 'New' },
   { key: 'Contacted', label: 'Contacted' },
   { key: 'Interested', label: 'Interested' },
+  { key: 'AppointmentBooked', label: 'Appointment Booked' },
   { key: 'DocumentPending', label: 'Docs Pending' },
   { key: 'CounselingBooked', label: 'Counseling Booked' },
   { key: 'CounselingDone', label: 'Counseling Done' },
+  { key: 'DemoDone', label: 'Demo Done' },
   { key: 'ApplicationSent', label: 'Application Sent' },
   { key: 'FollowUp', label: 'Follow-up' },
   { key: 'Converted', label: 'Converted' },
@@ -34,16 +39,20 @@ const COLUMNS: { key: string; label: string }[] = [
 const ORDER: Record<string, number> = COLUMNS.reduce((m, c, i) => { m[c.key] = i; return m; }, {} as Record<string, number>);
 const idxOf = (stage: string) => (stage in ORDER ? ORDER[stage] : -1);
 
-const priorityColor = (p: string, T: any) => (p === 'Hot' ? T.danger : p === 'Warm' ? T.warning : T.dim);
+const priorityColor = (p: string, T: AppTheme) => (p === 'Hot' ? T.danger : p === 'Warm' ? T.warning : T.dim);
 
 export const B2CPipelineScreen = () => {
   const T = useAppTheme();
   const nav = useNavigation<any>();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
+  const r = useResponsive();
+  const s = useMemo(() => makeStyles(r), [r]);
   const isAdmin = user?.role === 'B2CAdmin';
-  const cols = width >= 720 ? 2 : 1;
-  const colWidth = cols === 2 ? '48.5%' : '100%';
+  // Exact point widths, not percentages: in a wrapping row with a `gap`, N × (100/N)% always
+  // overflows by the gaps and the last card silently drops onto its own line.
+  // The board is one column of stage sections on a phone; a tablet's width buys two.
+  const boardInnerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
+  const colWidth: number | '100%' = r.isTablet ? Math.floor((boardInnerW - r.gap) / 2) : '100%';
 
   const [leads, setLeads] = useState<B2CLeadListDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,12 +110,12 @@ export const B2CPipelineScreen = () => {
   const openDetail = (id: number) => nav.navigate('B2CLeadDetail', { leadId: id });
 
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchLeads(); }}>
-      <Text style={[st.title, { color: T.text }]}>Pipeline</Text>
-      <Text style={[st.subtitle, { color: T.sub }]}>Each student stays visible in every stage they've reached</Text>
+    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchLeads(); }} contentStyle={s.page}>
+      <Text style={[s.title, { color: T.text }]}>Pipeline</Text>
+      <Text style={[s.subtitle, { color: T.sub }]}>Each student stays visible in every stage they've reached</Text>
 
       {/* Search + admin view-as filter */}
-      <Card style={{ marginTop: 14, gap: 10 }}>
+      <Card style={{ marginTop: r.rs(14), gap: 10 }}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search students…" style={{ width: '100%' }} />
         {isAdmin && (
           <>
@@ -117,23 +126,23 @@ export const B2CPipelineScreen = () => {
               icon={<Users size={14} color={T.sub} strokeWidth={2} />}
             />
             {openFilter && (
-              <Dropdown style={{ width: '100%' }} maxHeight={300} value={personVal} onSelect={onSelectPerson} options={filterOptions} />
+              <Dropdown style={{ width: '100%' }} maxHeight={r.height * 0.4} value={personVal} onSelect={onSelectPerson} options={filterOptions} />
             )}
           </>
         )}
       </Card>
 
       {isAdmin && person && (
-        <Text style={[st.viewingNote, { color: T.sub }]}>
+        <Text style={[s.viewingNote, { color: T.sub }]}>
           Viewing <Text style={{ color: T.text, fontWeight: '700' }}>{person.name}</Text>'s pipeline
           {person.kind === 'agent' && person.isManager ? '  ·  Agent + Manager' : ''}
         </Text>
       )}
 
       {loading ? (
-        <Card style={{ marginTop: 16 }}><Text style={[st.empty, { color: T.dim }]}>Loading…</Text></Card>
+        <Card style={{ marginTop: 16 }}><Text style={[s.empty, { color: T.dim }]}>Loading…</Text></Card>
       ) : (
-        <View style={[st.grid, { marginTop: 14 }]}>
+        <View style={[s.grid, { marginTop: r.rs(14) }]}>
           {COLUMNS.map((col, ci) => {
             // Trail: everyone whose current stage is at or past this column.
             const reached = leads.filter(l => idxOf(l.stage) >= ci);
@@ -144,20 +153,20 @@ export const B2CPipelineScreen = () => {
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => setCollapsed(m => ({ ...m, [col.key]: isOpen }))}
-                    style={st.stageHead}
+                    style={s.stageHead}
                   >
                     {isOpen
                       ? <ChevronDown size={17} color={T.sub} strokeWidth={2.2} />
                       : <ChevronRight size={17} color={T.sub} strokeWidth={2.2} />}
-                    <Text style={[st.stageTitle, { color: T.text }]} numberOfLines={1}>{col.label}</Text>
+                    <Text style={[s.stageTitle, { color: T.text }]} numberOfLines={1}>{col.label}</Text>
                     <StatusBadge label={String(reached.length)} color={T.accent} />
                   </TouchableOpacity>
 
                   {isOpen && (
-                    <View style={st.stageBody}>
+                    <View style={s.stageBody}>
                       {reached.length === 0 ? (
-                        <View style={[st.emptyBox, { borderColor: T.line }]}>
-                          <Text style={[st.emptyBoxTxt, { color: T.dim }]}>Empty</Text>
+                        <View style={[s.emptyBox, { borderColor: T.line }]}>
+                          <Text style={[s.emptyBoxTxt, { color: T.dim }]}>Empty</Text>
                         </View>
                       ) : (
                         reached.map(l => {
@@ -169,43 +178,57 @@ export const B2CPipelineScreen = () => {
                                 key={l.id}
                                 activeOpacity={0.7}
                                 onPress={() => openDetail(l.id)}
-                                style={[st.passed, { borderColor: T.line, backgroundColor: T.bg }]}
+                                style={[s.passed, { borderColor: T.line, backgroundColor: T.bg }]}
                               >
                                 <Check size={13} color={T.success} strokeWidth={2.4} />
-                                <Text style={[st.passedTxt, { color: T.sub }]} numberOfLines={1}>{l.studentName}</Text>
-                                <Text style={[st.passedTag, { color: T.dim }]}>passed</Text>
+                                <Text style={[s.passedTxt, { color: T.sub }]} numberOfLines={1}>{l.studentName}</Text>
+                                <Text style={[s.passedTag, { color: T.dim }]}>passed</Text>
                               </TouchableOpacity>
                             );
                           }
                           // Solid row in the student's CURRENT stage.
                           const amount = (l as any).confirmedAmount as number | null | undefined;
                           return (
-                            <ListCard key={l.id} onPress={() => openDetail(l.id)} style={st.leadCard}>
-                              <View style={[st.dot, { backgroundColor: priorityColor(l.priority, T) }]} />
-                              <View style={{ flex: 1, gap: 4 }}>
-                                <Text style={[st.leadName, { color: T.text }]} numberOfLines={1}>{l.studentName}</Text>
-                                <View style={st.metaRow}>
+                            <ListCard key={l.id} onPress={() => openDetail(l.id)} style={s.leadCard}>
+                              <View style={[s.dot, { backgroundColor: priorityColor(l.priority, T) }]} />
+                              <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                                <Text style={[s.leadName, { color: T.text }]} numberOfLines={1}>{l.studentName}</Text>
+                                <View style={s.metaRow}>
                                   {!!l.mobileNumber && (
-                                    <View style={st.meta}>
+                                    <View style={s.meta}>
                                       <Phone size={11} color={T.dim} strokeWidth={2} />
-                                      <Text style={[st.metaTxt, { color: T.dim }]} numberOfLines={1}>{l.mobileNumber}</Text>
+                                      <Text style={[s.metaTxt, { color: T.dim }]} numberOfLines={1}>{l.mobileNumber}</Text>
                                     </View>
                                   )}
                                   {!!l.city && (
-                                    <View style={st.meta}>
+                                    <View style={s.meta}>
                                       <MapPin size={11} color={T.dim} strokeWidth={2} />
-                                      <Text style={[st.metaTxt, { color: T.dim }]} numberOfLines={1}>{l.city}</Text>
+                                      <Text style={[s.metaTxt, { color: T.dim }]} numberOfLines={1}>{l.city}</Text>
                                     </View>
                                   )}
                                 </View>
-                                {l.stage === 'Converted' && amount != null && (
-                                  <View style={st.meta}>
-                                    <IndianRupee size={11} color={T.success} strokeWidth={2.2} />
-                                    <Text style={[st.amount, { color: T.success }]}>{Number(amount).toLocaleString('en-IN')}</Text>
+                                {!!l.appointmentAt && (
+                                  <View style={s.meta}>
+                                    <CalendarClock size={11} color={T.accent} strokeWidth={2.2} />
+                                    <Text style={[s.appt, { color: T.accent }]} numberOfLines={1}>{appointmentLabel(l.appointmentAt)}</Text>
                                   </View>
                                 )}
+                                {l.stage === 'Converted' && amount != null && (
+                                  <View style={s.meta}>
+                                    <IndianRupee size={11} color={T.success} strokeWidth={2.2} />
+                                    <Text style={[s.amount, { color: T.success }]}>{Number(amount).toLocaleString('en-IN')}</Text>
+                                  </View>
+                                )}
+                                {/* The note written when the student landed in this column — the
+                                   board's whole job is showing where everyone stands, which reads
+                                   far better with the one line explaining it. */}
+                                {!!l.currentStageNote?.trim() && (
+                                  <Text style={[s.stageNote, { color: T.sub }]} numberOfLines={2}>
+                                    {l.currentStageNote.trim()}
+                                  </Text>
+                                )}
                                 {!!l.assignedCounselorName && (
-                                  <Text style={[st.counselor, { color: T.dim }]} numberOfLines={1}>Counselor: {l.assignedCounselorName}</Text>
+                                  <Text style={[s.counselor, { color: T.dim }]} numberOfLines={1}>Counselor: {l.assignedCounselorName}</Text>
                                 )}
                               </View>
                             </ListCard>
@@ -224,32 +247,38 @@ export const B2CPipelineScreen = () => {
   );
 };
 
-const st = StyleSheet.create({
-  title: { fontSize: rf(22), fontWeight: '700', letterSpacing: -0.4 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500', marginTop: 3 },
-  viewingNote: { fontSize: rf(12), fontWeight: '500', marginTop: 10 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' },
+/** Live-metric styles: a module-level StyleSheet is evaluated once at import, so every size
+ *  would stay frozen at the launch orientation and clip after an iPad rotation. */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  // No paddingBottom: Screen's own `insets.bottom + 28` must survive the override.
+  page: { padding: r.gutter, width: '100%', maxWidth: r.maxContentWidth, alignSelf: 'center' },
+  title: { fontSize: r.rf(22), fontWeight: '700', letterSpacing: -0.4 },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500', marginTop: 3 },
+  viewingNote: { fontSize: r.rf(12), fontWeight: '500', marginTop: 10 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   stageHead: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 14, paddingHorizontal: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: MIN_TAP,
+    paddingVertical: r.rs(14), paddingHorizontal: r.rs(16),
   },
-  stageTitle: { flex: 1, fontSize: rf(14), fontWeight: '800', letterSpacing: -0.2 },
-  stageBody: { gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
+  stageTitle: { flex: 1, minWidth: 0, fontSize: r.rf(14), fontWeight: '800', letterSpacing: -0.2 },
+  stageBody: { gap: 8, paddingHorizontal: r.rs(12), paddingBottom: r.rs(12) },
   emptyBox: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, paddingVertical: 18, alignItems: 'center' },
-  emptyBoxTxt: { fontSize: rf(12), fontWeight: '600' },
-  empty: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
+  emptyBoxTxt: { fontSize: r.rf(12), fontWeight: '600' },
+  empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
   leadCard: { alignItems: 'flex-start' },
   dot: { width: 10, height: 10, borderRadius: 5, marginTop: 5 },
-  leadName: { fontSize: rf(13.5), fontWeight: '700' },
+  leadName: { fontSize: r.rf(13.5), fontWeight: '700' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaTxt: { fontSize: rf(11.5), fontWeight: '500' },
-  amount: { fontSize: rf(12.5), fontWeight: '800' },
-  counselor: { fontSize: rf(11), fontWeight: '500' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
+  metaTxt: { fontSize: r.rf(11.5), fontWeight: '500', flexShrink: 1 },
+  appt: { fontSize: r.rf(11.5), fontWeight: '700', flexShrink: 1 },
+  amount: { fontSize: r.rf(12.5), fontWeight: '800' },
+  stageNote: { fontSize: r.rf(11.5), fontWeight: '500', fontStyle: 'italic', lineHeight: r.rf(16) },
+  counselor: { fontSize: r.rf(11), fontWeight: '500' },
   passed: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: MIN_TAP,
     borderWidth: 1, borderStyle: 'dashed', borderRadius: 11, paddingVertical: 9, paddingHorizontal: 12,
   },
-  passedTxt: { flex: 1, fontSize: rf(12), fontWeight: '500' },
-  passedTag: { fontSize: rf(10), fontWeight: '600' },
+  passedTxt: { flex: 1, minWidth: 0, fontSize: r.rf(12), fontWeight: '500' },
+  passedTag: { fontSize: r.rf(10), fontWeight: '600' },
 });

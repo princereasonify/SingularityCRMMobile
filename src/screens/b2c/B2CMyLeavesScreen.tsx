@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TextInput, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
 import { Plus, CalendarDays, Send } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
@@ -8,7 +8,8 @@ import { DateInput } from '../../components/common/DateInput';
 import { b2cLeaveService } from '../../api/b2c/b2cLeaveService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { todayStr } from '../../utils/dates';
 
 /** Web parity: B2CMyLeaves.jsx — request leave + track approval status. */
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Unpaid'] as const;
@@ -23,11 +24,6 @@ interface LeaveRow {
   status: string;
 }
 
-const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 const fmtDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
@@ -42,9 +38,9 @@ const emptyForm = () => ({ leaveType: 'Casual' as LeaveType, fromDate: todayStr(
 
 export const B2CMyLeavesScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 720; // iPad landscape → wider modal + 2-up date fields
+  const isWide = r.width >= 720; // iPad → wider modal + 2-up date fields
 
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,8 +94,23 @@ export const B2CMyLeavesScreen = () => {
     }
   };
 
+  // The page gutter and the readable-width cap both track the live window size.
+  // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
+  // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
+  // push the last card under the home indicator.
+  const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+    <Screen scroll contentStyle={content} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
       <Text style={[s.subtitle, { color: T.sub }]}>Request leave and track approval status</Text>
 
       <Btn
@@ -117,11 +128,11 @@ export const B2CMyLeavesScreen = () => {
           <Text style={[s.emptyTxt, { color: T.dim }]}>Tap Request Leave to apply.</Text>
         </View>
       ) : (
-        <View style={{ gap: 8, marginTop: 16 }}>
+        <View style={[s.grid, { marginTop: 16 }]}>
           {leaves.map(l => {
             const d = l.days ?? diffDays(l.fromDate, l.toDate);
             return (
-              <ListCard key={l.id} style={{ alignItems: 'flex-start' }}>
+              <ListCard key={l.id} style={{ alignItems: 'flex-start', width: cardW }}>
                 <View style={[s.iconTile, { backgroundColor: T.accentSoft }]}>
                   <CalendarDays size={18} color={T.accent} strokeWidth={ICON_STROKE} />
                 </View>
@@ -214,25 +225,32 @@ export const B2CMyLeavesScreen = () => {
   );
 };
 
-export default B2CMyLeavesScreen;
-
-const s = StyleSheet.create({
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   dateRow: { flexDirection: 'row', gap: 12 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconTile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8, marginTop: 16 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
   textarea: { minHeight: 72, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
   durationRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12,
   },
-  durationLbl: { fontSize: rf(12.5), fontWeight: '500' },
+  durationLbl: { fontSize: r.rf(12.5), fontWeight: '500' },
   durationVal: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  durationTxt: { fontSize: rf(14), fontWeight: '700' },
+  durationTxt: { fontSize: r.rf(14), fontWeight: '700' },
 });
+
+export default B2CMyLeavesScreen;
+

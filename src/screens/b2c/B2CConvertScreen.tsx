@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Image, Linking, ActivityIndicator,
-  TouchableOpacity, useWindowDimensions,
+  View, Text, StyleSheet, Image, Linking, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { pick, types } from '@react-native-documents/picker';
@@ -12,19 +11,22 @@ import {
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen, Card } from '../../components/ui';
 import {
-  Btn, IconBtn, Input, Field, Trigger, Dropdown, StatusBadge, FilterChip,
+  Btn, Input, Field, Trigger, Dropdown, StatusBadge, FilterChip,
 } from '../../components/crud';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { b2cEnrollmentService, PLAN_MODES, DOC_TYPES } from '../../api/b2c/b2cEnrollmentService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { isoDate, todayStr } from '../../utils/dates';
+import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
 
 const STEPS = ['Details', 'Documents', 'Payment'];
 const GENDERS = ['Male', 'Female', 'Other'];
 
-const toDateInput = (iso?: string) => (iso ? new Date(iso).toISOString().split('T')[0] : '');
+// The LOCAL calendar day the instant falls on. `toISOString().split('T')[0]` converts to UTC
+// first, so an IST user opening this before 05:30 saw a date of birth one day early.
+const toDateInput = (iso?: string) => (iso ? isoDate(iso) : '');
 const prettyDoc = (t?: string) => (t || '').replace(/([A-Z])/g, ' $1').trim();
 
 type Doc = { id: number; docType: string; url?: string };
@@ -40,9 +42,13 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
   const leadId: number = route.params?.leadId;
   const toast = useToast();
   const T = useAppTheme();
-  const { width } = useWindowDimensions();
-  const wide = width >= 720;                       // iPad landscape → 2-up form fields
-  const colW = (wide ? '48.5%' : '100%') as any;
+  const r = useResponsive();
+  const s = useMemo(() => makeStyles(r), [r]);
+  // Exact point widths, not percentages: in a wrapping row with a `gap`, N × (100/N)% always
+  // overflows by the gaps and the last card silently drops onto its own line.
+  // tablet → 2-up form fields, measured inside the Card (padding 16 a side).
+  const cardInnerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - 32;
+  const colW: any = r.isTablet ? Math.floor((cardInnerW - r.gap) / 2) : '100%';
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -188,15 +194,15 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
     if (!silent) setVerifying(true);
     try {
       const res = await b2cEnrollmentService.verifyPayment(oid);
-      const r = res.data;
-      if (r?.paid) {
+      const payment = res.data;
+      if (payment?.paid) {
         if (pollRef.current) clearInterval(pollRef.current);
-        setResult(r);
+        setResult(payment);
         toast.success('Payment recorded');
       }
     } catch { /* keep polling */ }
     finally { if (!silent) setVerifying(false); }
-  }, []);
+  }, [toast]);
 
   const startPayment = async () => {
     if (!(Number(amount) > 0)) { setError('Enter a valid amount'); return; }
@@ -239,14 +245,22 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
     </Field>
   );
 
-  const Header = ({ onBack }: { onBack: () => void }) => (
+  // A plain render function, not a component declared inside render: the latter is a new
+  // type on every keystroke, so React remounts the whole header subtree each time.
+  const header = (onBack: () => void) => (
     <View style={s.header}>
-      <IconBtn kind="view" label="Back" onPress={onBack}>
-        <ArrowLeft size={18} color={T.accent} strokeWidth={ICON_STROKE} />
-      </IconBtn>
+      <TouchableOpacity
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        activeOpacity={0.7}
+        onPress={onBack}
+        style={[s.backBtn, { backgroundColor: T.accentSoft }]}
+      >
+        <ArrowLeft size={20} color={T.accent} strokeWidth={ICON_STROKE} />
+      </TouchableOpacity>
       <View style={s.titleBlock}>
         <Text style={[s.h1, { color: T.text }]} numberOfLines={1}>Enroll student</Text>
-        <Text style={[s.h2, { color: T.sub }]} numberOfLines={1}>Complete registration, then take payment</Text>
+        <Text style={[s.h2, { color: T.sub }]} numberOfLines={2}>Complete registration, then take payment</Text>
       </View>
     </View>
   );
@@ -255,7 +269,7 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
   if (loading) {
     return (
       <Screen>
-        <View style={{ padding: 16 }}><Header onBack={() => navigation.goBack()} /></View>
+        <View style={{ padding: r.gutter }}>{header(() => navigation.goBack())}</View>
         <ActivityIndicator color={T.accent} style={{ marginTop: 60 }} />
       </Screen>
     );
@@ -266,8 +280,8 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
     const synced = result.reasonifySyncStatus === 'Synced';
     const failed = result.reasonifySyncStatus === 'Failed';
     return (
-      <Screen scroll>
-        <Header onBack={goToLead} />
+      <Screen scroll contentStyle={s.page}>
+        {header(goToLead)}
         <Card style={{ alignItems: 'center', gap: 6 }}>
           <View style={[s.successIcon, { backgroundColor: T.success + '22' }]}>
             <CheckCircle2 size={34} color={T.success} strokeWidth={2.2} />
@@ -303,8 +317,8 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
   }
 
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
-      <Header onBack={() => navigation.goBack()} />
+    <Screen scroll contentStyle={s.page} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+      {header(() => navigation.goBack())}
 
       {/* Stepper */}
       <View style={s.stepper}>
@@ -346,7 +360,7 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
               <Input label="Mobile" value={form.mobile} onChangeText={v => set('mobile', v)} keyboardType="phone-pad" placeholder="10-digit mobile" containerStyle={{ width: colW }} />
               {renderSelect('gender', 'Gender', GENDERS.map(g => ({ label: g, value: g })), form.gender, v => set('gender', v), 'Select gender', colW)}
               <View style={{ width: colW }}>
-                <DateInput label="Date of Birth" value={form.dateOfBirth} onChange={v => set('dateOfBirth', v)} accentColor={T.accent} maxDate={toDateInput(new Date().toISOString())} />
+                <DateInput label="Date of Birth" value={form.dateOfBirth} onChange={v => set('dateOfBirth', v)} accentColor={T.accent} maxDate={todayStr()} />
               </View>
               <Input label="Standard / Grade" value={form.grade} onChangeText={v => set('grade', v)} placeholder="e.g. 9" containerStyle={{ width: colW }} />
               <Input label="Board" value={form.board} onChangeText={v => set('board', v)} placeholder="CBSE / ICSE / State" containerStyle={{ width: colW }} />
@@ -520,29 +534,34 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
   );
 };
 
-const s = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+/** Built from the live window metrics — a module-level StyleSheet is evaluated once at
+ *  import, so an iPad rotation would leave every size frozen at the launch orientation. */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  // No paddingBottom: Screen's own `insets.bottom + 28` must survive the override.
+  page: { padding: r.gutter, width: '100%', maxWidth: r.maxContentWidth, alignSelf: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: r.rs(16) },
+  backBtn: { width: MIN_TAP, height: MIN_TAP, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   titleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  h1: { fontWeight: '800', fontSize: rf(20), letterSpacing: -0.4 },
-  h2: { fontWeight: '500', fontSize: rf(12.5) },
+  h1: { fontWeight: '800', fontSize: r.rf(20), letterSpacing: -0.4 },
+  h2: { fontWeight: '500', fontSize: r.rf(12.5) },
 
   card: { gap: 14, marginBottom: 12 },
-  sectionTitle: { fontWeight: '700', fontSize: rf(12), letterSpacing: 1, textTransform: 'uppercase' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  sectionTitle: { fontWeight: '700', fontSize: r.rf(12), letterSpacing: 1, textTransform: 'uppercase' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
 
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  hint: { fontSize: rf(12), fontWeight: '500', lineHeight: 17 },
+  hint: { fontSize: r.rf(12), fontWeight: '500', lineHeight: 17 },
 
   // stepper
   stepper: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4, gap: 6, marginBottom: 14 },
   stepItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stepCircle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  stepNum: { fontSize: rf(12), fontWeight: '800' },
-  stepLabel: { fontSize: rf(13), fontWeight: '600' },
+  stepNum: { fontSize: r.rf(12), fontWeight: '800' },
+  stepLabel: { fontSize: r.rf(13), fontWeight: '600' },
   stepLine: { flex: 1, height: 1.5, marginHorizontal: 4 },
 
   errorBanner: { borderWidth: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 12 },
-  errorTxt: { fontSize: rf(12.5), fontWeight: '600' },
+  errorTxt: { fontSize: r.rf(12.5), fontWeight: '600' },
 
   // photo
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
@@ -551,8 +570,8 @@ const s = StyleSheet.create({
 
   // documents
   docRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14 },
-  docTxt: { flex: 1, fontSize: rf(13.5), fontWeight: '600' },
-  docView: { fontSize: rf(12.5), fontWeight: '700' },
+  docTxt: { flex: 1, fontSize: r.rf(13.5), fontWeight: '600' },
+  docView: { fontSize: r.rf(12.5), fontWeight: '700' },
 
   // subjects
   subjectRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
@@ -562,13 +581,13 @@ const s = StyleSheet.create({
 
   // payment waiting
   infoBanner: { flexDirection: 'row', gap: 10, borderWidth: 1, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14 },
-  infoTxt: { flex: 1, fontSize: rf(12.5), fontWeight: '500', lineHeight: 18 },
+  infoTxt: { flex: 1, fontSize: r.rf(12.5), fontWeight: '500', lineHeight: 18 },
   waitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
 
   // success
   successIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  successTitle: { fontSize: rf(19), fontWeight: '800', letterSpacing: -0.4 },
-  successSub: { fontSize: rf(13.5), fontWeight: '500', textAlign: 'center' },
+  successTitle: { fontSize: r.rf(19), fontWeight: '800', letterSpacing: -0.4 },
+  successSub: { fontSize: r.rf(13.5), fontWeight: '500', textAlign: 'center' },
   summaryBox: { alignSelf: 'stretch', borderWidth: 1, borderRadius: 12, padding: 14, marginTop: 12 },
-  summaryK: { fontSize: rf(12.5), fontWeight: '600' },
+  summaryK: { fontSize: r.rf(12.5), fontWeight: '600' },
 });

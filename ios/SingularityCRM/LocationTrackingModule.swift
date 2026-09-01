@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import UserNotifications
+import UIKit   // UIDevice — battery level attached to each fix
 
 // ─── LocationTrackingModule ───────────────────────────────────────────────────
 // Native iOS foreground + background location service.
@@ -29,6 +30,9 @@ class LocationTrackingModule: NSObject {
     private var locationManager: CLLocationManager?
     private var pingTimer: Timer?
     private var lastLocation: CLLocation?
+    /// Rolling stationary state — reset on every startTracking.
+    private var stationaryStreak = 0
+    private var lastSentLocation: CLLocation?
     private var authToken: String?
     private var apiBaseUrl: String?
 
@@ -43,6 +47,19 @@ class LocationTrackingModule: NSObject {
 
     private static let tokenKey  = "lt_auth_token"
     private static let urlKey    = "lt_api_url"
+    private static let pingPathKey  = "lt_ping_path"
+    private static let batchPathKey = "lt_batch_path"
+
+    // ── On-device cleaning gates (mirrors the Android service exactly) ──────────────
+    /// A fix worse than this can sit on the wrong side of a dual carriageway, and the snapper
+    /// will faithfully snap it there — a confident WRONG road is worse than no fix.
+    private static let maxAccuracyMetres: CLLocationAccuracy = 35
+    /// A cached fix stamped "now" drags the route back to where the agent used to be.
+    private static let maxFixAgeSeconds: TimeInterval = 30
+    private static let stationarySpeedKmh: Double = 1.5
+    private static let stationaryDisplacementM: CLLocationDistance = 20
+    /// Three, not one: a slow fix at a traffic light is not a parked phone.
+    private static let stationaryStreakLimit = 3
     private static let maxRegions = 20   // iOS hard limit for monitored regions
 
     // MARK: – Permission check (no dialog — just reads current status)
@@ -154,9 +171,14 @@ class LocationTrackingModule: NSObject {
 
     // MARK: – Start / Stop
 
+    /// `pingPath` / `batchPath` are what let one engine serve both B2B and B2C — capture,
+    /// filtering and delivery are identical, only the endpoint differs. Empty values fall back
+    /// to the B2B paths, so an older JS bundle calling the two-argument form is unaffected.
     @objc
     func startTracking(_ token: String,
                        apiBaseUrl url: String,
+                       pingPath: String,
+                       batchPath: String,
                        resolve: @escaping RCTPromiseResolveBlock,
                        reject: @escaping RCTPromiseRejectBlock) {
 
@@ -167,6 +189,16 @@ class LocationTrackingModule: NSObject {
             self.apiBaseUrl = url
             UserDefaults.standard.set(token, forKey: LocationTrackingModule.tokenKey)
             UserDefaults.standard.set(url,   forKey: LocationTrackingModule.urlKey)
+            UserDefaults.standard.set(pingPath.isEmpty ? "/tracking/ping" : pingPath,
+                                      forKey: LocationTrackingModule.pingPathKey)
+            UserDefaults.standard.set(batchPath.isEmpty ? "/tracking/ping/batch" : batchPath,
+                                      forKey: LocationTrackingModule.batchPathKey)
+
+            // A fresh start is a fresh day: never inherit the previous shift's motion state.
+            self.stationaryStreak = 0
+            self.lastSentLocation = nil
+            // Needed for the battery reading attached to each fix; harmless if already on.
+            UIDevice.current.isBatteryMonitoringEnabled = true
 
             self.setupLocationManager()
             self.requestNotificationPermission()
@@ -311,6 +343,11 @@ class LocationTrackingModule: NSObject {
         // Keep delivering updates in background (UIBackgroundModes:location in Info.plist)
         mgr.allowsBackgroundLocationUpdates    = true
         mgr.pausesLocationUpdatesAutomatically = false
+        // The blue "your location is in use" pill. Not decoration and not optional in practice:
+        // an app tracking a field agent's whole shift must show them it is doing so, and iOS
+        // treats a hidden background tracker as a review issue. It also gives the agent a way to
+        // notice the day is still running when they forget to end it.
+        if #available(iOS 11.0, *) { mgr.showsBackgroundLocationIndicator = true }
         mgr.startUpdatingLocation()
         // Significant-change monitoring: lets iOS relaunch the app after a system kill
         mgr.startMonitoringSignificantLocationChanges()
@@ -460,21 +497,76 @@ extension LocationTrackingModule {
         guard let location = lastLocation ?? locationManager?.location else {
             NSLog("[LocationTracking] No location yet — skip ping"); return
         }
-        guard let url = URL(string: "\(baseUrl)/tracking/ping") else { return }
+
+        // ── On-device cleaning gates. Identical to the Android service, deliberately: two
+        //    platforms filtering differently would produce two different routes for one walk.
+
+        // 1) Staleness — a cached fix stamped "now" teleports the route backwards then forwards.
+        let age = -location.timestamp.timeIntervalSinceNow
+        if age > Self.maxFixAgeSeconds {
+            NSLog("[LocationTracking] Fix %.0fs old — skip ping", age); return
+        }
+
+        // 2) Accuracy — a poor fix snapped to a road becomes a confident wrong road.
+        if location.horizontalAccuracy < 0 || location.horizontalAccuracy > Self.maxAccuracyMetres {
+            NSLog("[LocationTracking] Low-accuracy fix %.0fm — skip ping", location.horizontalAccuracy); return
+        }
+
+        // 3) Stationary — a parked phone still wanders metres a minute; over a shift that is
+        //    kilometres nobody walked. Only after three consecutive stationary checks, so a
+        //    slow crawl in traffic still counts as travel.
+        let speedKmh = location.speed >= 0 ? location.speed * 3.6 : 0
+        let movedM = lastSentLocation.map { location.distance(from: $0) } ?? .greatestFiniteMagnitude
+        if speedKmh < Self.stationarySpeedKmh && movedM < Self.stationaryDisplacementM {
+            stationaryStreak += 1
+            if stationaryStreak >= Self.stationaryStreakLimit {
+                NSLog("[LocationTracking] Stationary (%dx) — suppressing ping", stationaryStreak); return
+            }
+        } else {
+            stationaryStreak = 0
+        }
+        lastSentLocation = location
+
+        let path = UserDefaults.standard.string(forKey: LocationTrackingModule.pingPathKey) ?? "/tracking/ping"
+        guard let url = URL(string: "\(baseUrl)\(path)") else { return }
 
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        // iOS 15+ can tell us a location was simulated. Below that there is no signal, and
+        // claiming false would be asserting something we do not know — but false is also the
+        // only safe default, since the server treats true purely as grounds to invalidate.
+        var simulated = false
+        if #available(iOS 15.0, *) {
+            simulated = location.sourceInformation?.isSimulatedBySoftware ?? false
+        }
 
         var body: [String: Any] = [
             "latitude":   location.coordinate.latitude,
             "longitude":  location.coordinate.longitude,
             "recordedAt": fmt.string(from: location.timestamp),
             "provider":   "GPS",
-            "isMocked":   false,
+            // Both tiers' spellings — the two APIs were built separately and each ignores
+            // members it does not know, so one payload serves both without a translation layer.
+            "isMocked":   simulated,   // B2B
+            "isMock":     simulated,   // B2C
         ]
-        if location.horizontalAccuracy >= 0 { body["accuracyMetres"] = location.horizontalAccuracy }
-        if location.speed             >= 0 { body["speedKmh"]       = location.speed * 3.6 }
-        if location.verticalAccuracy  >= 0 { body["altitudeMetres"] = location.altitude }
+        body["accuracyMetres"] = location.horizontalAccuracy
+        if location.speed  >= 0 { body["speedKmh"] = location.speed * 3.6 }
+        if location.verticalAccuracy >= 0 {
+            body["altitudeMetres"] = location.altitude   // B2B
+            body["altitude"]       = location.altitude   // B2C
+        }
+        // course is negative when iOS cannot determine a heading (stationary); sending 0 there
+        // would point the map's marker due north for no reason.
+        if location.course >= 0 { body["bearing"] = location.course }
+
+        // Battery: B2B stores a 0–1 fraction, B2C a 0–100 percent. -1 means unavailable.
+        let battery = UIDevice.current.batteryLevel
+        if battery >= 0 {
+            body["batteryLevel"]   = Double(battery)                  // B2B, 0–1
+            body["batteryPercent"] = Int((battery * 100).rounded())   // B2C, 0–100
+        }
 
         postJSON(to: url, body: body, token: token) { statusCode, error in
             if let err = error {

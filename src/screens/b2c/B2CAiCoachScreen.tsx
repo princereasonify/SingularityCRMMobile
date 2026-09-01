@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mic, TrendingUp, TrendingDown, Minus, Users } from 'lucide-react-native';
 import { Card, StatTile, SectionLabel } from '../../components/ui';
-import { Pagination, Avatar, StatusBadge } from '../../components/crud';
+import { Pagination, Avatar } from '../../components/crud';
 import { b2cRecordingService } from '../../api/b2c/b2cRecordingService';
 import { CounselorQualityOverviewItem } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /**
  * B2CAiCoach — admin (B2CAdmin) COUNSELOR QUALITY OVERVIEW. Read-only dashboard
@@ -24,6 +24,7 @@ const initialsOf = (name?: string) =>
 
 export const B2CAiCoachScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
 
   // Score → theme colour band (mirrors the web dimColor thresholds).
   const scoreColor = (score: number) =>
@@ -65,6 +66,14 @@ export const B2CAiCoachScreen = () => {
     return { color: T.sub, icon: <Minus size={12} color={T.sub} strokeWidth={2.4} /> };
   };
 
+  // Two leaderboard cards per row on a tablet; computed width, because two 49% cards plus
+  // the gap overflow the row and collapse the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView
@@ -89,12 +98,12 @@ export const B2CAiCoachScreen = () => {
 
             <View style={s.section}>
               <SectionLabel>Counselor Quality Overview</SectionLabel>
-              <View style={{ gap: 8 }}>
+              <View style={s.cards}>
                 {items.map(c => {
                   const tm = trendMeta(c.trend);
                   const sc = scoreColor(c.avgScore || 0);
                   return (
-                    <Card key={c.counselorId} style={{ padding: 14 }}>
+                    <Card key={c.counselorId} style={{ padding: 14, width: cardW }}>
                       <View style={s.rowTop}>
                         <Avatar initials={initialsOf(c.counselorName)} />
                         <View style={{ flex: 1 }}>
@@ -132,23 +141,30 @@ export const B2CAiCoachScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 14 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  cell: { width: '47.5%', flexGrow: 1 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  cell: { flexBasis: r.isTablet ? '31%' : '47.5%', flexGrow: 1 },
   section: { gap: 2 },
+  cards: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 2 },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 2 },
   trend: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, height: 22, borderRadius: 11 },
-  trendTxt: { fontSize: rf(11), fontWeight: '700' },
+  trendTxt: { fontSize: r.rf(11), fontWeight: '700' },
   scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   track: { flex: 1, height: 8, borderRadius: 999, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 999 },
-  scoreVal: { fontSize: rf(14), fontWeight: '800', width: 30, textAlign: 'right' },
+  scoreVal: { fontSize: r.rf(14), fontWeight: '800', minWidth: 30, textAlign: 'right' },
   pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, paddingHorizontal: 20, alignItems: 'center', gap: 10 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: 18 },
 });

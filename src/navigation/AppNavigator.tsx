@@ -5,7 +5,15 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { applyLoginOrientation, applyAuthedOrientation } from '../utils/orientation';
 
 export const navigationRef = createNavigationContainerRef<any>();
+
+/**
+ * True when something above the screen (an offline or notification banner) has already painted
+ * the status-bar strip and paid its safe-area inset. AppTopbar reads this so it never adds a
+ * second inset underneath — the cause of the empty band between a banner and the topbar.
+ */
+export const StatusStripConsumed = React.createContext(false);
 import { createDrawerNavigator } from '@react-navigation/drawer';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   LayoutDashboard, Contact2, GitBranch,
   Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
@@ -128,6 +136,9 @@ import { B2CAiCoachScreen } from '../screens/b2c/B2CAiCoachScreen';
 // B2C phase-1 stub screens (mirror the web B2C sidebars).
 import { B2CPipelineScreen } from '../screens/b2c/B2CPipelineScreen';
 import { B2CUserManagementScreen } from '../screens/b2c/B2CUserManagementScreen';
+import { B2CCreateUserScreen } from '../screens/b2c/B2CCreateUserScreen';
+import { B2CCreateCounselorScreen } from '../screens/b2c/B2CCreateCounselorScreen';
+import { B2CAllowanceConfigScreen } from '../screens/b2c/B2CAllowanceConfigScreen';
 import { B2CApprovalCenterScreen } from '../screens/b2c/B2CApprovalCenterScreen';
 import { B2CLiveTrackingScreen } from '../screens/b2c/B2CLiveTrackingScreen';
 import { B2CGeoComplianceScreen } from '../screens/b2c/B2CGeoComplianceScreen';
@@ -579,7 +590,11 @@ function B2CAdminDrawer() {
       <Drawer.Screen name="Pipeline" component={B2CPipelineScreen} />
       <Drawer.Screen name="Counselors" component={B2CCounselorsListScreen} />
       <Drawer.Screen name="User Management" component={B2CUserManagementScreen} />
+      {/* Also pushed by the "Add" button on User Management / Counselors. */}
+      <Drawer.Screen name="Add User" component={B2CCreateUserScreen} />
+      <Drawer.Screen name="Add Counselor" component={B2CCreateCounselorScreen} />
       <Drawer.Screen name="Approval Center" component={B2CApprovalCenterScreen} />
+      <Drawer.Screen name="Allowance Config" component={B2CAllowanceConfigScreen} />
       <Drawer.Screen name="Live Tracking" component={B2CLiveTrackingScreen} />
       <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
       <Drawer.Screen name="Geo Compliance" component={B2CGeoComplianceScreen} />
@@ -684,11 +699,13 @@ const getRoleNavigator = (role: string) => {
 };
 
 // ─── Offline Banner ───────────────────────────────────────────────────────────
-function OfflineBanner() {
+function OfflineBanner({ onVisible }: { onVisible: (v: boolean) => void }) {
   const { isOnline, pendingCount } = useOffline();
+  const { top: insetsTop } = useSafeAreaInsets();
+  useEffect(() => { onVisible(!isOnline); }, [isOnline, onVisible]);
   if (isOnline) return null;
   return (
-    <View style={bannerStyles.bar}>
+    <View style={[bannerStyles.bar, { paddingTop: insetsTop + 6 }]}>
       <Text style={bannerStyles.text}>
         No internet — {pendingCount > 0 ? `${pendingCount} actions queued` : 'offline mode'}
       </Text>
@@ -697,15 +714,17 @@ function OfflineBanner() {
 }
 const bannerStyles = StyleSheet.create({
   bar: {
-    backgroundColor: '#C2492D', paddingVertical: 6, paddingHorizontal: 16, // spec error
+    backgroundColor: '#C2492D', paddingBottom: 6, paddingHorizontal: 16,   // paddingTop = inset + 6
     alignItems: 'center',
   },
   text: { color: '#FFF', fontSize: 12, fontWeight: '600' },
 });
 
 // ─── Notification Permission Banner ──────────────────────────────────────────
-function NotifPermBanner() {
+function NotifPermBanner({ onVisible }: { onVisible: (v: boolean) => void }) {
   const [visible, setVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  useEffect(() => { onVisible(visible); }, [visible, onVisible]);
 
   useEffect(() => {
     messaging().hasPermission().then((status) => {
@@ -726,7 +745,7 @@ function NotifPermBanner() {
   };
 
   return (
-    <View style={notifBannerStyles.bar}>
+    <View style={[notifBannerStyles.bar, { paddingTop: insets.top + 10 }]}>
       <GradientBackground glow={false} style={StyleSheet.absoluteFillObject} />
       <Text style={notifBannerStyles.text} numberOfLines={2}>
         Enable push notifications to stay updated on leads, deals, and approvals
@@ -746,7 +765,7 @@ const notifBannerStyles = StyleSheet.create({
   // Sunstone gradient — the app's brand surface, identical in light and dark.
   bar: {
     overflow: 'hidden',
-    paddingHorizontal: 16, paddingVertical: 10,
+    paddingHorizontal: 16, paddingBottom: 10,   // paddingTop = safe-area inset + 10
     flexDirection: 'row', alignItems: 'center', gap: 10,
   },
   text: { flex: 1, color: '#FFF', fontSize: rf(12), fontWeight: '500' },
@@ -771,14 +790,20 @@ export const AppNavigator = () => {
     else applyLoginOrientation();
   }, [user]);
 
+  // Which banner (if any) is currently painting the status-bar strip.
+  const [offlineShown, setOfflineShown] = useState(false);
+  const [notifShown, setNotifShown] = useState(false);
+  const stripConsumed = offlineShown || notifShown;
+
   if (isLoading) return <LoadingSpinner fullScreen message="Loading..." />;
 
   const MainTabs = user ? getRoleNavigator(user.role) : null;
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <OfflineBanner />
-      {user && <NotifPermBanner />}
+      <StatusStripConsumed.Provider value={stripConsumed}>
+      <OfflineBanner onVisible={setOfflineShown} />
+      {user && <NotifPermBanner onVisible={setNotifShown} />}
       <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!user ? (
           <>
@@ -854,14 +879,16 @@ export const AppNavigator = () => {
             <Stack.Screen name="B2CLeadDetail" component={B2CLeadDetailScreen} options={{ animation: 'slide_from_right' }} />
             {/* Lead → deal conversion, reached from the lead detail (phase-1 stub). */}
             <Stack.Screen name="B2CConvert" component={B2CConvertScreen} options={{ animation: 'slide_from_right' }} />
+            {/* Add only. Editing happens in the lead detail screen's own modal — one edit
+               path, so the two can't drift apart. */}
             <Stack.Screen name="B2CAddLead" component={B2CAddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="B2CEditLead" component={B2CAddLeadScreen} options={{ animation: 'slide_from_bottom' }} />
             {/* Native geo-visit (Agent) + session recording/AI coaching (Counselor) flows. */}
             <Stack.Screen name="B2CAgentVisit" component={B2CAgentVisitScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="B2CCounselorRecording" component={B2CCounselorRecordingScreen} options={{ animation: 'slide_from_bottom' }} />
           </>
         )}
       </Stack.Navigator>
+      </StatusStripConsumed.Provider>
       {/* Role splash — plays once over the freshly-mounted app after an
           interactive login. The app renders underneath meanwhile, so there is no
           second loading beat when the splash clears. */}

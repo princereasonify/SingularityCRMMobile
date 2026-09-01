@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Users, Phone, CalendarClock, TrendingUp, ChevronRight } from 'lucide-react-native';
 import { Screen, Card, StatTile, SectionLabel, Badge } from '../../components/ui';
@@ -10,7 +10,8 @@ import { B2CAgentDashboardDto } from '../../types/b2c';
 import { formatRelativeDate } from '../../utils/formatting';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { label } from '../../utils/labels';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -25,11 +26,11 @@ const stageTint = (T: any, stage: string): string => {
 
 export const AgentDashboard = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const nav = useNavigation<any>();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
-  const kpiCols = width >= 720 ? 4 : 2;               // iPad landscape → 4-up, phone → 2-up
-  const kpiWidth = (kpiCols === 4 ? '23.5%' : '48.5%');
+  // 4-up only when there is genuinely room for four values side by side.
+  const kpiWidth = r.width >= 900 ? '22%' : r.isTablet ? '30%' : '47%';
 
   const [data, setData] = useState<B2CAgentDashboardDto | null>(null);
   const [team, setTeam] = useState<any[]>([]);
@@ -54,8 +55,16 @@ export const AgentDashboard = () => {
   const capColor = capPct >= 90 ? T.danger : capPct >= 70 ? T.warning : T.accent;
   const pipeMax = Math.max(1, ...((data?.myPipeline || []).map(p => p.count)));
 
+  // The page gutter and the readable-width cap both track the live window size.
+  // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
+  // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
+  // push the last card under the home indicator.
+  const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  const st = useMemo(() => makeStyles(r), [r]);
+
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+    <Screen scroll contentStyle={content} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
       {/* Greeting */}
       <Text style={[st.date, { color: T.sub }]}>
         {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -72,10 +81,10 @@ export const AgentDashboard = () => {
         <>
           {/* KPI grid — responsive columns */}
           <View style={[st.grid, { marginTop: 16 }]}>
-            <StatTile style={{ width: kpiWidth }} label="Active Leads" value={`${data.activeLeads}/${data.leadCap}`} sub={`${capPct}% of cap`} icon={<Users size={16} color={T.accent} />} />
-            <StatTile style={{ width: kpiWidth }} label="Contacted" value={data.contactedToday} sub="today" tint={T.info} icon={<Phone size={16} color={T.info} />} />
-            <StatTile style={{ width: kpiWidth }} label="Follow-ups" value={data.followUpsDueToday} sub="due today" tint={T.warning} icon={<CalendarClock size={16} color={T.warning} />} />
-            <StatTile style={{ width: kpiWidth }} label="Converted" value={data.conversionsThisMonth} sub="this month" tint={T.success} icon={<TrendingUp size={16} color={T.success} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Active Leads" value={`${data.activeLeads}/${data.leadCap}`} sub={`${capPct}% of cap`} icon={<Users size={16} color={T.accent} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Contacted" value={data.contactedToday} sub="today" tint={T.info} icon={<Phone size={16} color={T.info} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Follow-ups" value={data.followUpsDueToday} sub="due today" tint={T.warning} icon={<CalendarClock size={16} color={T.warning} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Converted" value={data.conversionsThisMonth} sub="this month" tint={T.success} icon={<TrendingUp size={16} color={T.success} />} />
           </View>
 
           {/* Capacity bar */}
@@ -96,7 +105,7 @@ export const AgentDashboard = () => {
               <Card>
                 {data.myPipeline.map((p, i) => (
                   <View key={p.stage} style={[st.pipeRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                    <Text style={[st.pipeLbl, { color: T.sub }]} numberOfLines={1}>{p.stage}</Text>
+                    <Text style={[st.pipeLbl, { color: T.sub }]} numberOfLines={1}>{label(p.stage)}</Text>
                     <View style={[st.pipeTrack, { backgroundColor: T.line }]}>
                       <View style={{ width: `${(p.count / pipeMax) * 100}%`, height: '100%', borderRadius: 999, backgroundColor: stageTint(T, p.stage) }} />
                     </View>
@@ -154,21 +163,34 @@ export const AgentDashboard = () => {
   );
 };
 
-const st = StyleSheet.create({
-  date: { fontSize: rf(12.5), fontWeight: '500' },
-  hello: { fontSize: rf(22), fontWeight: '700', letterSpacing: -0.4, marginTop: 3 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  date: { fontSize: r.rf(12.5), fontWeight: '500' },
+  hello: { fontSize: r.rf(22), fontWeight: '700', letterSpacing: -0.4, marginTop: 3 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  // width is the base; flexGrow spends whatever the row has left, so the last tile in a
+  // line never leaves a dead strip down the right-hand edge.
+  cell: { flexGrow: 1 },
   capTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  capLbl: { fontSize: rf(14), fontWeight: '600' },
-  capVal: { fontSize: rf(12.5), fontWeight: '600' },
+  capLbl: { fontSize: r.rf(14), fontWeight: '600' },
+  capVal: { fontSize: r.rf(12.5), fontWeight: '600' },
   track: { height: 8, borderRadius: 999, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 999 },
   pipeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  pipeLbl: { fontSize: rf(12.5), fontWeight: '500', width: 118 },
-  pipeTrack: { flex: 1, height: 8, borderRadius: 999, overflow: 'hidden' },
-  pipeCount: { fontSize: rf(13.5), fontWeight: '800', width: 30, textAlign: 'right' },
+  // The stage name is the content; the bar is decoration. Pinning the label to a fixed 108pt on
+  // phones cut "Appointment Booked" and "Counseling Booked" down to "Appointment B…" — the row
+  // then reads as a truncated mystery with a number beside it. Sizing the label to its text and
+  // letting the track surrender width (down to a floor where it is still a readable bar) keeps
+  // every stage name whole on the narrowest phone, without changing the tablet layout materially.
+  pipeLbl: { fontSize: r.rf(12.5), fontWeight: '500', flexShrink: 1, flexGrow: 0, maxWidth: r.isTablet ? 260 : 180 },
+  pipeTrack: { flex: 1, minWidth: 56, height: 8, borderRadius: 999, overflow: 'hidden' },
+  pipeCount: { fontSize: r.rf(13.5), fontWeight: '800', minWidth: 30, textAlign: 'right' },
   taskRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  taskTitle: { fontSize: rf(13.5), fontWeight: '600' },
-  taskSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 2 },
-  empty: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
+  taskTitle: { fontSize: r.rf(13.5), fontWeight: '600' },
+  taskSub: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 2 },
+  empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
 });

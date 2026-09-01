@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TextInput, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
 import { IndianRupee, Send, Car } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
@@ -8,7 +8,8 @@ import { DateInput } from '../../components/common/DateInput';
 import { b2cAllowanceService } from '../../api/b2c/b2cAllowanceService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { todayStr } from '../../utils/dates';
 
 /** Web parity: B2CMyAllowances.jsx — submit a travel/visit allowance claim + track approval. */
 interface AllowanceRow {
@@ -26,11 +27,6 @@ interface RateConfig {
   fixedDailyAmount: number;
 }
 
-const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 const fmtDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const fmtRupee = (v: number) => `₹${(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -42,9 +38,9 @@ const emptyForm = () => ({ claimDate: todayStr(), visitCount: '', distanceKm: ''
 
 export const B2CMyAllowancesScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 720;
+  const isWide = r.width >= 720;
 
   const [claims, setClaims] = useState<AllowanceRow[]>([]);
   const [cfg, setCfg] = useState<RateConfig | null>(null);
@@ -103,8 +99,23 @@ export const B2CMyAllowancesScreen = () => {
     }
   };
 
+  // The page gutter and the readable-width cap both track the live window size.
+  // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
+  // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
+  // push the last card under the home indicator.
+  const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+    <Screen scroll contentStyle={content} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
       <Text style={[s.subtitle, { color: T.sub }]}>Submit a claim and track its approval status</Text>
 
       <Btn
@@ -122,9 +133,9 @@ export const B2CMyAllowancesScreen = () => {
           <Text style={[s.emptyTxt, { color: T.dim }]}>Tap Submit Claim to request an allowance.</Text>
         </View>
       ) : (
-        <View style={{ gap: 8, marginTop: 16 }}>
+        <View style={[s.grid, { marginTop: 16 }]}>
           {claims.map(c => (
-            <ListCard key={c.id} style={{ alignItems: 'flex-start' }}>
+            <ListCard key={c.id} style={{ alignItems: 'flex-start', width: cardW }}>
               <View style={[s.iconTile, { backgroundColor: T.accentSoft }]}>
                 <Car size={18} color={T.accent} strokeWidth={ICON_STROKE} />
               </View>
@@ -203,27 +214,34 @@ export const B2CMyAllowancesScreen = () => {
   );
 };
 
-export default B2CMyAllowancesScreen;
-
-const s = StyleSheet.create({
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   row: { flexDirection: 'row', gap: 12 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconTile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
-  amount: { fontSize: rf(13.5), fontWeight: '700', marginTop: 2 },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
+  amount: { fontSize: r.rf(13.5), fontWeight: '700', marginTop: 2 },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8, marginTop: 16 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
   textarea: { minHeight: 72, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
   durationRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12,
   },
-  durationLbl: { fontSize: rf(12.5), fontWeight: '500' },
+  durationLbl: { fontSize: r.rf(12.5), fontWeight: '500' },
   durationVal: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  durationTxt: { fontSize: rf(14), fontWeight: '700' },
-  hint: { fontSize: rf(11), fontWeight: '500' },
+  durationTxt: { fontSize: r.rf(14), fontWeight: '700' },
+  hint: { fontSize: r.rf(11), fontWeight: '500' },
 });
+
+export default B2CMyAllowancesScreen;
+

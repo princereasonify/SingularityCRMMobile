@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Plus, Mail, Trash2, Edit2 } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
@@ -12,7 +13,7 @@ import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CCounselorListDto, B2CCounselorDetailDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
 
 const PAGE_SIZE = 20;
 
@@ -21,11 +22,11 @@ const initialsOf = (name?: string) =>
 
 const toggleIn = (arr: string[], v: string) => (arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
 
-const emptyCreate = { name: '', email: '', mobile: '', password: '', bio: '', specializations: [] as string[] };
-
 export const B2CCounselorsListScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
+  const navigation = useNavigation<any>();
 
   const [items, setItems] = useState<B2CCounselorListDto[]>([]);
   const [specs, setSpecs] = useState<string[]>([]);
@@ -35,10 +36,6 @@ export const B2CCounselorsListScreen = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [saving, setSaving] = useState(false);
-
-  // Create modal
-  const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreate);
 
   // Detail + edit
   const [detail, setDetail] = useState<B2CCounselorDetailDto | null>(null);
@@ -59,7 +56,13 @@ export const B2CCounselorsListScreen = () => {
   }, []);
 
   useEffect(() => { setLoading(true); fetchList(1); }, [fetchList]);
-  useEffect(() => { b2cCounselorService.getSpecializations().then(r => setSpecs(r.data ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    b2cCounselorService.getSpecializations().then(res => setSpecs(res.data ?? [])).catch(() => {});
+  }, []);
+
+  // Add Counselor is its own (drawer) screen and this one stays mounted behind it, so the
+  // list has to refetch on the way back or a brand-new counselor simply isn't there.
+  useFocusEffect(useCallback(() => { fetchList(page); }, [fetchList, page]));
 
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
@@ -85,26 +88,6 @@ export const B2CCounselorsListScreen = () => {
     setEditing(true);
   };
 
-  const handleCreate = async () => {
-    setSaving(true);
-    try {
-      await b2cCounselorService.createCounselor({
-        name: createForm.name.trim(),
-        email: createForm.email.trim(),
-        mobile: createForm.mobile.trim(),
-        password: createForm.password,
-        specializations: createForm.specializations,
-        bio: createForm.bio.trim() || null,
-      });
-      setShowCreate(false); setCreateForm(emptyCreate);
-      invalidateFieldStaff();
-      toast.success('Counsellor created');
-      setPage(1); setLoading(true); fetchList(1);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to create counselor');
-    } finally { setSaving(false); }
-  };
-
   const handleUpdate = async () => {
     if (!detail || !editForm.name.trim()) return;
     setSaving(true);
@@ -127,6 +110,8 @@ export const B2CCounselorsListScreen = () => {
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
+    // `saving` gates the confirm button too — a slow delete used to accept a second tap.
+    setSaving(true);
     try {
       await b2cCounselorService.deleteCounselor(confirmDelete.id);
       setConfirmDelete(null); setDetail(null);
@@ -135,10 +120,17 @@ export const B2CCounselorsListScreen = () => {
       fetchList(page);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to delete counselor');
-    }
+    } finally { setSaving(false); }
   };
 
-  const createValid = createForm.name.trim() && createForm.email.trim() && createForm.mobile.trim() && createForm.password.length >= 6;
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -156,9 +148,9 @@ export const B2CCounselorsListScreen = () => {
           </View>
         ) : (
           <>
-            <View style={{ gap: 8 }}>
+            <View style={s.grid}>
               {items.map(c => (
-                <ListCard key={c.id} onPress={() => openDetail(c.id)} style={{ alignItems: 'flex-start' }}>
+                <ListCard key={c.id} onPress={() => openDetail(c.id)} style={{ alignItems: 'flex-start', width: cardW }}>
                   <Avatar initials={initialsOf(c.name)} />
                   <View style={{ flex: 1, gap: 4 }}>
                     <View style={s.rowTop}>
@@ -181,39 +173,13 @@ export const B2CCounselorsListScreen = () => {
       </ScrollView>
 
       <View style={s.fabWrap}>
-        <Fab label="Add Counselor" onPress={() => { setCreateForm(emptyCreate); setShowCreate(true); }}>
+        <Fab label="Add Counselor" onPress={() => navigation.navigate('Add Counselor')}>
           <Plus size={22} color="#FFF" strokeWidth={2.4} />
         </Fab>
       </View>
 
-      {/* Create modal */}
-      <FormModal visible={showCreate} title="Add Counselor" onClose={() => setShowCreate(false)}
-        footer={<><Btn label="Cancel" variant="secondary" onPress={() => setShowCreate(false)} style={{ flex: 1 }} /><Btn label={saving ? 'Saving…' : 'Create'} onPress={handleCreate} loading={saving} disabled={!createValid || saving} style={{ flex: 1 }} /></>}
-      >
-        <View style={{ gap: 12 }}>
-          <Input label="Name *" value={createForm.name} onChangeText={v => setCreateForm(f => ({ ...f, name: v }))} placeholder="Counselor name" />
-          <Input label="Email *" value={createForm.email} onChangeText={v => setCreateForm(f => ({ ...f, email: v }))} keyboardType="email-address" autoCapitalize="none" placeholder="counselor@email.com" />
-          <Input label="Mobile *" value={createForm.mobile} onChangeText={v => setCreateForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
-          <Input label="Temporary Password *" value={createForm.password} onChangeText={v => setCreateForm(f => ({ ...f, password: v }))} secureTextEntry placeholder="Min 6 characters" />
-          <Field label="Specializations">
-            {specs.length === 0 ? <Text style={{ color: T.dim, fontSize: rf(12) }}>No specializations available</Text> : (
-              <View style={s.chipWrap}>
-                {specs.map(sp => (
-                  <Chip key={sp} label={sp} active={createForm.specializations.includes(sp)} onPress={() => setCreateForm(f => ({ ...f, specializations: toggleIn(f.specializations, sp) }))} />
-                ))}
-              </View>
-            )}
-          </Field>
-          <Field label="Bio">
-            <View style={[s.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
-              <TextInput value={createForm.bio} onChangeText={v => setCreateForm(f => ({ ...f, bio: v }))} placeholder="Short bio…" placeholderTextColor={T.dim} multiline style={[s.textareaTxt, { color: T.text }]} />
-            </View>
-          </Field>
-        </View>
-      </FormModal>
-
       {/* Detail / edit modal */}
-      <FormModal visible={detailLoading || !!detail} title={editing ? 'Edit Counselor' : (detail?.name || 'Counselor')} onClose={() => { setDetail(null); setEditing(false); }}
+      <FormModal wide={r.isTablet} visible={detailLoading || !!detail} title={editing ? 'Edit Counselor' : (detail?.name || 'Counselor')} onClose={() => { setDetail(null); setEditing(false); }}
         footer={!detail ? undefined : editing
           ? <><Btn label="Cancel" variant="secondary" onPress={() => setEditing(false)} style={{ flex: 1 }} /><Btn label={saving ? 'Saving…' : 'Save'} onPress={handleUpdate} loading={saving} disabled={saving || !editForm.name.trim()} style={{ flex: 1 }} /></>
           : <><Btn label="Delete" variant="dangerGhost" onPress={() => detail && setConfirmDelete({ id: detail.id, name: detail.name })} icon={<Trash2 size={14} color={T.danger} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} /><Btn label="Edit" onPress={startEdit} icon={<Edit2 size={14} color="#FFF" strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} /></>}
@@ -247,7 +213,7 @@ export const B2CCounselorsListScreen = () => {
             <Input label="Name" value={editForm.name} onChangeText={v => setEditForm(f => ({ ...f, name: v }))} placeholder="Counselor name" />
             <Input label="Mobile" value={editForm.mobile} onChangeText={v => setEditForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
             <Field label="Specializations">
-              {specs.length === 0 ? <Text style={{ color: T.dim, fontSize: rf(12) }}>No specializations available</Text> : (
+              {specs.length === 0 ? <Text style={{ color: T.dim, fontSize: r.rf(12) }}>No specializations available</Text> : (
                 <View style={s.chipWrap}>
                   {specs.map(sp => (
                     <Chip key={sp} label={sp} active={editForm.specializations.includes(sp)} onPress={() => setEditForm(f => ({ ...f, specializations: toggleIn(f.specializations, sp) }))} />
@@ -268,32 +234,38 @@ export const B2CCounselorsListScreen = () => {
         )}
       </FormModal>
 
-      <ConfirmModal visible={!!confirmDelete} title="Delete Counselor" message={`Remove ${confirmDelete?.name}? This cannot be undone.`} icon={<Trash2 size={24} color={T.danger} />} tone="danger" confirmLabel="Delete" onConfirm={handleDelete} onCancel={() => setConfirmDelete(null)} />
+      <ConfirmModal visible={!!confirmDelete} title="Delete Counselor" message={`Remove ${confirmDelete?.name}? This cannot be undone.`} icon={<Trash2 size={24} color={T.danger} />} tone="danger" confirmLabel={saving ? 'Deleting…' : 'Delete'} loading={saving} onConfirm={handleDelete} onCancel={() => setConfirmDelete(null)} />
     </SafeAreaView>
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  count: { fontSize: rf(11.5), fontWeight: '600' },
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  count: { fontSize: r.rf(11.5), fontWeight: '600' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
-  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
-  fabWrap: { position: 'absolute', right: 18, bottom: 22 },
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: r.rs(46), alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
+  fabWrap: { position: 'absolute', right: r.rs(18), bottom: r.rs(22) },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  textarea: { minHeight: 72, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
+  textarea: { minHeight: r.rs(72), borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: r.rs(52) },
   dHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dMail: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  bio: { fontSize: rf(13), fontWeight: '500', lineHeight: 19 },
+  bio: { fontSize: r.rf(13), fontWeight: '500', lineHeight: r.rf(19) },
   statsRow: { flexDirection: 'row', gap: 10 },
   statBox: { flex: 1, alignItems: 'center', gap: 2 },
-  statNum: { fontSize: rf(18), fontWeight: '800' },
-  statLbl: { fontSize: rf(10.5), fontWeight: '600' },
-  activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  statNum: { fontSize: r.rf(18), fontWeight: '800' },
+  statLbl: { fontSize: r.rf(10.5), fontWeight: '600' },
+  activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MIN_TAP },
 });

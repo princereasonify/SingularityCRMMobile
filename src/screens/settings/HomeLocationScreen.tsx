@@ -8,6 +8,7 @@ import { Navigation, MapPin, Home, CheckCircle, Save, WifiOff, TriangleAlert } f
 import Geolocation from '@react-native-community/geolocation';
 
 import { authApi } from '../../api/auth';
+import { apiClient } from '../../api/client';
 import { useOffline } from '../../context/OfflineContext';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Btn, Input, Dropdown, Segmented } from '../../components/crud';
@@ -30,8 +31,6 @@ import { rf, isTabletDevice } from '../../utils/responsive';
  */
 
 // Same key the Places/Geocode calls in AddSchoolScreen use — from .env via @env,
-// not pasted into the screen. See the note on GOOGLE_MAPS_API_KEY in constants.ts.
-import { GOOGLE_MAPS_API_KEY as GMAPS_KEY } from '../../utils/constants';
 
 // Safe import — react-native-maps may not be configured on all setups.
 // Preserved verbatim: the provider/permission wiring is native-configured.
@@ -65,26 +64,29 @@ const MAP_TYPES: { label: string; value: MapKind }[] = [
 ];
 
 // ─── Google Places / Geocode (REST — same endpoints AddSchoolScreen uses) ─────
+/**
+ * Place/address lookups go through OUR SERVER, not straight to Google.
+ *
+ * These are Google *web service* APIs, and Google's "restrict this key to my Android app"
+ * setting does not cover them — only the Maps SDK. So a key used here from the device could
+ * never be locked down, and shipping one inside the APK means anyone can extract and spend it.
+ * The server holds an IP-restricted key instead, and caches repeat lookups.
+ *
+ * The response is Google's own JSON, unchanged, so the parsing below is exactly as it was.
+ */
 async function placesAutocomplete(input: string): Promise<{ label: string; value: string }[]> {
   if (!input.trim()) return [];
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
-      `?input=${encodeURIComponent(input)}` +
-      `&types=establishment|geocode` +
-      `&components=country:in` +
-      `&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/places/autocomplete', { params: { input } });
     return (json.predictions ?? []).map((p: any) => ({ label: p.description, value: p.place_id }));
   } catch { return []; }
 }
 
 async function placeDetails(placeId: string): Promise<{ lat: number; lng: number; address: string } | null> {
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/details/json` +
-      `?place_id=${placeId}&fields=geometry,formatted_address&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/places/details', {
+      params: { placeId, fields: 'geometry,formatted_address' },
+    });
     const r = json.result;
     if (!r?.geometry) return null;
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, address: r.formatted_address ?? '' };
@@ -95,10 +97,7 @@ async function placeDetails(placeId: string): Promise<{ lat: number; lng: number
 async function textSearch(query: string): Promise<{ lat: number; lng: number; address: string } | null> {
   if (!query.trim()) return null;
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
-      `?query=${encodeURIComponent(query)}&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/places/textsearch', { params: { query } });
     const first = json.results?.[0];
     if (!first?.geometry) return null;
     return {
@@ -111,8 +110,9 @@ async function textSearch(query: string): Promise<{ lat: number; lng: number; ad
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/geocode/reverse', {
+      params: { latlng: `${lat},${lng}` },
+    });
     return json.results?.[0]?.formatted_address ?? '';
   } catch { return ''; }
 }

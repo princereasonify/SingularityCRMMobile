@@ -366,7 +366,13 @@ export const B2CAdmin_NAV: NavGroup[] = [
     label: 'Admin',
     items: [
       { route: 'User Management', label: 'User Management', icon: 'Users' },
+      // Web reaches these two only through the "Add" button on the list page. On mobile the
+      // drawer IS the navigation, so they get their own entries as well — the list screens
+      // still push the same routes.
+      { route: 'Add User', label: 'Add User', icon: 'Users' },
+      { route: 'Add Counselor', label: 'Add Counselor', icon: 'Users' },
       { route: 'Approval Center', label: 'Approval Center', icon: 'Onboarding' },
+      { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
     ],
   },
   {
@@ -385,10 +391,8 @@ export const B2CAdmin_NAV: NavGroup[] = [
     label: 'Support',
     items: [{ route: 'Counseling', label: 'Counseling', icon: 'Users' }],
   },
-  {
-    label: 'Finance',
-    items: [{ route: 'Billing', label: 'Billing', icon: 'Payment' }],
-  },
+  // Billing is hidden from the B2C admin on both platforms (web's Sidebar.jsx dropped it too).
+  // The screen and its route stay registered, so restoring it is a one-line change.
 ];
 
 export const Agent_NAV: NavGroup[] = [

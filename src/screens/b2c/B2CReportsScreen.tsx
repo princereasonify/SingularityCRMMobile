@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Users, CheckCircle, TrendingUp, IndianRupee, MapPin, Award, MessageSquare, HeartHandshake } from 'lucide-react-native';
@@ -10,7 +10,7 @@ import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { FEEDBACK_TYPES } from '../../api/b2c/b2cObjectionService';
 import { B2CAdminDashboardDto, AgentPerformanceItem, StageFunnelItem, SourceBreakdownItem } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /**
  * B2CReportsScreen — read-only admin reports. Mirrors web B2CReports.jsx:
@@ -38,11 +38,16 @@ const spaceCase = (s?: string) => (s || '').replace(/([A-Z])/g, ' $1').trim();
 
 export const B2CReportsScreen = () => {
   const T = useAppTheme();
-  const { width } = useWindowDimensions();
-  // Full-width KPI grid: 4-across on tablet/landscape, 2-across on phone portrait.
-  const cols = width >= 700 ? 4 : 2;
-  const GAP = 12;
-  const tileW = (width - 28 - GAP * (cols - 1)) / cols; // scroll padding is 14 each side
+  const r = useResponsive();
+  // Full-width KPI grid: 4-across on a tablet, 2-across on a phone. Derived from the LIVE
+  // window and the same gutter the scroll container uses, so a rotation re-measures rather
+  // than leaving the last tile hanging off the edge.
+  const cols = r.isTablet ? 4 : 2;
+  const GAP = r.gap;
+  const usable = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
+  const tileW = (usable - GAP * (cols - 1)) / cols;
+  // The bar labels ("Not Interested", "Wants a discount") need room before the track starts.
+  const barLabelW = r.isTablet ? 170 : 110;
 
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +142,7 @@ export const B2CReportsScreen = () => {
         <SectionLabel>Pipeline Funnel</SectionLabel>
         <Card>
           {pipeline.length > 0
-            ? <View style={{ gap: 10 }}>{pipeline.map(i => <Bar key={i.stage} label={i.stage} count={i.count} max={pipeMax} color={T.accent} w={110} />)}</View>
+            ? <View style={{ gap: 10 }}>{pipeline.map(i => <Bar key={i.stage} label={i.stage} count={i.count} max={pipeMax} color={T.accent} w={barLabelW} />)}</View>
             : <Text style={[s.muted, { color: T.dim }]}>No data.</Text>}
         </Card>
 
@@ -164,7 +169,7 @@ export const B2CReportsScreen = () => {
             ? <View style={{ gap: 10 }}>
                 {feedback.map(f => {
                   const m = fbMeta(f.feedback);
-                  return <Bar key={f.feedback} label={m.label} count={f.count} max={fbMax} color={toneColor(m.tone)} w={130} />;
+                  return <Bar key={f.feedback} label={m.label} count={f.count} max={fbMax} color={toneColor(m.tone)} w={barLabelW} />;
                 })}
               </View>
             : <Text style={[s.muted, { color: T.dim }]}>No feedback captured this month.</Text>}
@@ -188,9 +193,9 @@ export const B2CReportsScreen = () => {
 
         <SectionLabel>Agent Performance</SectionLabel>
         {agents.length > 0 ? (
-          <View style={{ gap: 8 }}>
+          <View style={[s.grid, { gap: GAP }]}>
             {agents.map(a => (
-              <ListCard key={a.agentId} style={{ alignItems: 'flex-start' }}>
+              <ListCard key={a.agentId} style={{ alignItems: 'flex-start', width: cardW }}>
                 <View style={{ flex: 1, gap: 6 }}>
                   <View style={s.agentTop}>
                     <Text style={[s.agentName, { color: T.text }]} numberOfLines={1}>{a.agentName}</Text>
@@ -211,6 +216,15 @@ export const B2CReportsScreen = () => {
       </>
     );
   };
+
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -237,41 +251,47 @@ export const B2CReportsScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500', marginBottom: 2 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500', marginBottom: 2 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
 
-  muted: { fontSize: rf(12.5), fontWeight: '500' },
+  muted: { fontSize: r.rf(12.5), fontWeight: '500' },
 
   // bars (pipeline + feedback)
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barLabel: { fontSize: rf(11.5), fontWeight: '500' },
+  barLabel: { fontSize: r.rf(11.5), fontWeight: '500' },
   barTrack: { flex: 1, height: 22, borderRadius: 8, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 8, alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 7 },
-  barVal: { color: '#FFF', fontSize: rf(10.5), fontWeight: '700' },
+  barVal: { color: '#FFF', fontSize: r.rf(10.5), fontWeight: '700' },
 
   // sources
   srcRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  srcName: { fontSize: rf(12.5), fontWeight: '500', flex: 1 },
-  srcCount: { fontSize: rf(13), fontWeight: '700' },
+  srcName: { fontSize: r.rf(12.5), fontWeight: '500', flex: 1 },
+  srcCount: { fontSize: r.rf(13), fontWeight: '700' },
 
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
 
   // counseling health cells
   healthCell: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6 },
-  healthLbl: { fontSize: rf(11.5), fontWeight: '600' },
-  healthVal: { fontSize: rf(20), fontWeight: '800', letterSpacing: -0.4 },
+  healthLbl: { fontSize: r.rf(11.5), fontWeight: '600' },
+  healthVal: { fontSize: r.rf(20), fontWeight: '800', letterSpacing: -0.4 },
 
   // agent rows
   agentTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  agentName: { fontSize: rf(13.5), fontWeight: '700', flexShrink: 1 },
+  agentName: { fontSize: r.rf(13.5), fontWeight: '700', flexShrink: 1 },
   agentMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  agentStat: { fontSize: rf(11.5), fontWeight: '500' },
+  agentStat: { fontSize: r.rf(11.5), fontWeight: '500' },
 
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8, marginTop: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
 });

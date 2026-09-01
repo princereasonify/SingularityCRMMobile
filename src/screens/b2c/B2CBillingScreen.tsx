@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Alert, Linking, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Wallet, Check, ExternalLink } from 'lucide-react-native';
-import { ICON_STROKE } from '../../components/common/Icon';
 import { Btn, FormModal } from '../../components/crud';
 import { Card, SectionLabel } from '../../components/ui';
 import { b2cBillingService } from '../../api/b2c/b2cBillingService';
@@ -14,12 +13,13 @@ import {
 import { formatCurrency, formatRelativeDate } from '../../utils/formatting';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
 
 const POLL_MS = 5000;
 
 export const B2CBillingScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
   const [wallet, setWallet] = useState<B2CWalletDto | null>(null);
   const [txns, setTxns] = useState<B2CBillingTransactionDto[]>([]);
@@ -118,6 +118,8 @@ export const B2CBillingScreen = () => {
     setSelectedPlan(null);
   };
 
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={s.scroll}
@@ -173,7 +175,7 @@ export const B2CBillingScreen = () => {
       </ScrollView>
 
       {/* Buy modal */}
-      <FormModal visible={showBuy} title="Top up credits" onClose={closeBuy}
+      <FormModal wide={r.isTablet} visible={showBuy} title="Top up credits" onClose={closeBuy}
         footer={
           pendingOrderId ? (
             <>
@@ -228,30 +230,38 @@ export const B2CBillingScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 14 },
-  walletCard: { alignItems: 'center', paddingVertical: 22 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  // A wallet and a transaction ledger are a single column of short rows, so this caps
+  // narrower than the general reading width rather than stretching across a whole iPad.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: Math.min(r.maxContentWidth, 760), width: '100%', alignSelf: 'center' },
+  walletCard: { alignItems: 'center', paddingVertical: r.rs(22) },
   walletTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   walletIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  walletLabel: { fontSize: rf(12.5), fontWeight: '600' },
-  walletBalance: { fontSize: rf(40), fontWeight: '800', letterSpacing: -1, marginTop: 10 },
-  walletSub: { fontSize: rf(12), fontWeight: '500' },
+  walletLabel: { fontSize: r.rf(12.5), fontWeight: '600' },
+  walletBalance: { fontSize: r.rf(40), fontWeight: '800', letterSpacing: -1, marginTop: 10 },
+  walletSub: { fontSize: r.rf(12), fontWeight: '500' },
   walletMeta: { flexDirection: 'row', gap: 16, marginTop: 10 },
-  metaTxt: { fontSize: rf(11.5), fontWeight: '600' },
+  metaTxt: { fontSize: r.rf(11.5), fontWeight: '600' },
   section: { gap: 2 },
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  txDesc: { fontSize: rf(13), fontWeight: '600' },
-  txMeta: { fontSize: rf(11), fontWeight: '500', marginTop: 2 },
-  txAmt: { fontSize: rf(15), fontWeight: '800' },
-  empty: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
-  planRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1.5, padding: 14 },
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: r.rs(11) },
+  txDesc: { fontSize: r.rf(13), fontWeight: '600' },
+  txMeta: { fontSize: r.rf(11), fontWeight: '500', marginTop: 2 },
+  txAmt: { fontSize: r.rf(15), fontWeight: '800' },
+  empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
+  planRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1.5, padding: 14, minHeight: MIN_TAP },
   planTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  planName: { fontSize: rf(14.5), fontWeight: '700' },
-  planSub: { fontSize: rf(12), fontWeight: '500', marginTop: 2 },
-  planPrice: { fontSize: rf(16), fontWeight: '800' },
-  planPer: { fontSize: rf(10.5), fontWeight: '500' },
+  planName: { fontSize: r.rf(14.5), fontWeight: '700' },
+  planSub: { fontSize: r.rf(12), fontWeight: '500', marginTop: 2 },
+  planPrice: { fontSize: r.rf(16), fontWeight: '800' },
+  planPer: { fontSize: r.rf(10.5), fontWeight: '500' },
   pendIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  pendTitle: { fontSize: rf(15), fontWeight: '700', textAlign: 'center' },
-  pendTxt: { fontSize: rf(12.5), fontWeight: '500', lineHeight: 19, textAlign: 'center' },
+  pendTitle: { fontSize: r.rf(15), fontWeight: '700', textAlign: 'center' },
+  pendTxt: { fontSize: r.rf(12.5), fontWeight: '500', lineHeight: 19, textAlign: 'center' },
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Plus, Power, Edit2, Trash2 } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
@@ -12,7 +13,7 @@ import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CUserListDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
 
 const PAGE_SIZE = 20;
 
@@ -25,17 +26,14 @@ type StatusFilter = '' | 'active' | 'inactive';
 // Local alias — this screen only ever deals with the roster list shape.
 type B2CUser = B2CUserListDto;
 
-const emptyCreate = {
-  name: '', email: '', mobile: '', address: '', password: '',
-  role: 'Agent' as 'Agent' | 'Counselor', bio: '', isManager: false, agentIds: [] as number[],
-};
-
 const toggleId = (arr: number[], id: number) =>
   arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
 
 export const B2CUserManagementScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
+  const navigation = useNavigation<any>();
 
   const [users, setUsers] = useState<B2CUser[]>([]);
   const [allAgents, setAllAgents] = useState<B2CUser[]>([]);
@@ -48,15 +46,10 @@ export const B2CUserManagementScreen = () => {
   const [status, setStatus] = useState<StatusFilter>('');
   const [page, setPage] = useState(1);
 
-  // Create
-  const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreate);
-  const [createErr, setCreateErr] = useState('');
-
   // Edit
   const [editUser, setEditUser] = useState<B2CUser | null>(null);
   const [editForm, setEditForm] = useState({
-    name: '', mobile: '', address: '', bio: '', isActive: true, isManager: false, agentIds: [] as number[],
+    name: '', mobile: '', address: '', bio: '', referralCode: '', isActive: true, isManager: false, agentIds: [] as number[],
   });
   const [editErr, setEditErr] = useState('');
 
@@ -85,6 +78,10 @@ export const B2CUserManagementScreen = () => {
       .catch(() => setAllAgents([]));
   }, []);
 
+  // Add User is its own screen now, and drawer screens stay mounted — so coming back from a
+  // create has to refetch, otherwise the new user is missing until the next pull-to-refresh.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
   const filtered = useMemo(() => users.filter(u => {
     if (status === 'active' && !u.isActive) return false;
     if (status === 'inactive' && u.isActive) return false;
@@ -98,33 +95,6 @@ export const B2CUserManagementScreen = () => {
 
   const roleColor = (r: string) => (r === 'Counselor' ? T.info : T.accent);
 
-  // ── Create ──────────────────────────────────────────────────────────────
-  const openCreate = () => { setCreateForm(emptyCreate); setCreateErr(''); setShowCreate(true); };
-
-  const handleCreate = async () => {
-    setSaving(true); setCreateErr('');
-    try {
-      await b2cUserService.createUser({
-        name: createForm.name.trim(),
-        email: createForm.email.trim(),
-        mobile: createForm.mobile.trim(),
-        address: createForm.address.trim() || undefined,
-        password: createForm.password,
-        role: createForm.role,
-        bio: createForm.role === 'Counselor' ? createForm.bio.trim() || undefined : undefined,
-        isManager: createForm.role === 'Agent' ? createForm.isManager : false,
-        agentIds: createForm.role === 'Agent' && createForm.isManager ? createForm.agentIds : undefined,
-      });
-      setShowCreate(false);
-      invalidateFieldStaff();
-      toast.success('User created');
-      setLoading(true); load();
-    } catch (err: any) {
-      setCreateErr(err?.response?.data?.message || 'Failed to create user');
-      toast.error(err?.response?.data?.message || 'Failed to create user');
-    } finally { setSaving(false); }
-  };
-
   // ── Edit ────────────────────────────────────────────────────────────────
   const openEdit = (u: B2CUser) => {
     setEditUser(u);
@@ -133,6 +103,7 @@ export const B2CUserManagementScreen = () => {
       mobile: u.mobile || '',
       address: u.address || '',
       bio: u.bio || '',
+      referralCode: u.referralCode || '',
       isActive: u.isActive ?? true,
       isManager: u.isManager ?? false,
       agentIds: u.teamAgentIds || [],
@@ -149,6 +120,7 @@ export const B2CUserManagementScreen = () => {
         mobile: editForm.mobile.trim(),
         address: editForm.address.trim(),
         bio: editUser.role === 'Counselor' ? editForm.bio.trim() : undefined,
+        referralCode: editForm.referralCode.trim(),
         isActive: editForm.isActive,
         isManager: editUser.role === 'Agent' ? editForm.isManager : undefined,
         agentIds: editUser.role === 'Agent' && editForm.isManager ? editForm.agentIds : undefined,
@@ -205,11 +177,17 @@ export const B2CUserManagementScreen = () => {
     } finally { setSaving(false); }
   };
 
-  const createValid =
-    createForm.name.trim() && createForm.email.trim() && createForm.mobile.trim() && createForm.password.length >= 6;
-
   // Agents this manager can oversee (exclude the edited user itself).
   const editSelectableAgents = allAgents.filter(a => a.id !== editUser?.id);
+
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -222,18 +200,23 @@ export const B2CUserManagementScreen = () => {
       >
         <Text style={[s.count, { color: T.dim }]}>{users.length} agents &amp; counselors</Text>
 
-        <SearchBar value={search} onChangeText={setSearch} placeholder="Search by name, email, mobile…" />
-
-        <Segmented<RoleFilter>
-          value={role}
-          onChange={setRole}
-          options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }]}
-        />
-        <Segmented<StatusFilter>
-          value={status}
-          onChange={setStatus}
-          options={[{ label: 'Any', value: '' }, { label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }]}
-        />
+        {/* Three stacked full-width filter bars waste most of an iPad's width, so they
+            share a row once there is room for them. */}
+        <View style={s.filters}>
+          <SearchBar value={search} onChangeText={setSearch} placeholder="Search by name, email, mobile…" style={s.filterCell} />
+          <Segmented<RoleFilter>
+            value={role}
+            onChange={setRole}
+            style={s.filterCell}
+            options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }]}
+          />
+          <Segmented<StatusFilter>
+            value={status}
+            onChange={setStatus}
+            style={s.filterCell}
+            options={[{ label: 'Any', value: '' }, { label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }]}
+          />
+        </View>
 
         {loading ? (
           <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
@@ -244,9 +227,9 @@ export const B2CUserManagementScreen = () => {
           </View>
         ) : (
           <>
-            <View style={{ gap: 8 }}>
+            <View style={s.grid}>
               {paged.map(u => (
-                <ListCard key={u.id} style={{ alignItems: 'flex-start' }}>
+                <ListCard key={u.id} style={{ alignItems: 'flex-start', width: cardW }}>
                   <Avatar initials={initialsOf(u.name)} color={roleColor(u.role)} />
                   <View style={{ flex: 1, gap: 4 }}>
                     <View style={s.rowTop}>
@@ -256,6 +239,11 @@ export const B2CUserManagementScreen = () => {
                     </View>
                     {!!u.email && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{u.email}</Text>}
                     {!!u.mobile && <Text style={[s.sub, { color: T.sub }]} numberOfLines={1}>{u.mobile}</Text>}
+                    {!!u.referralCode && (
+                      <View style={[s.refChip, { backgroundColor: T.accentSoft }]}>
+                        <Text style={[s.refChipTxt, { color: T.accent }]}>{u.referralCode}</Text>
+                      </View>
+                    )}
                     {u.isManager && (
                       <Text style={[s.manager, { color: T.accent }]}>
                         MANAGER · {u.teamSize ?? 0} agent{u.teamSize === 1 ? '' : 's'}
@@ -288,78 +276,14 @@ export const B2CUserManagementScreen = () => {
       </ScrollView>
 
       <View style={s.fabWrap}>
-        <Fab label="Add User" onPress={openCreate}>
+        <Fab label="Add User" onPress={() => navigation.navigate('Add User')}>
           <Plus size={22} color="#FFF" strokeWidth={2.4} />
         </Fab>
       </View>
 
-      {/* Create */}
-      <FormModal
-        visible={showCreate}
-        title="Add User"
-        onClose={() => setShowCreate(false)}
-        footer={
-          <>
-            <Btn label="Cancel" variant="secondary" onPress={() => setShowCreate(false)} style={{ flex: 1 }} />
-            <Btn label={saving ? 'Creating…' : 'Create User'} onPress={handleCreate} loading={saving} disabled={!createValid || saving} style={{ flex: 1 }} />
-          </>
-        }
-      >
-        <View style={{ gap: 12 }}>
-          {!!createErr && <Text style={[s.err, { color: T.danger }]}>{createErr}</Text>}
-          <Field label="Role">
-            <Segmented<'Agent' | 'Counselor'>
-              value={createForm.role}
-              onChange={v => setCreateForm(f => ({ ...f, role: v }))}
-              options={[{ label: 'Agent', value: 'Agent' }, { label: 'Counselor', value: 'Counselor' }]}
-            />
-          </Field>
-          <Input label="Full Name *" value={createForm.name} onChangeText={v => setCreateForm(f => ({ ...f, name: v }))} placeholder="Full name" />
-          <Input label="Email *" value={createForm.email} onChangeText={v => setCreateForm(f => ({ ...f, email: v }))} keyboardType="email-address" autoCapitalize="none" placeholder="user@example.com" />
-          <Input label="Mobile *" value={createForm.mobile} onChangeText={v => setCreateForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
-          <Input label="Password *" value={createForm.password} onChangeText={v => setCreateForm(f => ({ ...f, password: v }))} secureTextEntry placeholder="Temporary password (min 6 chars)" />
-          <Field label="Address">
-            <Input value={createForm.address} onChangeText={v => setCreateForm(f => ({ ...f, address: v }))} placeholder="Residential / base address" multiline />
-          </Field>
-          {createForm.role === 'Counselor' && (
-            <Field label="Bio">
-              <Input value={createForm.bio} onChangeText={v => setCreateForm(f => ({ ...f, bio: v }))} placeholder="Short bio…" multiline />
-            </Field>
-          )}
-          {createForm.role === 'Agent' && (
-            <View style={{ gap: 12 }}>
-              <Checkbox
-                on={createForm.isManager}
-                onToggle={() => setCreateForm(f => ({ ...f, isManager: !f.isManager }))}
-                label="Also a Manager (oversees a team)"
-              />
-              {createForm.isManager && (
-                <Field label="Agents under this manager">
-                  <View style={[s.pickList, { borderColor: T.line }]}>
-                    {allAgents.length === 0 ? (
-                      <Text style={[s.pickEmpty, { color: T.dim }]}>No agents yet.</Text>
-                    ) : (
-                      <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 10 }}>
-                        {allAgents.map(a => (
-                          <Checkbox
-                            key={a.id}
-                            on={createForm.agentIds.includes(a.id)}
-                            onToggle={() => setCreateForm(f => ({ ...f, agentIds: toggleId(f.agentIds, a.id) }))}
-                            label={a.name}
-                          />
-                        ))}
-                      </ScrollView>
-                    )}
-                  </View>
-                </Field>
-              )}
-            </View>
-          )}
-        </View>
-      </FormModal>
-
       {/* Edit */}
       <FormModal
+        wide={r.isTablet}
         visible={!!editUser}
         title="Edit User"
         onClose={() => setEditUser(null)}
@@ -375,6 +299,13 @@ export const B2CUserManagementScreen = () => {
             {!!editErr && <Text style={[s.err, { color: T.danger }]}>{editErr}</Text>}
             <Input label="Full Name" value={editForm.name} onChangeText={v => setEditForm(f => ({ ...f, name: v }))} placeholder="Full name" />
             <Input label="Mobile" value={editForm.mobile} onChangeText={v => setEditForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
+            <Input
+              label="Referral Code"
+              value={editForm.referralCode}
+              onChangeText={v => setEditForm(f => ({ ...f, referralCode: v.toUpperCase() }))}
+              placeholder="e.g. VIR@123"
+              autoCapitalize="characters"
+            />
             <Field label="Address">
               <Input value={editForm.address} onChangeText={v => setEditForm(f => ({ ...f, address: v }))} placeholder="Residential / base address" multiline />
             </Field>
@@ -447,24 +378,35 @@ export const B2CUserManagementScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  count: { fontSize: rf(11.5), fontWeight: '600' },
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  count: { fontSize: r.rf(11.5), fontWeight: '600' },
+  filters: { flexDirection: r.isTablet ? 'row' : 'column', gap: r.gap, alignItems: 'stretch' },
+  filterCell: r.isTablet ? { flex: 1 } : {},
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
-  manager: { fontSize: rf(10.5), fontWeight: '800', letterSpacing: 0.3 },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
+  manager: { fontSize: r.rf(10.5), fontWeight: '800', letterSpacing: 0.3 },
+  refChip: { alignSelf: 'flex-start', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, marginTop: 2 },
+  refChipTxt: { fontSize: r.rf(11), fontWeight: '800', letterSpacing: 0.2 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
   pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
-  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
-  fabWrap: { position: 'absolute', right: 18, bottom: 22 },
-  err: { fontSize: rf(12), fontWeight: '600' },
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: r.rs(46), alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
+  fabWrap: { position: 'absolute', right: r.rs(18), bottom: r.rs(22) },
+  err: { fontSize: r.rf(12), fontWeight: '600' },
   pickList: { borderWidth: 1.5, borderRadius: 13, padding: 12 },
-  pickEmpty: { fontSize: rf(12), fontWeight: '500' },
-  activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pickEmpty: { fontSize: r.rf(12), fontWeight: '500' },
+  activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MIN_TAP },
 });
 
 export default B2CUserManagementScreen;

@@ -49,6 +49,7 @@ import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, 
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { DateInput } from '../../components/common/DateInput';
 import { trackingApi } from '../../api/tracking';
+import { apiClient } from '../../api/client';
 import type { VehicleType } from '../../api/tracking';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { leadsApi } from '../../api/leads';
@@ -66,7 +67,6 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ScreenHeader } from '../../components/common/ScreenHeader';
-import { GOOGLE_MAPS_API_KEY } from '../../utils/constants';
 import {
   formatCurrency,
   formatDate,
@@ -1247,10 +1247,11 @@ export const LiveTrackingScreen = () => {
    * Google with `optimizeWaypoints: true` — Google's TSP solver — then shows the total
    * distance / drive time and relabels the stops in the solved order.
    *
-   * The JS Maps SDK isn't available in React Native, so this uses the Directions *web
-   * service* with GOOGLE_MAPS_API_KEY (constants.ts:18, from .env). That is an
-   * established pattern in this app: HomeLocationScreen.tsx, SchoolsListScreen.tsx and
-   * AddSchoolScreen.tsx all call maps.googleapis.com REST endpoints with the same key.
+   * The JS Maps SDK isn't available in React Native, so this needs the Directions *web
+   * service* — and Google's "restrict to my Android app" key setting does not cover web
+   * services, only the Maps SDK. So the call goes through our own server, which holds an
+   * IP-restricted key; the app ships no Google key for this at all. HomeLocationScreen,
+   * SchoolsListScreen and AddSchoolScreen route their lookups the same way.
    *
    * Every non-OK path falls back to the server's `visitOrder` ordering and records the
    * literal `status` + `error_message` for the on-screen notice, so a key without the
@@ -1271,13 +1272,6 @@ export const LiveTrackingScreen = () => {
       setOptimizedStops(null);
       setRouteStats(null);
       setRouteOptFailure(null);
-      return;
-    }
-
-    if (!GOOGLE_MAPS_API_KEY) {
-      setOptimizedStops(null);
-      setRouteStats(null);
-      setRouteOptFailure({ status: 'NO_API_KEY', detail: 'GOOGLE_MAPS_API_KEY is empty in .env.' });
       return;
     }
 
@@ -1306,23 +1300,17 @@ export const LiveTrackingScreen = () => {
       : `${stops[0].schoolLatitude},${stops[0].schoolLongitude}`;
     const last = stops[stops.length - 1];
     const destination = `${last.schoolLatitude},${last.schoolLongitude}`;
-    const waypointParam = middle.length
-      ? `&waypoints=${encodeURIComponent(`optimize:true|${middle.map(s => `${s.schoolLatitude},${s.schoolLongitude}`).join('|')}`)}`
-      : '';
-
-    const url =
-      'https://maps.googleapis.com/maps/api/directions/json' +
-      `?origin=${encodeURIComponent(origin)}` +
-      `&destination=${encodeURIComponent(destination)}` +
-      waypointParam +
-      `&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
+    const waypoints = middle.length
+      ? `optimize:true|${middle.map(s => `${s.schoolLatitude},${s.schoolLongitude}`).join('|')}`
+      : undefined;
 
     setRouteOptLoading(true);
 
     (async () => {
       try {
-        const res = await fetch(url);
-        const json = await res.json();
+        const { data: json } = await apiClient.get('/routes/directions', {
+          params: { origin, destination, waypoints, mode: 'driving' },
+        });
         if (cancelled) return;
 
         const status: string = json?.status ?? 'UNKNOWN_ERROR';

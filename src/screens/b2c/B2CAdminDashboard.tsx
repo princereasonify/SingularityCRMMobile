@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Users, TrendingUp, IndianRupee, UserCheck, GraduationCap, Percent } from 'lucide-react-native';
 import { Screen, Card, StatTile, SectionLabel } from '../../components/ui';
 import { StatusBadge } from '../../components/crud';
@@ -8,7 +8,8 @@ import { B2CAdminDashboardDto } from '../../types/b2c';
 import { formatCurrency } from '../../utils/formatting';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { label } from '../../utils/labels';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -17,9 +18,13 @@ const greeting = () => {
 
 export const B2CAdminDashboard = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
-  const kpiWidth = width >= 720 ? '31.5%' : '47.5%';
+  // Six KPI tiles: 3-up on a tablet, 2-up on a phone — never one long clipped row.
+  // Bases are deliberately under a clean division: every tile also flexGrows, so it fills
+  // the row, and no rounding error can bump the last one onto a line of its own.
+  const kpiWidth = r.isTablet ? '30%' : '46%';
+  const geoWidth = r.isTablet ? '22%' : '46%';
 
   const [data, setData] = useState<B2CAdminDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,8 +44,16 @@ export const B2CAdminDashboard = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // The page gutter and the readable-width cap both track the live window size.
+  // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
+  // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
+  // push the last card under the home indicator.
+  const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+    <Screen scroll contentStyle={content} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
       <Text style={[s.date, { color: T.sub }]}>
         {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
       </Text>
@@ -69,7 +82,7 @@ export const B2CAdminDashboard = () => {
                 <Card>
                   {data.pipeline.map((p, i) => (
                     <View key={p.stage} style={[s.row, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                      <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{p.stage}</Text>
+                      <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{label(p.stage)}</Text>
                       <Text style={[s.rowVal, { color: T.text }]}>{p.count}</Text>
                     </View>
                   ))}
@@ -119,7 +132,7 @@ export const B2CAdminDashboard = () => {
                       { label: 'Pending Selfies', value: data.geoCompliance.pendingSelfies ?? 0, color: T.warning },
                       { label: 'Pass Rate', value: `${data.geoCompliance.passRatePercent ?? 100}%`, color: T.success },
                     ].map(item => (
-                      <View key={item.label} style={[s.geoBox, { backgroundColor: T.cardAlt }]}>
+                      <View key={item.label} style={[s.geoBox, { backgroundColor: T.cardAlt, width: geoWidth }]}>
                         <Text style={[s.geoNum, { color: item.color }]}>{item.value}</Text>
                         <Text style={[s.geoLbl, { color: T.dim }]} numberOfLines={1}>{item.label}</Text>
                       </View>
@@ -148,19 +161,24 @@ export const B2CAdminDashboard = () => {
   );
 };
 
-const s = StyleSheet.create({
-  date: { fontSize: rf(12.5), fontWeight: '500' },
-  hello: { fontSize: rf(22), fontWeight: '700', letterSpacing: -0.4, marginTop: 3 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  date: { fontSize: r.rf(12.5), fontWeight: '500' },
+  hello: { fontSize: r.rf(22), fontWeight: '700', letterSpacing: -0.4, marginTop: 3 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
   cell: { flexGrow: 1 },
-  section: { gap: 2, marginTop: 14 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 11 },
-  rowLabel: { fontSize: rf(13), fontWeight: '600', flex: 1 },
-  rowSub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 2 },
-  rowVal: { fontSize: rf(14), fontWeight: '800' },
-  empty: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
-  geoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  geoBox: { width: '47.5%', flexGrow: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 3 },
-  geoNum: { fontSize: rf(20), fontWeight: '800' },
-  geoLbl: { fontSize: rf(11), fontWeight: '600' },
+  section: { gap: 2, marginTop: r.rs(14) },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: r.rs(11) },
+  rowLabel: { fontSize: r.rf(13), fontWeight: '600', flex: 1 },
+  rowSub: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 2 },
+  rowVal: { fontSize: r.rf(14), fontWeight: '800' },
+  empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
+  geoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  geoBox: { flexGrow: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 3 },
+  geoNum: { fontSize: r.rf(20), fontWeight: '800' },
+  geoLbl: { fontSize: r.rf(11), fontWeight: '600' },
 });

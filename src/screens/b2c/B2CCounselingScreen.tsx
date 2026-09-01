@@ -11,7 +11,7 @@ import { b2cObjectionService, OBJECTION_TYPES } from '../../api/b2c/b2cObjection
 import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /** Web parity: B2CCounseling.jsx pages 20 at a time. */
 const PAGE_SIZE = 20;
@@ -56,6 +56,7 @@ interface Objection {
 
 export const B2CCounselingScreen = ({ navigation }: any) => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
 
   const statusMeta = (st: string) =>
@@ -151,6 +152,15 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
   const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, totalCount);
 
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled"
@@ -231,11 +241,11 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
           </View>
         ) : (
           <>
-            <View style={{ gap: 8 }}>
+            <View style={s.grid}>
               {visible.map(o => {
                 const meta = statusMeta(o.status);
                 return (
-                  <ListCard key={o.id} style={s.rowCard}>
+                  <ListCard key={o.id} style={[s.rowCard, { width: cardW }]}>
                     <Avatar initials={initialsOf(o.studentName)} />
                     <View style={{ flex: 1, gap: 4 }}>
                       <View style={s.rowTop}>
@@ -273,14 +283,12 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
 
                       <View style={s.actions}>
                         <Btn
-                          small
                           variant={o.aiBrief ? 'secondary' : 'soft'}
                           label={o.aiBrief ? 'Brief' : 'No brief'}
                           icon={<Sparkles size={13} color={o.aiBrief ? T.text : T.accent} strokeWidth={ICON_STROKE} />}
                           onPress={() => openBrief(o)}
                         />
                         <Btn
-                          small
                           variant="secondary"
                           label="Open lead"
                           icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
@@ -306,6 +314,7 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
 
       {/* AI brief modal — read-only oversight + regenerate */}
       <FormModal
+        wide={r.isTablet}
         visible={!!briefRow}
         title="AI Counseling Brief"
         onClose={() => setBriefRow(null)}
@@ -352,42 +361,49 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
 
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  stat: { flexBasis: '47%', flexGrow: 1, minWidth: 140 },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  stat: { flexBasis: r.isTablet ? '22%' : '47%', flexGrow: 1, minWidth: 140 },
 
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   filterRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   countRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  count: { fontSize: rf(11.5), fontWeight: '600' },
+  count: { fontSize: r.rf(11.5), fontWeight: '600' },
 
   viewingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: -2 },
-  viewing: { fontSize: rf(12), fontWeight: '500', flexShrink: 1 },
+  viewing: { fontSize: r.rf(12), fontWeight: '500', flexShrink: 1 },
 
   rowCard: { alignItems: 'flex-start' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'wrap' },
   metaRow: { flexDirection: 'row', alignItems: 'center' },
   visitRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  type: { fontSize: rf(12.5), fontWeight: '600' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  type: { fontSize: r.rf(12.5), fontWeight: '600' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
 
   pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
 
-  briefMeta: { fontSize: rf(12), fontWeight: '500' },
+  briefMeta: { fontSize: r.rf(12), fontWeight: '500' },
   briefBox: { borderRadius: 13, borderWidth: 1, padding: 12 },
-  briefTxt: { fontSize: rf(13), fontWeight: '500', lineHeight: 20 },
-  blockLabel: { fontSize: rf(11.5), fontWeight: '700' },
+  briefTxt: { fontSize: r.rf(13), fontWeight: '500', lineHeight: 20 },
+  blockLabel: { fontSize: r.rf(11.5), fontWeight: '700' },
   errBox: { borderRadius: 11, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
-  errTxt: { fontSize: rf(12), fontWeight: '600' },
+  errTxt: { fontSize: r.rf(12), fontWeight: '600' },
 });

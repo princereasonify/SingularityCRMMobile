@@ -1,6 +1,6 @@
 import { apiClient } from '../client';
 import { PaginatedResult } from '../../types';
-import { B2CUserListDto } from '../../types/b2c';
+import { B2CUserListDto, B2CReferralOptionDto } from '../../types/b2c';
 
 /**
  * B2C user management API — mirrors B2CUsersController.cs (base "api/b2c/users").
@@ -12,10 +12,22 @@ export interface B2CUserQuery { page?: number; pageSize?: number; role?: string;
 export interface CreateB2CUserBody {
   name: string; email: string; mobile: string; password: string; role: string;
   address?: string; bio?: string; isManager?: boolean; agentIds?: number[];
+
+  /**
+   * Payout / KYC. All four are [Required] on the server's create DTO — a staff member who
+   * cannot be paid is not a usable record, so they are collected up front rather than chased
+   * later. Validated against the same rules as PayoutValidation server-side.
+   */
+  panNumber: string;
+  aadhaarNumber: string;
+  accountNumber: string;
+  ifscCode: string;
 }
 export interface UpdateB2CUserBody {
   name?: string; mobile?: string; address?: string; bio?: string;
   isActive?: boolean; isManager?: boolean; agentIds?: number[];
+  /** B2CAdmin override of the auto-generated referral code — trimmed/upper-cased server-side. */
+  referralCode?: string;
 }
 
 export const b2cUserService = {
@@ -28,4 +40,12 @@ export const b2cUserService = {
   deleteUser: (id: number) => apiClient.delete(`${BASE}/${id}`),
   // Manager (Agent+IsManager) or admin: the agents reporting to this manager.
   getMyTeam: () => apiClient.get<any[]>(`${BASE}/team`),
+
+  /**
+   * Referral codes this caller may credit on a new lead. An admin gets every active agent and
+   * counselor; an agent or counselor gets only their own, so the form can prefill it and leave
+   * nothing to choose. Required on create — the server rejects a lead without one.
+   */
+  getReferralOptions: () =>
+    apiClient.get<B2CReferralOptionDto[]>(`${BASE}/referral-codes`),
 };

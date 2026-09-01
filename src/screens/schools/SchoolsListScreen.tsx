@@ -11,11 +11,13 @@ import {
 } from 'lucide-react-native';
 
 import { schoolsApi } from '../../api/schools';
+import { apiClient } from '../../api/client';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { dashboardApi } from '../../api/dashboard';
 import { School, SchoolWithPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { DateInput } from '../../components/common/DateInput';
+import { KeyField } from '../../components/common/KeyField';
 import { Icon, ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, IconBtn, Field, Input, SearchBar, Checkbox, Segmented, Trigger, Dropdown,
@@ -25,7 +27,6 @@ import {
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
-import { GOOGLE_MAPS_API_KEY as GMAPS_KEY } from '../../utils/constants';
 
 /** Web parity: the list pages 10 at a time and reports the server's real totalCount.
  *  Schools.jsx `const limit = 10` — both platforms now match the house page size. */
@@ -96,26 +97,25 @@ function memberOptions(members: Member[]) {
  * already calls (react-native-maps has no JS Places SDK, so web's
  * `maps.places.Autocomplete` becomes a debounced fetch).
  */
+/**
+ * Place/address lookups go through OUR SERVER, not straight to Google — these are Google web
+ * service APIs, which the "restrict to my Android app" key setting does not cover, so a key
+ * used here from the device could never be locked down. Google's own JSON comes back
+ * unchanged, so the parsing below is exactly as it was.
+ */
 async function placesAutocomplete(input: string): Promise<{ label: string; value: string }[]> {
   if (!input.trim()) return [];
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
-      `?input=${encodeURIComponent(input)}` +
-      `&types=establishment|geocode` +
-      `&components=country:in` +
-      `&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/places/autocomplete', { params: { input } });
     return (json.predictions ?? []).map((p: any) => ({ label: p.description, value: p.place_id }));
   } catch { return []; }
 }
 
 async function placeDetails(placeId: string): Promise<{ lat: number; lng: number; address: string } | null> {
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/details/json` +
-      `?place_id=${placeId}&fields=geometry,formatted_address&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/places/details', {
+      params: { placeId, fields: 'geometry,formatted_address' },
+    });
     const r = json.result;
     if (!r?.geometry) return null;
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, address: r.formatted_address ?? '' };
@@ -124,8 +124,9 @@ async function placeDetails(placeId: string): Promise<{ lat: number; lng: number
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GMAPS_KEY}`;
-    const json = await (await fetch(url)).json();
+    const { data: json } = await apiClient.get('/routes/geocode/reverse', {
+      params: { latlng: `${lat},${lng}` },
+    });
     return json.results?.[0]?.formatted_address ?? '';
   } catch { return ''; }
 }
@@ -1058,7 +1059,7 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
 
               {/* Location search overlay — web's <MapSearchBar enableMapClick /> */}
               <View style={s.mapSearchOverlay} pointerEvents="box-none">
-                <Input
+                <KeyField
                   value={locQuery}
                   onChangeText={setLocQuery}
                   placeholder="Search location on map…"
@@ -1070,15 +1071,20 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
                       </TouchableOpacity>
                     ) : undefined
                   }
+                  // Suggestions render INSIDE the keyboard sheet (not as a sibling dropdown
+                  // outside it), so picking a location still works while the custom
+                  // keyboard is open instead of being hidden behind it.
+                  belowValue={
+                    showLocSug ? (
+                      <Dropdown
+                        style={{ width: '100%' }}
+                        maxHeight={160}
+                        options={locSuggestions}
+                        onSelect={pickLocSuggestion}
+                      />
+                    ) : undefined
+                  }
                 />
-                {showLocSug && (
-                  <Dropdown
-                    style={{ width: '100%' }}
-                    maxHeight={200}
-                    options={locSuggestions}
-                    onSelect={pickLocSuggestion}
-                  />
-                )}
               </View>
             </View>
           )

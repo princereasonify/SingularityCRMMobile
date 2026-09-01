@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ClipboardList, CalendarClock, CalendarDays, Sparkles, Mic, ChevronRight } from 'lucide-react-native';
 import { Screen, Card, StatTile, SectionLabel } from '../../components/ui';
@@ -8,7 +8,7 @@ import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { B2CCounselorDashboardDto } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -19,10 +19,11 @@ const initialsOf = (name?: string) =>
 
 export const CounselorDashboard = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const nav = useNavigation<any>();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
-  const kpiWidth = width >= 720 ? '23.5%' : '48.5%';
+  // 4-up only when there is genuinely room for four values side by side.
+  const kpiWidth = r.width >= 900 ? '22%' : r.isTablet ? '30%' : '47%';
 
   const [data, setData] = useState<B2CCounselorDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,8 +37,16 @@ export const CounselorDashboard = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // The page gutter and the readable-width cap both track the live window size.
+  // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
+  // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
+  // push the last card under the home indicator.
+  const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  const st = useMemo(() => makeStyles(r), [r]);
+
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
+    <Screen scroll contentStyle={content} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}>
       {/* Greeting */}
       <Text style={[st.date, { color: T.sub }]}>
         {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -46,7 +55,7 @@ export const CounselorDashboard = () => {
         <Text style={[st.hello, { color: T.text }]} numberOfLines={1}>
           {greeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
         </Text>
-        <Btn label="Start Session" small icon={<Mic size={15} color={T.onAccent} />} onPress={() => nav.navigate('Recording')} />
+        <Btn label="Start Session" icon={<Mic size={15} color={T.onAccent} />} onPress={() => nav.navigate('Recording')} />
       </View>
 
       {loading ? (
@@ -57,10 +66,10 @@ export const CounselorDashboard = () => {
         <>
           {/* KPI grid — responsive columns */}
           <View style={[st.grid, { marginTop: 16 }]}>
-            <StatTile style={{ width: kpiWidth }} label="Active Assignments" value={data.totalActiveAssignments} icon={<ClipboardList size={16} color={T.accent} />} />
-            <StatTile style={{ width: kpiWidth }} label="Sessions Today" value={data.sessionsToday} tint={T.info} icon={<CalendarClock size={16} color={T.info} />} />
-            <StatTile style={{ width: kpiWidth }} label="This Week" value={data.sessionsThisWeek} tint={T.warning} icon={<CalendarDays size={16} color={T.warning} />} />
-            <StatTile style={{ width: kpiWidth }} label="Avg AI Score" value={data.avgAiScore != null ? data.avgAiScore.toFixed(1) : '—'} tint={T.success} icon={<Sparkles size={16} color={T.success} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Active Assignments" value={data.totalActiveAssignments} icon={<ClipboardList size={16} color={T.accent} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Sessions Today" value={data.sessionsToday} tint={T.info} icon={<CalendarClock size={16} color={T.info} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="This Week" value={data.sessionsThisWeek} tint={T.warning} icon={<CalendarDays size={16} color={T.warning} />} />
+            <StatTile style={[st.cell, { width: kpiWidth }]} label="Avg AI Score" value={data.avgAiScore != null ? data.avgAiScore.toFixed(1) : '—'} tint={T.success} icon={<Sparkles size={16} color={T.success} />} />
           </View>
 
           {/* Assigned leads */}
@@ -90,13 +99,21 @@ export const CounselorDashboard = () => {
   );
 };
 
-const st = StyleSheet.create({
-  date: { fontSize: rf(12.5), fontWeight: '500' },
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  date: { fontSize: r.rf(12.5), fontWeight: '500' },
   helloRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 3 },
-  hello: { fontSize: rf(22), fontWeight: '700', letterSpacing: -0.4, flex: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  hello: { fontSize: r.rf(22), fontWeight: '700', letterSpacing: -0.4, flex: 1 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  // width is the base; flexGrow spends whatever the row has left, so the last tile in a
+  // line never leaves a dead strip down the right-hand edge.
+  cell: { flexGrow: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500', marginTop: 2 },
-  empty: { fontSize: rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 2 },
+  empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 22 },
 });

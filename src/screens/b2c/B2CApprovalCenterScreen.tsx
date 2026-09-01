@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Filter, Check, X, CheckCheck, Clock } from 'lucide-react-native';
@@ -11,7 +11,7 @@ import { b2cLeaveService } from '../../api/b2c/b2cLeaveService';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /** Web parity: B2CApprovalCenter.jsx — leave approvals only, pages 20 at a time. */
 const PAGE_SIZE = 20;
@@ -42,6 +42,7 @@ const statusColor = (status: string, T: any) =>
 
 export const B2CApprovalCenterScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
 
   const [rows, setRows] = useState<any[]>([]);
@@ -106,10 +107,10 @@ export const B2CApprovalCenterScreen = () => {
   // Client-side search on the current page (web filters server-side by user;
   // the search box is a mobile convenience over the loaded rows).
   const visible = search.trim()
-    ? rows.filter(r => (r.userName || '').toLowerCase().includes(search.trim().toLowerCase()))
+    ? rows.filter(row => (row.userName || '').toLowerCase().includes(search.trim().toLowerCase()))
     : rows;
 
-  const pendingIds = visible.filter(r => r.status === 'Pending').map(r => r.id as number);
+  const pendingIds = visible.filter(row => row.status === 'Pending').map(row => row.id as number);
   const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selected.has(id));
 
   const toggleSelect = (id: number) => setSelected(prev => {
@@ -152,6 +153,15 @@ export const B2CApprovalCenterScreen = () => {
   const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, totalCount);
 
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled"
@@ -183,7 +193,7 @@ export const B2CApprovalCenterScreen = () => {
           <View style={s.countRow}>
             <Text style={[s.count, { color: T.dim }]}>{totalCount} request{totalCount === 1 ? '' : 's'}</Text>
             {selected.size > 0 && (
-              <Btn label={`Approve selected (${selected.size})`} small onPress={bulkApprove} loading={busy}
+              <Btn label={`Approve selected (${selected.size})`} onPress={bulkApprove} loading={busy}
                 icon={<CheckCheck size={14} color="#FFF" strokeWidth={ICON_STROKE} />} />
             )}
           </View>
@@ -202,35 +212,35 @@ export const B2CApprovalCenterScreen = () => {
           </View>
         ) : (
           <>
-            <View style={{ gap: 8 }}>
-              {visible.map(r => {
-                const isPending = r.status === 'Pending';
+            <View style={s.grid}>
+              {visible.map(row => {
+                const isPending = row.status === 'Pending';
                 return (
-                  <ListCard key={r.id} style={s.rowCard}>
+                  <ListCard key={row.id} style={[s.rowCard, { width: cardW }]}>
                     {isPending && (
-                      <Checkbox on={selected.has(r.id)} onToggle={() => toggleSelect(r.id)} />
+                      <Checkbox on={selected.has(row.id)} onToggle={() => toggleSelect(row.id)} />
                     )}
-                    <Avatar initials={initialsOf(r.userName)} />
+                    <Avatar initials={initialsOf(row.userName)} />
                     <View style={{ flex: 1, gap: 4 }}>
                       <View style={s.rowTop}>
-                        <Text style={[s.name, { color: T.text }, { flex: 1 }]} numberOfLines={1}>{r.userName || DASH}</Text>
-                        <StatusBadge label={r.status} color={statusColor(r.status, T)} />
+                        <Text style={[s.name, { color: T.text }, { flex: 1 }]} numberOfLines={1}>{row.userName || DASH}</Text>
+                        <StatusBadge label={row.status} color={statusColor(row.status, T)} />
                       </View>
-                      {!!r.userRole && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{r.userRole}</Text>}
+                      {!!row.userRole && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{row.userRole}</Text>}
                       <Text style={[s.sub, { color: T.sub }]} numberOfLines={1}>
-                        {r.leaveType || 'Leave'} · {r.days} day{r.days === 1 ? '' : 's'}
+                        {row.leaveType || 'Leave'} · {row.days} day{row.days === 1 ? '' : 's'}
                       </Text>
                       <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
-                        {fmtDate(r.fromDate)} {DASH} {fmtDate(r.toDate)}
+                        {fmtDate(row.fromDate)} {DASH} {fmtDate(row.toDate)}
                       </Text>
-                      {!!r.reason && <Text style={[s.sub, { color: T.dim }]} numberOfLines={2}>{r.reason}</Text>}
+                      {!!row.reason && <Text style={[s.sub, { color: T.dim }]} numberOfLines={2}>{row.reason}</Text>}
                       {isPending && (
                         <View style={s.actionRow}>
-                          <Btn label="Approve" variant="success" small style={{ flex: 1 }}
-                            onPress={() => { setAction({ row: r, type: 'approve' }); setNote(''); }}
+                          <Btn label="Approve" variant="success" style={{ flex: 1 }}
+                            onPress={() => { setAction({ row, type: 'approve' }); setNote(''); }}
                             icon={<Check size={14} color="#FFF" strokeWidth={ICON_STROKE} />} />
-                          <Btn label="Reject" variant="dangerGhost" small style={{ flex: 1 }}
-                            onPress={() => { setAction({ row: r, type: 'reject' }); setNote(''); }}
+                          <Btn label="Reject" variant="dangerGhost" style={{ flex: 1 }}
+                            onPress={() => { setAction({ row, type: 'reject' }); setNote(''); }}
                             icon={<X size={14} color={T.danger} strokeWidth={ICON_STROKE} />} />
                         </View>
                       )}
@@ -253,6 +263,7 @@ export const B2CApprovalCenterScreen = () => {
 
       {/* Approve / reject modal with optional note */}
       <FormModal
+        wide={r.isTablet}
         visible={!!action}
         title={action?.type === 'approve' ? 'Approve request' : 'Reject request'}
         onClose={() => { setAction(null); setNote(''); }}
@@ -294,28 +305,36 @@ export const B2CApprovalCenterScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  stat: { flexGrow: 1, flexBasis: '47%' },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  stat: { flexGrow: 1, flexBasis: r.isTablet ? '22%' : '47%' },
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
-  count: { fontSize: rf(11.5), fontWeight: '600' },
+  count: { fontSize: r.rf(11.5), fontWeight: '600' },
   rowCard: { alignItems: 'flex-start' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
-  modalSummary: { fontSize: rf(12.5), fontWeight: '500' },
-  flabel: { fontSize: rf(12.5), fontWeight: '600' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
+  modalSummary: { fontSize: r.rf(12.5), fontWeight: '500' },
+  flabel: { fontSize: r.rf(12.5), fontWeight: '600' },
   textarea: { minHeight: 72, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
 });
 
 export default B2CApprovalCenterScreen;

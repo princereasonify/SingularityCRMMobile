@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, X, Clock } from 'lucide-react-native';
@@ -8,7 +8,7 @@ import { StatTile } from '../../components/ui';
 import { b2cLeaveService } from '../../api/b2c/b2cLeaveService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /** Web parity: B2CTeamApprovals.jsx — manager review queue for agents' leave requests. */
 const PAGE_SIZE = 20;
@@ -49,6 +49,7 @@ const statusColor = (status: string, T: any) =>
 
 export const B2CTeamApprovalsScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
 
   const [rows, setRows] = useState<TeamLeaveRow[]>([]);
@@ -115,6 +116,15 @@ export const B2CTeamApprovalsScreen = () => {
     ? rows.filter(r => `${r.userName} ${r.leaveType}`.toLowerCase().includes(q))
     : rows;
 
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView
@@ -155,11 +165,11 @@ export const B2CTeamApprovalsScreen = () => {
           </View>
         ) : (
           <>
-            <View style={{ gap: 8 }}>
+            <View style={s.grid}>
               {visible.map(l => {
                 const isPending = l.status === 'Pending';
                 return (
-                  <ListCard key={l.id} style={{ alignItems: 'flex-start' }}>
+                  <ListCard key={l.id} style={{ alignItems: 'flex-start', width: cardW }}>
                     <Avatar initials={initialsOf(l.userName)} />
                     <View style={{ flex: 1, gap: 4 }}>
                       <View style={s.rowTop}>
@@ -175,7 +185,6 @@ export const B2CTeamApprovalsScreen = () => {
                       {isPending && (
                         <View style={s.actionRow}>
                           <Btn
-                            small
                             variant="success"
                             label="Approve"
                             onPress={() => openAction(l, 'approve')}
@@ -183,7 +192,6 @@ export const B2CTeamApprovalsScreen = () => {
                             style={{ flex: 1 }}
                           />
                           <Btn
-                            small
                             variant="dangerGhost"
                             label="Reject"
                             onPress={() => openAction(l, 'reject')}
@@ -207,6 +215,7 @@ export const B2CTeamApprovalsScreen = () => {
 
       {/* Approve / reject modal with optional note */}
       <FormModal
+        wide={r.isTablet}
         visible={!!action}
         title={action?.type === 'approve' ? 'Approve leave' : 'Reject leave'}
         onClose={() => { setAction(null); setError(''); }}
@@ -253,22 +262,29 @@ export const B2CTeamApprovalsScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  stat: { flexGrow: 1, flexBasis: '46%', minWidth: 140 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  stat: { flexGrow: 1, flexBasis: r.isTablet ? '22%' : '46%', minWidth: 140 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
   errBox: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
-  errTxt: { fontSize: rf(12.5), fontWeight: '600' },
+  errTxt: { fontSize: r.rf(12.5), fontWeight: '600' },
   textarea: { minHeight: 72, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 52 },
 });

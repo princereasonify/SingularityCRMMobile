@@ -60,7 +60,27 @@ export const updateNativeAuthToken = async (token: string | null): Promise<void>
   }
 };
 
-export const startNativeTracking = async (): Promise<void> => {
+/**
+ * Which product tier a tracking session belongs to. The native engine is shared — capture,
+ * filtering, offline queueing and START_STICKY restart are identical — and only the endpoint
+ * differs, so the tier is passed in rather than duplicated into a second native service that
+ * would inevitably drift from this one.
+ */
+export type TrackingTier = 'b2b' | 'b2c';
+
+const TIER_PATHS: Record<TrackingTier, { ping: string; batch: string }> = {
+  b2b: { ping: '/tracking/ping', batch: '/tracking/ping/batch' },
+  b2c: { ping: '/b2c/tracking/ping', batch: '/b2c/tracking/ping/batch' },
+};
+
+/**
+ * Whether the native tracking engine is linked into this build. False in Expo Go, in Jest, and
+ * in any build made before the native module existed — callers must degrade honestly rather
+ * than pretend background capture is running.
+ */
+export const isNativeTrackingAvailable = (): boolean => !!LocationTrackingModule?.startTracking;
+
+export const startNativeTracking = async (tier: TrackingTier = 'b2b'): Promise<void> => {
   if (!LocationTrackingModule) {
     console.warn('[NativeTracking] LocationTrackingModule not available');
     return;
@@ -76,8 +96,9 @@ export const startNativeTracking = async (): Promise<void> => {
     return;
   }
   try {
-    await LocationTrackingModule.startTracking(token, API_BASE_URL);
-    console.log('[NativeTracking] Started successfully');
+    const paths = TIER_PATHS[tier];
+    await LocationTrackingModule.startTracking(token, API_BASE_URL, paths.ping, paths.batch);
+    console.log(`[NativeTracking] Started successfully (${tier} → ${paths.ping})`);
   } catch (e: any) {
     console.warn('[NativeTracking] Failed to start:', e?.message);
   }

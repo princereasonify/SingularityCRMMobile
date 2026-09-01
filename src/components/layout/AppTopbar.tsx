@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Menu, Sun, Moon, Bell, ChevronDown, User, Settings as SettingsIcon, LogOut } from 'lucide-react-native';
@@ -8,14 +8,21 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { GradientBackground } from '../common/GradientBackground';
 import { LogoutModal } from '../common/LogoutModal';
 import { NAV_BY_ROLE, groupForRoute, NavGroup } from '../../navigation/navConfig';
+import { StatusStripConsumed } from '../../navigation/AppNavigator';
 import { isTabletDevice } from '../../utils/responsive';
 
+// Every role the app can sign in as. The three B2C roles were missing, so the `?? 'Field
+// Officer'` fallback below labelled every B2C admin, agent and counselor a Field Officer on
+// every screen. Labels match the web topbar's so the two platforms name a role identically.
 const ROLE_NAME: Record<string, string> = {
   FO: 'Field Officer',
   ZH: 'Zonal Head',
   RH: 'Regional Head',
   SH: 'Sales Head',
   SCA: 'SuperSale Admin',
+  B2CAdmin: 'B2C Admin',
+  Agent: 'B2C Agent',
+  Counselor: 'Counselor',
 };
 
 /**
@@ -52,6 +59,9 @@ interface Props {
 export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile, onSettings }: Props) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
+  // A banner above us has already painted the status-bar strip and paid its inset; adding it
+  // again here is what left an empty band between the banner and this bar.
+  const stripConsumed = useContext(StatusStripConsumed);
   const { mode, toggle } = useTheme();
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
@@ -60,7 +70,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
   const groups = NAV_BY_ROLE[user?.role ?? 'FO'] ?? [];
   const group = groupForRoute(groups, title);
   const heading = labelForRoute(groups, title);
-  const roleName = ROLE_NAME[user?.role ?? 'FO'] ?? 'Field Officer';
+  const roleName = ROLE_NAME[user?.role ?? ''] ?? user?.role ?? '';
   const initials = initialsOf(user?.name);
   const [imgFailed, setImgFailed] = useState(false);
   // Treat the avatar as a photo only if it's a fetchable URL — the column also holds
@@ -112,7 +122,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
       style={[
         styles.bar,
         {
-          paddingTop: insets.top + 8, // LAYOUT_SPEC A6
+          paddingTop: (stripConsumed ? 0 : insets.top) + 8, // LAYOUT_SPEC A6
           paddingBottom: 10,
           paddingHorizontal: isTabletDevice ? 22 : 16,
           // T.card, not the hand-mixed rgba(19,16,9,.92)/rgba(255,255,255,.92) that was
@@ -186,7 +196,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
             style={[
               styles.menu,
               {
-                top: insets.top + 58,
+                top: (stripConsumed ? 0 : insets.top) + 58,
                 backgroundColor: T.card,
                 borderColor: T.line,
               },

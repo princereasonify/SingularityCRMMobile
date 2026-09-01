@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Platform, FlatList, Alert, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { AlertTriangle, ExternalLink, MapPin, Search, CheckCircle, Upload } from 'lucide-react-native';
 import { pick, types } from '@react-native-documents/picker';
 import { schoolsApi } from '../../api/schools';
+import { apiClient } from '../../api/client';
 import { leadsApi } from '../../api/leads';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { School, DuplicateMatch, UserDto, BulkSchoolRow } from '../../types';
@@ -15,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AppHeader } from '../../components/ui';
 import { Btn, Field, Input, Trigger, Dropdown, Segmented, FormModal } from '../../components/crud';
 import { NumField } from '../../components/common/NumField';
+import { KeyField } from '../../components/common/KeyField';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -23,8 +25,6 @@ import type { AppTheme } from '../../theme';
 
 // ─── Google Places API key — from .env via @env, not pasted into the screen.
 // (The native SDK key in AndroidManifest / Info.plist is a separate, native-side
-// registration.) See the note on GOOGLE_MAPS_API_KEY in constants.ts.
-import { GOOGLE_MAPS_API_KEY as GMAPS_KEY } from '../../utils/constants';
 
 // Match web app values exactly
 const BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'Other'];
@@ -44,17 +44,16 @@ interface PlaceSuggestion {
 }
 
 // ─── Google Places helpers ────────────────────────────────────────────────────
+/**
+ * Place/address lookups go through OUR SERVER, not straight to Google — these are Google web
+ * service APIs, which the "restrict to my Android app" key setting does not cover, so a key
+ * used here from the device could never be locked down. Google's own JSON comes back
+ * unchanged, so the parsing below is exactly as it was.
+ */
 async function placesAutocomplete(input: string): Promise<PlaceSuggestion[]> {
   if (!input.trim()) return [];
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
-      `?input=${encodeURIComponent(input)}` +
-      `&types=establishment|geocode` +
-      `&components=country:in` +
-      `&key=${GMAPS_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
+    const { data: json } = await apiClient.get('/routes/places/autocomplete', { params: { input } });
     return (json.predictions ?? []).map((p: any) => ({
       placeId: p.place_id,
       description: p.description,
@@ -67,13 +66,9 @@ async function placeDetails(placeId: string): Promise<{
   address: string; city: string; state: string; pincode: string;
 } | null> {
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/details/json` +
-      `?place_id=${placeId}` +
-      `&fields=geometry,formatted_address,address_components` +
-      `&key=${GMAPS_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
+    const { data: json } = await apiClient.get('/routes/places/details', {
+      params: { placeId, fields: 'geometry,formatted_address,address_components' },
+    });
     const result = json.result;
     if (!result?.geometry) return null;
 
@@ -95,13 +90,9 @@ async function textSearchSchool(name: string, address: string): Promise<{ lat: n
   const query = [name, address].filter(Boolean).join(' ');
   if (!query.trim()) return null;
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
-      `?query=${encodeURIComponent(query)}` +
-      `&type=school` +
-      `&key=${GMAPS_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
+    const { data: json } = await apiClient.get('/routes/places/textsearch', {
+      params: { query, type: 'school' },
+    });
     const first = json.results?.[0];
     if (!first?.geometry) return null;
     return { lat: first.geometry.location.lat, lng: first.geometry.location.lng };
@@ -112,12 +103,9 @@ async function reverseGeocode(lat: number, lng: number): Promise<{
   address: string; city: string; state: string; pincode: string;
 }> {
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/geocode/json` +
-      `?latlng=${lat},${lng}` +
-      `&key=${GMAPS_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
+    const { data: json } = await apiClient.get('/routes/geocode/reverse', {
+      params: { latlng: `${lat},${lng}` },
+    });
     const result = json.results?.[0];
     if (!result) return { address: '', city: '', state: '', pincode: '' };
 
@@ -661,19 +649,34 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Search Address / Area</Text>
             <View style={styles.searchRow}>
-              <View style={styles.searchInputWrap}>
-                <Search size={14} color={T.dim} style={styles.searchIcon} />
-                <TextInput
-                  style={styles.searchInput}
-                  value={searchText}
-                  onChangeText={t => { setSearchText(t); setShowSuggestions(true); }}
-                  placeholder="Type area or address…"
-                  placeholderTextColor={T.dim}
-                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                />
-                {searchLoading && <ActivityIndicator size="small" color={T.accent} style={{ marginRight: 8 }} />}
-              </View>
+              <KeyField
+                value={searchText}
+                onChangeText={t => { setSearchText(t); setShowSuggestions(true); }}
+                placeholder="Type area or address…"
+                containerStyle={styles.searchFieldFlex}
+                left={<Search size={14} color={T.dim} />}
+                right={searchLoading ? <ActivityIndicator size="small" color={T.accent} /> : undefined}
+                // Suggestions render INSIDE the keyboard sheet so picking an address still
+                // works while the custom keyboard is open, instead of sitting behind it.
+                belowValue={
+                  showSuggestions && suggestions.length > 0 ? (
+                    <View style={styles.suggestionsInSheet}>
+                      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {suggestions.map(sug => (
+                          <TouchableOpacity
+                            key={sug.placeId}
+                            style={styles.suggestionItem}
+                            onPress={() => handleSuggestionSelect(sug)}
+                          >
+                            <MapPin size={12} color={T.dim} />
+                            <Text style={styles.suggestionText} numberOfLines={2}>{sug.description}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ) : undefined
+                }
+              />
               <TouchableOpacity
                 style={[styles.findBtn, { backgroundColor: T.accent }, (!name.trim() && !searchText.trim()) && styles.findBtnDisabled]}
                 onPress={handleFindOnMap}
@@ -687,22 +690,6 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
             <Text style={styles.searchHint}>
               Enter school name above + area here, then tap <Text style={{ fontWeight: '700' }}>Find</Text> to pin on map. Or tap the map directly.
             </Text>
-
-            {/* Autocomplete dropdown */}
-            {showSuggestions && suggestions.length > 0 && (
-              <View style={styles.suggestionsBox}>
-                {suggestions.map(s => (
-                  <TouchableOpacity
-                    key={s.placeId}
-                    style={styles.suggestionItem}
-                    onPress={() => handleSuggestionSelect(s)}
-                  >
-                    <MapPin size={12} color={T.dim} />
-                    <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
 
           {/* Map */}
@@ -1066,13 +1053,7 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
 
   // Address search
   searchRow:      { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  searchInputWrap: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: T.line, borderRadius: 14,
-    backgroundColor: T.fieldBg, paddingHorizontal: 10,
-  },
-  searchIcon:  { marginRight: 6 },
-  searchInput: { flex: 1, fontWeight: '400', fontSize: rf(14), color: T.text, paddingVertical: Platform.OS === 'ios' ? 10 : 8 },
+  searchFieldFlex: { flex: 1 },
   searchHint:  { fontWeight: '400', fontSize: rf(11), color: T.dim, marginTop: 5 },
 
   findBtn: {
@@ -1082,11 +1063,11 @@ const makeStyles = (T: AppTheme) => StyleSheet.create({
   findBtnDisabled: { opacity: 0.4 },
   findBtnText: { fontWeight: '600', fontSize: rf(13), color: T.onAccent },
 
-  suggestionsBox: {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-    backgroundColor: T.card, borderRadius: 14, borderWidth: 1, borderColor: T.line,
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 6,
-    marginTop: 2,
+  // Rendered inside KeyField's keyboard sheet (belowValue), so no absolute positioning —
+  // it's a normal in-flow block there, unlike the old sibling-dropdown version.
+  suggestionsInSheet: {
+    backgroundColor: T.cardAlt, borderRadius: 14, borderWidth: 1, borderColor: T.line,
+    maxHeight: 180, overflow: 'hidden',
   },
   suggestionItem: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,

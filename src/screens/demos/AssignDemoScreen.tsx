@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock, User, School, ArrowLeft } from 'lucide-react-native';
 import { DateInput } from '../../components/common/DateInput';
+import { KeyField } from '../../components/common/KeyField';
 import { demosApi } from '../../api/demos';
 import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
@@ -248,34 +249,22 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
           />
 
           <View style={styles.twoCol}>
-            <View style={styles.colField}>
-              <Text style={[styles.fieldLabel, { color: T.sub }]}>Start Time *</Text>
-              <View style={[styles.inputRow, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
-                <Clock size={16} color={T.dim} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.inputWithIcon, { color: T.text }]}
-                  value={startTime}
-                  onChangeText={setStartTime}
-                  placeholder="10:00"
-                  placeholderTextColor={T.dim}
-                  keyboardType="numbers-and-punctuation"
-                />
-              </View>
-            </View>
-            <View style={styles.colField}>
-              <Text style={[styles.fieldLabel, { color: T.sub }]}>End Time *</Text>
-              <View style={[styles.inputRow, { backgroundColor: T.fieldBg, borderColor: T.line }]}>
-                <Clock size={16} color={T.dim} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.inputWithIcon, { color: T.text }]}
-                  value={endTime}
-                  onChangeText={setEndTime}
-                  placeholder="11:00"
-                  placeholderTextColor={T.dim}
-                  keyboardType="numbers-and-punctuation"
-                />
-              </View>
-            </View>
+            <KeyField
+              label="Start Time *"
+              value={startTime}
+              onChangeText={setStartTime}
+              placeholder="10:00"
+              containerStyle={styles.colField}
+              left={<Clock size={16} color={T.dim} />}
+            />
+            <KeyField
+              label="End Time *"
+              value={endTime}
+              onChangeText={setEndTime}
+              placeholder="11:00"
+              containerStyle={styles.colField}
+              left={<Clock size={16} color={T.dim} />}
+            />
           </View>
         </Card>
 
@@ -298,18 +287,13 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
           </View>
 
           {mode !== 'Offline' && (
-            <>
-              <Text style={[styles.fieldLabel, { color: T.sub, marginTop: 12 }]}>Meeting Link</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: T.fieldBg, borderColor: T.line, color: T.text }]}
-                value={meetingLink}
-                onChangeText={setMeetingLink}
-                placeholder="https://meet.google.com/..."
-                placeholderTextColor={T.dim}
-                keyboardType="url"
-                autoCapitalize="none"
-              />
-            </>
+            <KeyField
+              label="Meeting Link"
+              value={meetingLink}
+              onChangeText={setMeetingLink}
+              placeholder="https://meet.google.com/..."
+              containerStyle={{ marginTop: 12 }}
+            />
           )}
         </Card>
 
@@ -372,14 +356,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12,
   },
   selectorText: { flex: 1, fontWeight: '600', fontSize: rf(14) },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12,
-    marginBottom: 12,
-  },
-  inputIcon: {},
-  inputWithIcon: { flex: 1, fontWeight: '400', fontSize: rf(14) },
   input: {
     borderWidth: 1, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,

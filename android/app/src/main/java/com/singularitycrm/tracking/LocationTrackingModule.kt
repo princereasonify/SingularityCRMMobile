@@ -38,12 +38,22 @@ class LocationTrackingModule(private val reactContext: ReactApplicationContext) 
         }
     }
 
+    /**
+     * Starts the shared foreground tracking engine for one tier.
+     *
+     * `pingPath` / `batchPath` are what make one engine serve both B2B and B2C — the capture,
+     * filtering, queueing and restart behaviour are identical, only the endpoint differs. Blank
+     * values fall back to the B2B paths inside the service, so an older JS bundle calling the
+     * two-argument form keeps working unchanged.
+     */
     @ReactMethod
-    fun startTracking(token: String, apiBaseUrl: String, promise: Promise) {
+    fun startTracking(token: String, apiBaseUrl: String, pingPath: String, batchPath: String, promise: Promise) {
         try {
             val intent = Intent(reactContext, LocationTrackingService::class.java).apply {
                 putExtra(LocationTrackingService.EXTRA_TOKEN, token)
                 putExtra(LocationTrackingService.EXTRA_API_URL, apiBaseUrl)
+                putExtra(LocationTrackingService.EXTRA_PING_PATH, pingPath)
+                putExtra(LocationTrackingService.EXTRA_BATCH_PATH, batchPath)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 reactContext.startForegroundService(intent)

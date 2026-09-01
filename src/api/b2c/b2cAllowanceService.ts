@@ -12,6 +12,13 @@ export interface SubmitAllowanceClaimBody {
 
 export const b2cAllowanceService = {
   getConfig: () => apiClient.get<any>(`${BASE}/config`),
+
+  /** B2CAdmin only. Rates the daily allowance is computed from (per visit, per km, fixed). */
+  updateConfig: (data: {
+    ratePerVisit?: number;
+    ratePerKm?: number;
+    fixedDailyAmount?: number;
+  }) => apiClient.put<any>(`${BASE}/config`, data),
   submitClaim: (data: SubmitAllowanceClaimBody) => apiClient.post<any>(BASE, data),
   getMyClaims: (params?: any) => apiClient.get<any>(`${BASE}/mine`, { params }),
   // Admin review queue

@@ -1,25 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Image, Alert, PermissionsAndroid,
-  Platform, Linking, TextInput, TouchableOpacity, useWindowDimensions,
+  Platform, Linking, TextInput, TouchableOpacity,
 } from 'react-native';
 import { launchCamera, Asset } from 'react-native-image-picker';
 import Geolocation from '@react-native-community/geolocation';
 import { Plus, Camera, MapPin, ShieldCheck, ExternalLink } from 'lucide-react-native';
 import { Screen } from '../../components/ui';
 import {
-  Btn, Field, Input, SearchBar, Segmented, Trigger, Dropdown, StatusBadge,
+  Btn, Field, SearchBar, Trigger, Dropdown, StatusBadge,
   Pagination, ListCard, FormModal,
 } from '../../components/crud';
+import { DateInput } from '../../components/common/DateInput';
 import { b2cActivityService } from '../../api/b2c/b2cActivityService';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { FEEDBACK_TYPES } from '../../api/b2c/b2cObjectionService';
 import {
   B2CActivityListDto, B2CLeadListDto, B2CActivityTypeName, CreateB2CActivityRequest,
+  B2C_ACTIVITY_TYPES,
 } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
 import { useToast } from '../../context/ToastContext';
 
 /**
@@ -36,9 +38,12 @@ import { useToast } from '../../context/ToastContext';
  */
 
 const PAGE_SIZE = 20;
-const LOG_TYPES: B2CActivityTypeName[] = ['Call', 'Visit', 'WhatsApp', 'Email', 'Session', 'Note'];
+/** What can be LOGGED. 'Note' is deliberately absent (web parity) — every type already
+ *  carries a required Notes box, so it only duplicated the field beneath it. */
+const LOG_TYPES: B2CActivityTypeName[] = [...B2C_ACTIVITY_TYPES];
 const PROOF_TYPES: B2CActivityTypeName[] = ['Visit', 'Session'];
-// Web parity: the list filter offers every activity type.
+/** The FILTER still lists Note (and the system-generated types): activities logged as a
+ *  Note before it was retired must stay findable. */
 const FILTER_TYPES = ['Call', 'Visit', 'WhatsApp', 'Email', 'Session', 'Note', 'VisitClose', 'DocumentUpload'];
 
 type Coords = { lat: number; lng: number; accuracy?: number };
@@ -55,6 +60,7 @@ const geoColor = (s: string | undefined | null, T: AppTheme) =>
 
 const fmtDateTime = (d: string) =>
   new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const spaced = (v: string) => v.replace(/([A-Z])/g, ' $1').trim();
 
 const emptyForm = {
   leadId: '' as string,
@@ -67,8 +73,16 @@ const emptyForm = {
 export const B2CActivityLogScreen = ({ navigation }: any) => {
   const T = useAppTheme();
   const toast = useToast();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 720;
+  const r = useResponsive();
+  const s = useMemo(() => makeStyles(r), [r]);
+  // Exact point widths, not percentages: in a wrapping row with a `gap`, N × (100/N)% always
+  // overflows by the gaps and the last card silently drops onto its own line.
+  // One row per card on a phone; the tablet's spare width becomes a second/third column
+  // rather than a 900pt-wide line of 12pt text.
+  const listInnerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
+  const cardWidth: number | '100%' = r.columns > 1
+    ? Math.floor((listInnerW - r.gap * (r.columns - 1)) / r.columns)
+    : '100%';
 
   // ─── Leads (shared: view scope + log picker) ───────────────────────────────
   const [leads, setLeads] = useState<B2CLeadListDto[]>([]);
@@ -229,8 +243,6 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
     setOpen(true);
   };
 
-  const setType = (t: B2CActivityTypeName) => setForm(f => ({ ...f, type: t }));
-
   const submit = async () => {
     if (!form.leadId) { setError('Select a student.'); return; }
     if (!form.notes.trim()) { setError('Notes are required.'); return; }
@@ -282,22 +294,22 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
   );
 
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
+    <Screen scroll refreshing={refreshing} onRefresh={onRefresh} contentStyle={s.page}>
       {/* Intro + primary action (mirrors the web header row) */}
-      <View style={[s.top, isWide && s.topWide]}>
-        <Text style={[s.subtitle, { color: T.sub }, isWide && { flex: 1 }]}>
+      <View style={[s.top, r.isTablet && s.topWide]}>
+        <Text style={[s.subtitle, { color: T.sub }, r.isTablet && { flex: 1 }]}>
           Log calls, visits & demos across your students
         </Text>
         <Btn
           label="Log Activity"
           onPress={openModal}
           icon={<Plus size={16} color="#FFF" strokeWidth={2.4} />}
-          style={isWide ? undefined : { alignSelf: 'stretch' }}
+          style={r.isTablet ? undefined : { alignSelf: 'stretch' }}
         />
       </View>
 
       {/* Student to view */}
-      <View style={{ zIndex: 30, marginTop: 16 }}>
+      <View style={{ zIndex: 30, marginTop: r.rs(16) }}>
         <Field label="Student">
           <Trigger
             label={leadName(viewLeadId) || 'Select a student to view their log…'}
@@ -307,7 +319,7 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
           {viewOpen && (
             <Dropdown
               style={{ width: '100%' }}
-              maxHeight={280}
+              maxHeight={r.height * 0.4}
               value={viewLeadId || undefined}
               options={leadOptions}
               onSelect={(v) => { setViewLeadId(v); setViewOpen(false); setTypeFilter(''); setSearch(''); }}
@@ -324,22 +336,22 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
       ) : (
         <>
           {/* Filters */}
-          <View style={{ marginTop: 12 }}>
+          <View style={{ marginTop: r.rs(12) }}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search notes, type, feedback…" />
           </View>
-          <View style={{ zIndex: 20, marginTop: 12 }}>
+          <View style={{ zIndex: 20, marginTop: r.rs(12) }}>
             <Trigger
-              label={typeFilter ? typeFilter.replace(/([A-Z])/g, ' $1').trim() : 'All activities'}
+              label={typeFilter ? spaced(typeFilter) : 'All activities'}
               open={typeFilterOpen}
               onPress={() => setTypeFilterOpen(o => !o)}
             />
             {typeFilterOpen && (
               <Dropdown
                 style={{ width: '100%' }}
-                maxHeight={280}
+                maxHeight={r.height * 0.4}
                 value={typeFilter || 'ALL'}
                 options={[{ label: 'All activities', value: 'ALL' },
-                  ...FILTER_TYPES.map(t => ({ label: t.replace(/([A-Z])/g, ' $1').trim(), value: t }))]}
+                  ...FILTER_TYPES.map(t => ({ label: spaced(t), value: t }))]}
                 onSelect={(v) => { setTypeFilter(v === 'ALL' ? '' : v); setTypeFilterOpen(false); }}
               />
             )}
@@ -358,17 +370,17 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
             </View>
           ) : (
             <>
-              <View style={{ gap: 8 }}>
+              <View style={s.grid}>
                 {visibleRows.map(a => (
                   <ListCard
                     key={a.id}
-                    style={s.row}
+                    style={[s.row, { width: cardWidth as any }]}
                     onPress={() => navigation?.navigate('B2CLeadDetail', { leadId: Number(viewLeadId) })}
                   >
                     <View style={[s.dot, { backgroundColor: T.accent }]} />
-                    <View style={{ flex: 1, gap: 4 }}>
+                    <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
                       <View style={s.rowTop}>
-                        <Text style={[s.type, { color: T.accent }]}>{a.type}</Text>
+                        <Text style={[s.type, { color: T.accent }]} numberOfLines={1}>{a.type}</Text>
                         <Text style={[s.time, { color: T.dim }]}>{fmtDateTime(a.createdAt)}</Text>
                       </View>
                       {!!a.feedback && (
@@ -376,9 +388,13 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
                       )}
                       {!!a.notes && <Text style={[s.notes, { color: T.sub }]}>{a.notes}</Text>}
                       <View style={s.metaRow}>
-                        {!!a.performedByName && <Text style={[s.meta, { color: T.dim }]}>by {a.performedByName}</Text>}
+                        {!!a.performedByName && <Text style={[s.meta, { color: T.dim }]} numberOfLines={1}>by {a.performedByName}</Text>}
                         {!!a.photoUrl && (
-                          <TouchableOpacity style={s.metaItem} onPress={() => a.photoUrl && Linking.openURL(a.photoUrl)}>
+                          <TouchableOpacity
+                            style={s.metaItem}
+                            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                            onPress={() => a.photoUrl && Linking.openURL(a.photoUrl)}
+                          >
                             <Camera size={12} color={T.accent} strokeWidth={2.2} />
                             <Text style={[s.meta, { color: T.accent }]}>Selfie {a.authVerified ? '✓' : '(pending)'}</Text>
                             <ExternalLink size={10} color={T.accent} />
@@ -412,7 +428,7 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
       <FormModal
         visible={open}
         title="Log Activity"
-        wide={isWide}
+        wide={r.isTablet}
         onClose={() => setOpen(false)}
         footer={
           <>
@@ -439,7 +455,7 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
               {leadPickerOpen && (
                 <Dropdown
                   style={{ width: '100%' }}
-                  maxHeight={220}
+                  maxHeight={r.height * 0.32}
                   value={form.leadId || undefined}
                   options={leadOptions}
                   onSelect={(v) => { setForm(f => ({ ...f, leadId: v })); setLeadPickerOpen(false); }}
@@ -448,19 +464,24 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
             </Field>
           </View>
 
-          {/* Type */}
+          {/* Type — its own pills rather than the 32pt Segmented control, so every option
+             clears the 44pt tap floor on a phone. */}
           <Field label="Activity Type">
-            <Segmented
-              value={form.type}
-              onChange={setType}
-              options={LOG_TYPES.slice(0, 3).map(t => ({ label: t, value: t }))}
-            />
-            <Segmented
-              style={{ marginTop: 8 }}
-              value={form.type}
-              onChange={setType}
-              options={LOG_TYPES.slice(3).map(t => ({ label: t, value: t }))}
-            />
+            <View style={s.pillWrap}>
+              {LOG_TYPES.map(t => {
+                const on = form.type === t;
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    activeOpacity={0.8}
+                    onPress={() => setForm(f => ({ ...f, type: t }))}
+                    style={[s.pill, { backgroundColor: on ? T.accent : T.cardAlt, borderColor: on ? T.accent : T.line }]}
+                  >
+                    <Text style={[s.pillTxt, { color: on ? T.onAccent : T.sub }]}>{t}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </Field>
 
           {/* Feedback */}
@@ -474,7 +495,7 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
               {feedbackOpen && (
                 <Dropdown
                   style={{ width: '100%' }}
-                  maxHeight={240}
+                  maxHeight={r.height * 0.32}
                   value={form.feedback || undefined}
                   options={FEEDBACK_TYPES.map(f => ({ label: f.label, value: f.value }))}
                   onSelect={(v) => { setForm(f => ({ ...f, feedback: v })); setFeedbackOpen(false); }}
@@ -499,13 +520,13 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
             </Field>
           </View>
 
-          {/* Follow-up */}
-          <Input
+          {/* Follow-up — a calendar, not a typed "YYYY-MM-DD": the app's own keyboard makes a
+             free-text date the slowest, most error-prone field in the form. */}
+          <DateInput
             label="Schedule follow-up (optional)"
             value={form.nextFollowUpDate}
-            onChangeText={v => setForm(f => ({ ...f, nextFollowUpDate: v }))}
-            placeholder="YYYY-MM-DD"
-            autoCapitalize="none"
+            onChange={v => setForm(f => ({ ...f, nextFollowUpDate: v }))}
+            accentColor={T.accent}
           />
 
           {/* Visit / Session proof */}
@@ -528,9 +549,8 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
                   <Btn
                     label={selfie ? 'Retake selfie' : 'Take selfie'}
                     variant={selfie ? 'secondary' : 'soft'}
-                    small
                     onPress={takeSelfie}
-                    icon={<Camera size={13} color={selfie ? T.text : T.accent} strokeWidth={2.2} />}
+                    icon={<Camera size={14} color={selfie ? T.text : T.accent} strokeWidth={2.2} />}
                   />
                 </View>
               </View>
@@ -538,10 +558,9 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
               <Btn
                 label={coords ? 'Location captured ✓' : 'Capture GPS location'}
                 variant={coords ? 'secondary' : 'soft'}
-                small
                 onPress={captureLocation}
                 loading={locating}
-                icon={<MapPin size={13} color={coords ? T.text : T.accent} strokeWidth={2.2} />}
+                icon={<MapPin size={14} color={coords ? T.text : T.accent} strokeWidth={2.2} />}
               />
               {!!coords && (
                 <Text style={[s.coords, { color: T.dim }]}>
@@ -557,39 +576,54 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
   );
 };
 
-const s = StyleSheet.create({
-  top: { gap: 12 },
+/**
+ * Styles are built per-render from the LIVE window metrics: a module-level StyleSheet is
+ * evaluated once at import, so every size stays frozen at the launch orientation and an
+ * iPad rotation leaves the layout clipped.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
+  // No paddingBottom: Screen's own `insets.bottom + 28` must survive the override.
+  page: { padding: r.gutter, width: '100%', maxWidth: r.maxContentWidth, alignSelf: 'center' },
+  top: { gap: r.rs(12) },
   topWide: { flexDirection: 'row', alignItems: 'center' },
-  subtitle: { fontSize: rf(13), fontWeight: '500', lineHeight: 18 },
+  subtitle: { fontSize: r.rf(13), fontWeight: '500', lineHeight: r.rf(18) },
 
-  count: { fontSize: rf(11.5), fontWeight: '600', marginTop: 12 },
-  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 40, paddingHorizontal: 20, alignItems: 'center', gap: 8, marginTop: 12 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: 18 },
+  count: { fontSize: r.rf(11.5), fontWeight: '600', marginTop: r.rs(12) },
+  empty: { borderRadius: 16, borderWidth: 1, paddingVertical: r.rs(40), paddingHorizontal: r.rs(20), alignItems: 'center', gap: 8, marginTop: r.rs(12) },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center', lineHeight: r.rf(18) },
 
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   row: { alignItems: 'flex-start', gap: 10 },
   dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  type: { fontSize: rf(11.5), fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' },
-  time: { fontSize: rf(11), fontWeight: '500' },
-  notes: { fontSize: rf(12.5), fontWeight: '500', lineHeight: 18 },
+  type: { fontSize: r.rf(11.5), fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', flexShrink: 1 },
+  time: { fontSize: r.rf(11), fontWeight: '500' },
+  notes: { fontSize: r.rf(12.5), fontWeight: '500', lineHeight: r.rf(18) },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  meta: { fontSize: rf(11), fontWeight: '600' },
+  meta: { fontSize: r.rf(11), fontWeight: '600' },
 
-  pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
+  pgRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: r.rs(12) },
 
   alert: { borderRadius: 12, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 12 },
-  alertTxt: { fontSize: rf(12.5), fontWeight: '600' },
+  alertTxt: { fontSize: r.rf(12.5), fontWeight: '600', lineHeight: r.rf(18) },
+
+  pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pill: {
+    minHeight: MIN_TAP, minWidth: MIN_TAP, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pillTxt: { fontSize: r.rf(12.5), fontWeight: '700' },
 
   textarea: { minHeight: 84, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
 
   proof: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
   proofHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  proofTitle: { fontSize: rf(12.5), fontWeight: '700' },
+  proofTitle: { fontSize: r.rf(12.5), fontWeight: '700' },
   selfieRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   thumb: { width: 64, height: 64, borderRadius: 12, borderWidth: 1 },
   thumbEmpty: { alignItems: 'center', justifyContent: 'center' },
-  coords: { fontSize: rf(11), fontWeight: '500' },
+  coords: { fontSize: r.rf(11), fontWeight: '500' },
 });

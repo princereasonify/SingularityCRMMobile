@@ -15,9 +15,13 @@ export type B2CLeadStage =
   | 'New'
   | 'Contacted'
   | 'Interested'
+  /** The family agreed a specific slot — carries B2CLead.appointmentAt. */
+  | 'AppointmentBooked'
   | 'DocumentPending'
   | 'CounselingBooked'
   | 'CounselingDone'
+  /** The counselor demoed the product. Sits alongside CounselingDone, not instead of it. */
+  | 'DemoDone'
   | 'ApplicationSent'
   | 'FollowUp'
   | 'Converted'
@@ -64,9 +68,25 @@ export type B2CAuthMethod = 'None' | 'OTP' | 'Selfie';
 // ─── Option lists (value = enum name, label = display) ─────────────────────────
 
 export const B2C_LEAD_STAGES: B2CLeadStage[] = [
-  'New', 'Contacted', 'Interested', 'DocumentPending', 'CounselingBooked',
-  'CounselingDone', 'ApplicationSent', 'FollowUp', 'Converted', 'NotInterested', 'Lost',
+  'New', 'Contacted', 'Interested', 'AppointmentBooked', 'DocumentPending', 'CounselingBooked',
+  'CounselingDone', 'DemoDone', 'ApplicationSent', 'FollowUp', 'Converted', 'NotInterested', 'Lost',
 ];
+
+/** Stages that mean nobody is visiting this student again. */
+export const B2C_TERMINAL_STAGES: B2CLeadStage[] = ['Converted', 'NotInterested', 'Lost'];
+
+/**
+ * The stage whose whole content is a date and time. It cannot be saved from a note alone, and
+ * the route planner builds the day around it — see `appointmentAt` on the lead DTOs.
+ */
+export const B2C_APPOINTMENT_STAGE: B2CLeadStage = 'AppointmentBooked';
+
+/**
+ * Activity types a user may LOG. 'Note' is deliberately absent: every type already carries a
+ * required Notes field, so it only duplicated the box beneath it. Existing Note activities
+ * still render — this list is what can be created (web parity, B2CLeadDetail.jsx).
+ */
+export const B2C_ACTIVITY_TYPES = ['Call', 'Visit', 'WhatsApp', 'Email', 'Session'] as const;
 
 export const B2C_LEAD_SOURCES: B2CLeadSource[] = [
   'Website', 'Facebook', 'Instagram', 'GoogleAds', 'WhatsApp', 'WalkIn', 'Event', 'Other',
@@ -93,8 +113,16 @@ export interface B2CLeadListDto {
   mobileNumber: string;
   city: string;
   state: string;
+  // Address parts the API now returns on the list row too, so a card can show one compact
+  // line and the full address without fetching the detail.
+  area?: string | null;
+  pincode?: string | null;
+  fullAddress?: string | null;
   grade?: string | null;
   board?: string | null;
+  nationality?: string | null;
+  reasonifySyncStatus?: string | null;
+  reasonifyStudentId?: number | null;
   stage: string;
   priority: string;
   leadScore: number;
@@ -104,6 +132,21 @@ export interface B2CLeadListDto {
   assignedCounselorName?: string | null;
   assignedCounselorId?: number | null;
   siblingFlag: boolean;
+
+  /** When the family is expecting the agent (UTC instant). Null unless a visit is booked. */
+  appointmentAt?: string | null;
+  /** What was agreed for that visit — on the list row so a card can reschedule without a fetch. */
+  appointmentNotes?: string | null;
+
+  /**
+   * The note written when this lead was moved INTO the stage it currently sits in — i.e. why
+   * it is where it is. Every screen showing a stage is a screen where the reader is asking
+   * that question, so it rides on the list row rather than living inside a dialog.
+   */
+  currentStageNote?: string | null;
+  currentStageNoteBy?: string | null;
+  currentStageNoteAt?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -153,12 +196,25 @@ export interface B2CActivityListDto {
 }
 
 export interface B2CLeadDetailDto extends B2CLeadListDto {
+  /** Credited at creation; shown read-only because no edit can move coins already granted. */
+  referralCode?: string | null;
+  /** What was agreed for the booked visit. */
+  appointmentNotes?: string | null;
+  /** Why the last Reasonify push did not land — an edit can save locally and fail remotely. */
+  reasonifySyncError?: string | null;
+  /** The student joined a parent account a sibling already had; it keeps its own password. */
+  reasonifyParentLinked?: boolean;
   alternateMobile?: string | null;
   email?: string | null;
+  parentName?: string | null;
+  parentMobile?: string | null;
+  parentEmail?: string | null;
+  schoolName?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
-  pincode?: string | null;
-  fullAddress?: string | null;
+  reasonifyBoardId?: number | null;
+  reasonifyLanguageId?: number | null;
+  reasonifyGradeId?: number | null;
   enrollmentTimeline: string;
   sourceReference?: string | null;
   notes?: string | null;
@@ -171,21 +227,101 @@ export interface B2CLeadDetailDto extends B2CLeadListDto {
   siblingLeads: B2CSiblingLeadDto[];
 }
 
+/** Reasonify Board / Language / Grade lookup option (GET /b2c/leads/lookups/*). */
+export interface B2CLookupOption {
+  id: number;
+  name: string;
+}
+
+/** Decrypted student + parent Reasonify login for a lead (GET /b2c/leads/{id}/credentials). */
+export interface B2CLeadCredentialsDto {
+  leadId?: number;
+  /** Blank for a phone-only student — they sign in to Reasonify with studentMobile. */
+  studentEmail?: string | null;
+  /** The student's Reasonify login when they have no email of their own. */
+  studentMobile?: string | null;
+  studentPassword?: string | null;
+  parentEmail?: string | null;
+  parentPassword?: string | null;
+  /**
+   * The student joined a parent account that ALREADY existed (a sibling is enrolled there).
+   * That account kept its own password, so the one captured on this lead is not a working
+   * login and must not be offered as one.
+   */
+  parentAccountLinked?: boolean;
+  reasonifySyncStatus?: string | null;
+  reasonifySyncError?: string | null;
+  reasonifyStudentId?: number | null;
+  reasonifyParentId?: number | null;
+}
+
+/**
+ * A lead scheduled for a visit on a given day — what the Route Planner, Weekly Plan and
+ * Calendar all read. `appointmentAt` is the lead's booked slot when it has one; the planner
+ * needs the TIME, not just the day, to order a route around fixed commitments.
+ */
+export interface B2CPlannedVisitDto {
+  id: number;
+  agentId: number;
+  agentName: string;
+  leadId: number;
+  studentName: string;
+  mobileNumber?: string | null;
+  city?: string | null;
+  area?: string | null;
+  stage?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  appointmentAt?: string | null;
+  plannedDate: string;
+  sortOrder: number;
+  notes?: string | null;
+  assignedByAdmin: boolean;
+  status: string;
+  createdAt: string;
+}
+
+export type B2CNationality = 'Indian' | 'NRI';
+export const B2C_NATIONALITIES: B2CNationality[] = ['Indian', 'NRI'];
+
+/**
+ * Mirrors SalesCRM.Core/DTOs/B2C/B2CLeadDtos.cs `CreateB2CLeadRequest`. Everything marked
+ * required below is [Required] server-side: the same request provisions the student AND
+ * parent Reasonify accounts, so the parent's details and both passwords are as mandatory as
+ * the student's, and the Reasonify board/medium/grade ids are what the registration call
+ * actually needs (it takes a numeric GradeId, not a label).
+ */
 export interface CreateB2CLeadRequest {
   studentName: string;
-  parentName?: string | null;
+  parentName: string;
   mobileNumber: string;
+  parentMobile: string;
   alternateMobile?: string | null;
-  email?: string | null;
+  email: string;
+  parentEmail: string;
   dateOfBirth?: string | null;
   gender?: string | null;
   grade?: string | null;
   board?: string | null;
-  schoolName?: string | null;
+  schoolName: string;
+  nationality: B2CNationality;
+  reasonifyBoardId: number;
+  reasonifyLanguageId: number;
+  reasonifyGradeId: number;
+  studentPassword: string;
+  parentPassword: string;
+
+  /**
+   * The Agent/Counselor code credited for this student. REQUIRED by the server
+   * (CreateB2CLeadRequest.ReferralCode is [Required]) — it is what earns the student their
+   * 500-coin Reasonify signup bonus. An agent or counselor may only credit themselves; a
+   * B2CAdmin picks from the active roster. See b2cUserService.getReferralOptions().
+   */
+  referralCode: string;
   area?: string | null;
   city: string;
   state: string;
-  pincode?: string | null;
+  pincode: string;
   fullAddress?: string | null;
   enrollmentTimeline: B2CEnrollmentTimeline;
   source: B2CLeadSource;
@@ -195,18 +331,29 @@ export interface CreateB2CLeadRequest {
   overrideDuplicate?: boolean;
 }
 
+/**
+ * Partial update — every field is optional and only what is sent gets written
+ * (UpdateLeadAsync applies each property only when it is non-null). Passwords are absent by
+ * design: they are captured once at creation and read back through the credentials endpoint.
+ */
 export interface UpdateB2CLeadRequest {
   studentName?: string;
   parentName?: string | null;
   mobileNumber?: string;
+  parentMobile?: string | null;
   priority?: B2CLeadPriority;
   alternateMobile?: string | null;
   email?: string | null;
+  parentEmail?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
   grade?: string | null;
   board?: string | null;
   schoolName?: string | null;
+  nationality?: B2CNationality | null;
+  reasonifyBoardId?: number | null;
+  reasonifyLanguageId?: number | null;
+  reasonifyGradeId?: number | null;
   area?: string | null;
   city?: string;
   state?: string;
@@ -279,6 +426,8 @@ export interface B2CUserListDto {
   address?: string | null;
   isActive: boolean;
   createdAt: string;
+  /** Assigned once at creation and never regenerated (e.g. "VIR@123"). B2CAdmin can edit it. */
+  referralCode?: string | null;
 
   // Manager info
   isManager: boolean;
@@ -341,6 +490,16 @@ export interface CreateB2CCounselorRequest {
   password: string;
   specializations: string[];
   bio?: string | null;
+
+  /**
+   * Payout / KYC. All four are [Required] on the server's create DTO — a staff member who
+   * cannot be paid is not a usable record, so they are collected up front rather than chased
+   * later. Validated against the same rules as PayoutValidation server-side.
+   */
+  panNumber: string;
+  aadhaarNumber: string;
+  accountNumber: string;
+  ifscCode: string;
 }
 
 export interface UpdateB2CCounselorRequest {
@@ -557,3 +716,81 @@ export const B2C_BILLING_PLANS: B2CBillingPlan[] = [
   { name: 'Growth', credits: 200, price: 180 },
   { name: 'Pro', credits: 500, price: 400 },
 ];
+
+/**
+ * One selectable referral code (GET /b2c/users/referral-codes). An agent or counselor gets a
+ * single-entry list — their own — which the create form prefills and locks.
+ */
+export interface B2CReferralOptionDto {
+  userId: number;
+  name: string;
+  role: string;
+  referralCode: string;
+  isManager?: boolean;
+}
+
+/** One lead's resolved position. `source`: stored | geocoded | unresolved. */
+export interface LeadCoordinateDto {
+  leadId: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  source: string;
+}
+
+/**
+ * [origin][destination] driving cost grids in the order the points were sent.
+ * Durations SECONDS, distances METRES; -1 means no drivable route (never treat it as zero).
+ */
+export interface RouteMatrixDto {
+  durations: number[][];
+  distances: number[][];
+}
+
+/** One stop of a saved day, carrying whatever the GPS trail has since confirmed. */
+export interface RouteStopDto {
+  id: number;
+  leadId: number;
+  studentName: string;
+  stopOrderIndex: number;
+  isFixedAppointment: boolean;
+  scheduledArrivalTime: string;
+  estimatedDepartureTime: string;
+  latitude: number;
+  longitude: number;
+  visited: boolean;
+  actualArrivedAt: string | null;
+  actualDepartedAt: string | null;
+  /** Minutes late against the promise; negative is early, null until confirmed. */
+  arrivalVarianceMinutes: number | null;
+}
+
+export interface RoutePlanDto {
+  id: number;
+  agentId: number;
+  planDate: string;
+  totalEstimatedDistanceKm: number;
+  totalEstimatedDurationMinutes: number;
+  totalActualDistanceKm: number | null;
+  optimizationMethod: string;
+  status: 'Planned' | 'Active' | 'Completed' | 'PartiallyCompleted';
+  completedAt: string | null;
+  stops: RouteStopDto[];
+  unvisitedCount: number;
+}
+
+export interface SaveRoutePlanRequest {
+  planDate: string;
+  agentId?: number | null;
+  totalEstimatedDistanceKm: number;
+  totalEstimatedDurationMinutes: number;
+  optimizationMethod: string;
+  stops: {
+    leadId: number;
+    stopOrderIndex: number;
+    isFixedAppointment: boolean;
+    scheduledArrivalTime: string;
+    estimatedDepartureTime: string;
+    latitude: number;
+    longitude: number;
+  }[];
+}

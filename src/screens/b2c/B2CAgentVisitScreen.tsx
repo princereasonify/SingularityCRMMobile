@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Image, Alert, PermissionsAndroid, Platform, Linking,
-  ActivityIndicator, TouchableOpacity,
+  ActivityIndicator, ScrollView, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, Asset } from 'react-native-image-picker';
@@ -14,24 +14,29 @@ import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { B2CLeadDetailDto, B2CLeadListDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive } from '../../hooks/useResponsive';
+import { label } from '../../utils/labels';
 
 type Coords = { lat: number; lng: number; accuracy?: number };
 type Selfie = { uri: string; name: string; type: string };
 
 /**
- * Agent geo-verified visit capture (phase-2 native flow). Route `B2CAgentVisit`
- * receives `{ leadId }`. The agent must capture GPS + a live selfie, then verify a
- * one-time code sent to the student before the visit can be submitted. On submit we
- * create the Visit activity (lat/lng/notes) to obtain its id, then attach the selfie.
+ * Agent geo-verified visit capture (phase-2 native flow). Route `B2CAgentVisit` receives
+ * `{ leadId }`. The agent must capture GPS + a live selfie, then verify a one-time code sent
+ * to the student before the visit can be submitted. On submit we create the Visit activity
+ * (lat/lng/notes) to obtain its id, then attach the selfie.
  *
  * GPS / selfie / permission handling copied from VisitReportScreen + HomeLocationScreen.
+ *
+ * The form is six stacked cards and has never fitted a phone screen, so it scrolls; on a wide
+ * tablet the cards run in two columns rather than one very long ribbon.
  */
 export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
   const paramLeadId: number | undefined = route.params?.leadId;
   const T = useAppTheme();
   const toast = useToast();
   const insets = useSafeAreaInsets();
+  const r = useResponsive();
 
   // When launched from the "My Leads" detail a leadId is passed; when opened from the
   // drawer "Visit" entry there is none, so the agent picks from their assigned leads.
@@ -59,9 +64,9 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
 
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // The Visit activity id, once created — kept across a retry so a selfie-upload
-  // failure (flaky field connectivity) doesn't create a second, duplicate Visit
-  // when the agent taps Submit again; the retry re-attaches to the same activity.
+  // The Visit activity id, once created — kept across a retry so a selfie-upload failure
+  // (flaky field connectivity) doesn't create a second, duplicate Visit when the agent taps
+  // Submit again; the retry re-attaches to the same activity.
   const pendingActivityId = useRef<number | null>(null);
 
   // ─── Load the assigned-lead picker when no lead was passed in ───────────────
@@ -80,7 +85,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
       .then(res => setLead(res.data))
       .catch(() => toast.error('Could not load this lead.'))
       .finally(() => setLoadingLead(false));
-  }, [leadId]);
+  }, [leadId, toast]);
 
   // Changing the target lead invalidates any code already sent/verified.
   const changeLead = useCallback((id: number) => {
@@ -140,7 +145,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     );
   }, []);
 
-  // ─── Take selfie ─────────────────────────────────────────────────────────—
+  // ─── Take selfie ───────────────────────────────────────────────────────────
   const takeSelfie = useCallback(async () => {
     const ok = await askAndroid(
       PermissionsAndroid.PERMISSIONS.CAMERA,
@@ -195,7 +200,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     );
   }, []);
 
-  // ─── OTP ────────────────────────────────────────────────────────────────—
+  // ─── OTP ───────────────────────────────────────────────────────────────────
   const handleSendOtp = useCallback(async () => {
     if (!leadId) return;
     setSendingOtp(true);
@@ -214,7 +219,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     } finally {
       setSendingOtp(false);
     }
-  }, [leadId]);
+  }, [leadId, toast]);
 
   const handleVerifyOtp = useCallback(async () => {
     if (!leadId) return;
@@ -242,7 +247,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     } finally {
       setVerifyingOtp(false);
     }
-  }, [leadId, otp]);
+  }, [leadId, otp, toast]);
 
   // ─── Submit ────────────────────────────────────────────────────────────────
   const canSubmit = !!coords && !!selfie && otpVerified && !submitting;
@@ -263,7 +268,7 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
           longitude: coords.lng,
           authMethod: 'OTP',
           completedAt: new Date().toISOString(),
-          // Manual student-ID entry (when no ID card is photographed).
+          // Manual student-ID entry (used when there's no ID card to photograph).
           studentIdSchoolName: studentManual.schoolName.trim() || undefined,
           studentIdBoard: studentManual.board.trim() || undefined,
           studentIdStandard: studentManual.standard.trim() || undefined,
@@ -288,223 +293,266 @@ export const B2CAgentVisitScreen = ({ route, navigation }: any) => {
     }
   }, [leadId, coords, selfie, otpVerified, notes, navigation, studentManual, studentIdPhoto, toast]);
 
+  const s = useMemo(() => makeStyles(r), [r]);
+
+  // ─── Cards ─────────────────────────────────────────────────────────────────
+  const studentCard = (
+    <Card style={[s.cardGap, { zIndex: 20 }]}>
+      <SectionLabel>Student</SectionLabel>
+      {paramLeadId == null && (
+        <View style={{ zIndex: 30 }}>
+          <Trigger
+            label={lead?.studentName || (leadId != null ? `Lead #${leadId}` : 'Select a student…')}
+            open={leadPickerOpen}
+            onPress={() => setLeadPickerOpen(o => !o)}
+          />
+          {leadPickerOpen && (
+            <Dropdown
+              style={{ width: '100%' }}
+              maxHeight={260}
+              value={leadId != null ? String(leadId) : undefined}
+              options={leadOptions.map(l => ({ label: `${l.studentName} · ${label(l.stage)}`, value: String(l.id) }))}
+              onSelect={(v) => changeLead(Number(v))}
+            />
+          )}
+        </View>
+      )}
+      {loadingLead ? (
+        <ActivityIndicator color={T.accent} />
+      ) : lead ? (
+        <>
+          <Text style={[s.leadName, { color: T.text }]} numberOfLines={2}>{lead.studentName}</Text>
+          <Text style={[s.leadMeta, { color: T.sub }]} numberOfLines={2}>
+            {[lead.mobileNumber, lead.city].filter(Boolean).join(' · ')}
+          </Text>
+        </>
+      ) : paramLeadId != null ? (
+        <Text style={{ color: T.dim }}>Lead {leadId ?? '—'}</Text>
+      ) : null}
+    </Card>
+  );
+
+  const locationCard = (
+    <Card style={s.cardGap}>
+      <View style={s.rowBetween}>
+        <SectionLabel>Location</SectionLabel>
+        {!!coords && <StatusBadge label="Captured" color={T.success} />}
+      </View>
+      {coords ? (
+        <Text style={[s.value, { color: T.text }]}>
+          {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+          {coords.accuracy ? `  (±${Math.round(coords.accuracy)}m)` : ''}
+        </Text>
+      ) : (
+        <Text style={[s.hint, { color: T.dim }]}>Capture your GPS position at the student's location.</Text>
+      )}
+      <Btn
+        label={coords ? 'Recapture location' : 'Capture location'}
+        variant={coords ? 'secondary' : 'soft'}
+        onPress={captureLocation}
+        loading={locating}
+        icon={coords
+          ? <RefreshCw size={14} color={T.text} strokeWidth={2.2} />
+          : <MapPin size={14} color={T.accent} strokeWidth={2.2} />}
+      />
+    </Card>
+  );
+
+  const selfieCard = (
+    <Card style={s.cardGap}>
+      <View style={s.rowBetween}>
+        <SectionLabel>Selfie</SectionLabel>
+        {!!selfie && <StatusBadge label="Taken" color={T.success} />}
+      </View>
+      <View style={s.selfieRow}>
+        {selfie ? (
+          <Image source={{ uri: selfie.uri }} style={[s.thumb, { borderColor: T.line }]} />
+        ) : (
+          <View style={[s.thumb, s.thumbEmpty, { borderColor: T.line, backgroundColor: T.fieldBg }]}>
+            <Camera size={22} color={T.dim} />
+          </View>
+        )}
+        <View style={s.selfieBtn}>
+          <Btn
+            label={selfie ? 'Retake selfie' : 'Take selfie'}
+            variant={selfie ? 'secondary' : 'soft'}
+            onPress={takeSelfie}
+            icon={<Camera size={14} color={selfie ? T.text : T.accent} strokeWidth={2.2} />}
+          />
+        </View>
+      </View>
+    </Card>
+  );
+
+  const studentIdCard = (
+    <Card style={s.cardGap}>
+      <View style={s.rowBetween}>
+        <SectionLabel>Student ID</SectionLabel>
+        {(!!studentIdPhoto || !!studentManual.schoolName) && <StatusBadge label="Added" color={T.success} />}
+      </View>
+      <View style={s.selfieRow}>
+        {studentIdPhoto ? (
+          <Image source={{ uri: studentIdPhoto.uri }} style={[s.thumb, { borderColor: T.line }]} />
+        ) : (
+          <View style={[s.thumb, s.thumbEmpty, { borderColor: T.line, backgroundColor: T.fieldBg }]}>
+            <Camera size={22} color={T.dim} />
+          </View>
+        )}
+        <View style={s.selfieBtn}>
+          <Btn
+            label={studentIdPhoto ? 'Retake ID card' : 'Capture ID card'}
+            variant={studentIdPhoto ? 'secondary' : 'soft'}
+            onPress={takeStudentId}
+            icon={<Camera size={14} color={studentIdPhoto ? T.text : T.accent} strokeWidth={2.2} />}
+          />
+        </View>
+      </View>
+      {!studentIdPhoto && (
+        <View style={{ gap: 8, marginTop: 4 }}>
+          <Text style={[s.manualHint, { color: T.dim }]}>No ID card? Enter details:</Text>
+          <Input label="School name" value={studentManual.schoolName} onChangeText={v => setStudentManual(f => ({ ...f, schoolName: v }))} placeholder="e.g. Delhi Public School" />
+          <View style={s.manualRow}>
+            <View style={{ flex: 1 }}><Input label="Board" value={studentManual.board} onChangeText={v => setStudentManual(f => ({ ...f, board: v }))} placeholder="CBSE" /></View>
+            <View style={{ flex: 1 }}><Input label="Standard" value={studentManual.standard} onChangeText={v => setStudentManual(f => ({ ...f, standard: v }))} placeholder="9th" /></View>
+          </View>
+        </View>
+      )}
+    </Card>
+  );
+
+  const otpCard = (
+    <Card style={s.cardGap}>
+      <View style={s.rowBetween}>
+        <SectionLabel>OTP Verification</SectionLabel>
+        {otpVerified && <StatusBadge label="Verified" color={T.success} />}
+      </View>
+      {!otpSent ? (
+        <>
+          <Text style={[s.hint, { color: T.dim }]}>Send a one-time code to the student to confirm the visit.</Text>
+          <Btn
+            label="Send OTP"
+            variant="soft"
+            onPress={handleSendOtp}
+            loading={sendingOtp}
+            disabled={leadId == null}
+            icon={<ShieldCheck size={14} color={T.accent} strokeWidth={2.2} />}
+          />
+        </>
+      ) : (
+        <>
+          <Input
+            label="6-digit code"
+            value={otp}
+            onChangeText={(v) => { setOtp(v.replace(/[^0-9]/g, '').slice(0, 6)); setOtpVerified(false); }}
+            keyboardType="number-pad"
+            placeholder="••••••"
+            maxLength={6}
+            editable={!otpVerified}
+          />
+          <View style={s.otpActions}>
+            <Btn label="Resend" variant="secondary" small onPress={handleSendOtp} loading={sendingOtp} style={{ flex: 1 }} />
+            <Btn
+              label={otpVerified ? 'Verified' : 'Verify'}
+              small
+              onPress={handleVerifyOtp}
+              loading={verifyingOtp}
+              disabled={otpVerified || otp.length !== 6}
+              icon={otpVerified ? <CheckCircle2 size={13} color="#FFF" strokeWidth={2.4} /> : undefined}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </>
+      )}
+    </Card>
+  );
+
+  const notesCard = (
+    <Card style={s.cardGap}>
+      <Input
+        label="Notes (optional)"
+        value={notes}
+        onChangeText={setNotes}
+        placeholder="Anything worth recording about this visit"
+        multiline
+      />
+    </Card>
+  );
+
   return (
     <View style={[s.root, { backgroundColor: T.bg, paddingTop: insets.top }]}>
       <AppHeader title="Log Visit" subtitle={lead?.studentName} onBack={() => navigation.goBack()} />
-
-      <View style={[s.content, { paddingBottom: insets.bottom + 20 }]}>
-        {/* Lead */}
-        <Card style={[s.cardGap, { zIndex: 20 }]}>
-          <SectionLabel>Student</SectionLabel>
-          {paramLeadId == null && (
-            <View style={{ zIndex: 30 }}>
-              <Trigger
-                label={lead?.studentName || (leadId != null ? `Lead #${leadId}` : 'Select a student…')}
-                open={leadPickerOpen}
-                onPress={() => setLeadPickerOpen(o => !o)}
-              />
-              {leadPickerOpen && (
-                <Dropdown
-                  style={{ width: '100%' }}
-                  maxHeight={260}
-                  value={leadId != null ? String(leadId) : undefined}
-                  options={leadOptions.map(l => ({ label: `${l.studentName} · ${l.stage}`, value: String(l.id) }))}
-                  onSelect={(v) => changeLead(Number(v))}
-                />
-              )}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 28 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Two columns once there is width for them — six stacked cards on a landscape iPad
+              is a very long scroll through mostly empty space. */}
+          <View style={s.cols}>
+            <View style={s.col}>
+              {studentCard}
+              {locationCard}
+              {selfieCard}
             </View>
-          )}
-          {loadingLead ? (
-            <ActivityIndicator color={T.accent} />
-          ) : lead ? (
-            <>
-              <Text style={[s.leadName, { color: T.text }]}>{lead.studentName}</Text>
-              <Text style={[s.leadMeta, { color: T.sub }]}>
-                {[lead.mobileNumber, lead.city].filter(Boolean).join(' · ')}
-              </Text>
-            </>
-          ) : paramLeadId != null ? (
-            <Text style={{ color: T.dim }}>Lead {leadId ?? '—'}</Text>
-          ) : null}
-        </Card>
-
-        {/* Location */}
-        <Card style={s.cardGap}>
-          <View style={s.rowBetween}>
-            <SectionLabel>Location</SectionLabel>
-            {!!coords && <StatusBadge label="Captured" color={T.success} />}
+            <View style={s.col}>
+              {studentIdCard}
+              {otpCard}
+              {notesCard}
+            </View>
           </View>
-          {coords ? (
-            <Text style={[s.value, { color: T.text }]}>
-              {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-              {coords.accuracy ? `  (±${Math.round(coords.accuracy)}m)` : ''}
-            </Text>
-          ) : (
-            <Text style={[s.hint, { color: T.dim }]}>Capture your GPS position at the student's location.</Text>
-          )}
+
           <Btn
-            label={coords ? 'Recapture location' : 'Capture location'}
-            variant={coords ? 'secondary' : 'soft'}
-            onPress={captureLocation}
-            loading={locating}
-            icon={coords
-              ? <RefreshCw size={14} color={T.text} strokeWidth={2.2} />
-              : <MapPin size={14} color={T.accent} strokeWidth={2.2} />}
+            label={submitting ? 'Submitting…' : 'Submit visit'}
+            onPress={handleSubmit}
+            loading={submitting}
+            disabled={!canSubmit}
           />
-        </Card>
-
-        {/* Selfie */}
-        <Card style={s.cardGap}>
-          <View style={s.rowBetween}>
-            <SectionLabel>Selfie</SectionLabel>
-            {!!selfie && <StatusBadge label="Taken" color={T.success} />}
-          </View>
-          <View style={s.selfieRow}>
-            {selfie ? (
-              <Image source={{ uri: selfie.uri }} style={[s.thumb, { borderColor: T.line }]} />
-            ) : (
-              <View style={[s.thumb, s.thumbEmpty, { borderColor: T.line, backgroundColor: T.fieldBg }]}>
-                <Camera size={22} color={T.dim} />
-              </View>
-            )}
-            <View style={s.selfieBtn}>
-              <Btn
-                label={selfie ? 'Retake selfie' : 'Take selfie'}
-                variant={selfie ? 'secondary' : 'soft'}
-                onPress={takeSelfie}
-                icon={<Camera size={14} color={selfie ? T.text : T.accent} strokeWidth={2.2} />}
-              />
-            </View>
-          </View>
-        </Card>
-
-        {/* Student ID — capture the ID card, or enter school/board/standard manually */}
-        <Card style={s.cardGap}>
-          <View style={s.rowBetween}>
-            <SectionLabel>Student ID</SectionLabel>
-            {(!!studentIdPhoto || !!studentManual.schoolName) && <StatusBadge label="Added" color={T.success} />}
-          </View>
-          <View style={s.selfieRow}>
-            {studentIdPhoto ? (
-              <Image source={{ uri: studentIdPhoto.uri }} style={[s.thumb, { borderColor: T.line }]} />
-            ) : (
-              <View style={[s.thumb, s.thumbEmpty, { borderColor: T.line, backgroundColor: T.fieldBg }]}>
-                <Camera size={22} color={T.dim} />
-              </View>
-            )}
-            <View style={s.selfieBtn}>
-              <Btn
-                label={studentIdPhoto ? 'Retake ID card' : 'Capture ID card'}
-                variant={studentIdPhoto ? 'secondary' : 'soft'}
-                onPress={takeStudentId}
-                icon={<Camera size={14} color={studentIdPhoto ? T.text : T.accent} strokeWidth={2.2} />}
-              />
-            </View>
-          </View>
-          {!studentIdPhoto && (
-            <View style={{ gap: 8, marginTop: 4 }}>
-              <Text style={[s.manualHint, { color: T.dim }]}>No ID card? Enter details:</Text>
-              <Input label="School name" value={studentManual.schoolName} onChangeText={v => setStudentManual(f => ({ ...f, schoolName: v }))} placeholder="e.g. Delhi Public School" />
-              <View style={s.manualRow}>
-                <View style={{ flex: 1 }}><Input label="Board" value={studentManual.board} onChangeText={v => setStudentManual(f => ({ ...f, board: v }))} placeholder="CBSE" /></View>
-                <View style={{ flex: 1 }}><Input label="Standard" value={studentManual.standard} onChangeText={v => setStudentManual(f => ({ ...f, standard: v }))} placeholder="9th" /></View>
-              </View>
-            </View>
+          {!canSubmit && !submitting && (
+            <Text style={[s.hint, { color: T.dim, textAlign: 'center' }]}>
+              Capture location, take a selfie and verify the OTP to submit.
+            </Text>
           )}
-        </Card>
-
-        {/* OTP */}
-        <Card style={s.cardGap}>
-          <View style={s.rowBetween}>
-            <SectionLabel>OTP Verification</SectionLabel>
-            {otpVerified && <StatusBadge label="Verified" color={T.success} />}
-          </View>
-          {!otpSent ? (
-            <>
-              <Text style={[s.hint, { color: T.dim }]}>Send a one-time code to the student to confirm the visit.</Text>
-              <Btn
-                label="Send OTP"
-                variant="soft"
-                onPress={handleSendOtp}
-                loading={sendingOtp}
-                icon={<ShieldCheck size={14} color={T.accent} strokeWidth={2.2} />}
-              />
-            </>
-          ) : (
-            <>
-              <Input
-                label="6-digit code"
-                value={otp}
-                onChangeText={(v) => { setOtp(v.replace(/[^0-9]/g, '').slice(0, 6)); setOtpVerified(false); }}
-                keyboardType="number-pad"
-                placeholder="••••••"
-                maxLength={6}
-                editable={!otpVerified}
-              />
-              <View style={s.otpActions}>
-                <Btn
-                  label="Resend"
-                  variant="secondary"
-                  small
-                  onPress={handleSendOtp}
-                  loading={sendingOtp}
-                  style={{ flex: 1 }}
-                />
-                <Btn
-                  label={otpVerified ? 'Verified' : 'Verify'}
-                  small
-                  onPress={handleVerifyOtp}
-                  loading={verifyingOtp}
-                  disabled={otpVerified || otp.length !== 6}
-                  icon={otpVerified ? <CheckCircle2 size={13} color="#FFF" strokeWidth={2.4} /> : undefined}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            </>
-          )}
-        </Card>
-
-        {/* Notes */}
-        <Card style={s.cardGap}>
-          <Input
-            label="Notes (optional)"
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Anything worth recording about this visit"
-            multiline
-          />
-        </Card>
-
-        <Btn
-          label={submitting ? 'Submitting…' : 'Submit visit'}
-          onPress={handleSubmit}
-          loading={submitting}
-          disabled={!canSubmit}
-        />
-        {!canSubmit && !submitting && (
-          <Text style={[s.hint, { color: T.dim, textAlign: 'center' }]}>
-            Capture location, take a selfie and verify the OTP to submit.
-          </Text>
-        )}
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 };
 
-const s = StyleSheet.create({
-  root: { flex: 1 },
-  content: { flex: 1, padding: 16, gap: 12 },
-  cardGap: { gap: 10 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  leadName: { fontSize: rf(16), fontWeight: '800', letterSpacing: -0.3 },
-  leadMeta: { fontSize: rf(12.5), fontWeight: '500' },
-  value: { fontSize: rf(13.5), fontWeight: '700' },
-  hint: { fontSize: rf(12), fontWeight: '500', lineHeight: 17 },
-  selfieRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  manualHint: { fontSize: rf(11.5), fontWeight: '600' },
-  manualRow: { flexDirection: 'row', gap: 10 },
-  thumb: { width: 74, height: 74, borderRadius: 14, borderWidth: 1 },
-  thumbEmpty: { alignItems: 'center', justifyContent: 'center' },
-  selfieBtn: { flex: 1 },
-  otpActions: { flexDirection: 'row', gap: 10 },
-});
+const makeStyles = (r: ReturnType<typeof useResponsive>) =>
+  StyleSheet.create({
+    root: { flex: 1 },
+    content: {
+      padding: r.gutter,
+      gap: 12,
+      // Centred and capped only on a wide tablet; on a phone maxContentWidth is the window
+      // width, so this is a no-op and the phone layout is unchanged.
+      ...(r.isWide ? { maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' as const } : null),
+    },
+    cols: {
+      flexDirection: r.isWide ? 'row' : 'column',
+      alignItems: 'flex-start',
+      gap: r.isWide ? r.gap : 0,
+    },
+    col: { flex: r.isWide ? 1 : undefined, width: r.isWide ? undefined : '100%', gap: 12 },
+
+    cardGap: { gap: 10 },
+    rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    leadName: { fontSize: r.rf(16), fontWeight: '800', letterSpacing: -0.3 },
+    leadMeta: { fontSize: r.rf(12.5), fontWeight: '500' },
+    value: { fontSize: r.rf(13.5), fontWeight: '700' },
+    hint: { fontSize: r.rf(12), fontWeight: '500', lineHeight: r.rf(17) },
+    selfieRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    manualHint: { fontSize: r.rf(11.5), fontWeight: '600' },
+    manualRow: { flexDirection: 'row', gap: 10 },
+    thumb: { width: r.isTablet ? 92 : 74, height: r.isTablet ? 92 : 74, borderRadius: 14, borderWidth: 1 },
+    thumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+    selfieBtn: { flex: 1 },
+    otpActions: { flexDirection: 'row', gap: 10 },
+  });
+
+export default B2CAgentVisitScreen;

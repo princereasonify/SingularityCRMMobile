@@ -1,6 +1,7 @@
 import { apiClient } from '../client';
 import { PaginatedResult } from '../../types';
 import {
+  LeadCoordinateDto,
   B2CLeadListDto,
   B2CLeadDetailDto,
   CreateB2CLeadRequest,
@@ -9,6 +10,8 @@ import {
   DuplicateCheckResult,
   BulkUploadResult,
   B2CBulkJobDto,
+  B2CLookupOption,
+  B2CLeadCredentialsDto,
 } from '../../types/b2c';
 
 /**
@@ -30,6 +33,7 @@ export interface B2CLeadQuery {
   agentId?: number;
   counselorId?: number;
   area?: string;
+  pincode?: string;
   grade?: string;
   board?: string;
 }
@@ -64,16 +68,44 @@ export const b2cLeadService = {
   assignCounselor: (id: number, counselorId: number) =>
     apiClient.post(`${BASE}/${id}/assign-counselor`, { counselorId }),
 
-  updateStage: (id: number, newStage: string, notes?: string) =>
-    apiClient.patch(`${BASE}/${id}/stage`, { newStage, notes }),
+  /**
+   * `appointmentAt` is an ISO instant and is REQUIRED for the 'AppointmentBooked' stage —
+   * an appointment with no time is not an appointment, and the server refuses it. Ignored
+   * for every other stage.
+   */
+  updateStage: (id: number, newStage: string, notes?: string, appointmentAt?: string) =>
+    apiClient.patch(`${BASE}/${id}/stage`, { newStage, notes, appointmentAt }),
+
+  /**
+   * Moves a booked visit without touching the funnel — the student changed their slot.
+   * Deliberately not a stage update: that would write a meaningless
+   * AppointmentBooked → AppointmentBooked step into the history on every reschedule.
+   * Also moves the planned-visit row the Route Planner, Weekly Plan and Calendar read.
+   */
+  rescheduleAppointment: (id: number, appointmentAt: string, notes?: string) =>
+    apiClient.patch<B2CLeadDetailDto>(`${BASE}/${id}/appointment`, { appointmentAt, notes }),
+
+  /**
+   * Re-attempt Reasonify account creation for a lead whose sync failed, reusing the
+   * credentials captured at creation. Refused on an already-synced lead (it would duplicate
+   * the student).
+   */
+  retryReasonifySync: (id: number) =>
+    apiClient.post<B2CLeadCredentialsDto>(`${BASE}/${id}/reasonify-sync`),
 
   convertLead: (id: number, data: ConvertLeadRequest) =>
     apiClient.post<B2CLeadDetailDto>(`${BASE}/${id}/convert`, data),
 
   // POST with the values on the query string (body is null) — matches the controller signature.
   // A hard duplicate now requires BOTH the full student name and the mobile to match.
-  checkDuplicate: (mobile: string, studentName?: string, email?: string) =>
-    apiClient.post<DuplicateCheckResult>(`${BASE}/duplicate-check`, null, { params: { mobile, studentName, email } }),
+  /**
+   * `excludeLeadId` is the lead being edited — without it the edit form's check finds the very
+   * lead the user is editing and reports it as a duplicate of itself.
+   */
+  checkDuplicate: (mobile: string, studentName?: string, email?: string, excludeLeadId?: number) =>
+    apiClient.post<DuplicateCheckResult>(`${BASE}/duplicate-check`, null, {
+      params: { mobile, studentName, email, excludeLeadId },
+    }),
 
   // B2CAdmin only. `file` is a RN document/asset { uri, name, type } appended to FormData.
   bulkUpload: (file: any, defaultAgentId?: number) => {
@@ -86,4 +118,30 @@ export const b2cLeadService = {
   },
 
   getBulkJob: (jobId: number) => apiClient.get<B2CBulkJobDto>(`${BASE}/bulk-jobs/${jobId}`),
+
+  /**
+   * Decrypted student/parent Reasonify login for this lead. B2CAdmin always; Agent/Counselor
+   * only when assigned to it. This is the whole point of storing them reversibly — an agent
+   * standing in the student's house needs to actually log in as them.
+   */
+  getCredentials: (id: number) =>
+    apiClient.get<B2CLeadCredentialsDto>(`${BASE}/${id}/credentials`),
+
+  // Reasonify's Board/Language/Grade lookups, proxied server-side. The lead form's cascading
+  // dropdowns need Reasonify's real numeric ids — its registration call takes a GradeId, not
+  // a label — and grades are scoped to a (board, medium) pair.
+  /**
+   * Coordinates for a set of leads, geocoding and PERSISTING any that lack them.
+   * A B2C lead only gains coordinates from a geo-verified visit, so an unvisited one has none —
+   * which is why "Optimise" used to report that no student could be placed on the route.
+   */
+  resolveCoordinates: (leadIds: number[]) =>
+    apiClient.post<LeadCoordinateDto[]>(`${BASE}/resolve-coordinates`, { leadIds }),
+
+  getReasonifyBoards: () => apiClient.get<B2CLookupOption[]>(`${BASE}/lookups/boards`),
+
+  getReasonifyLanguages: () => apiClient.get<B2CLookupOption[]>(`${BASE}/lookups/languages`),
+
+  getReasonifyGrades: (boardId: number, languageId?: number) =>
+    apiClient.get<B2CLookupOption[]>(`${BASE}/lookups/grades`, { params: { boardId, languageId } }),
 };

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Alert, PermissionsAndroid, Platform, Linking,
   ActivityIndicator, TouchableOpacity,
@@ -13,7 +13,8 @@ import { b2cRecordingService } from '../../api/b2c/b2cRecordingService';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { B2CLeadListDto, B2CCounselingFeedbackDto } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
+import { label } from '../../utils/labels';
 
 type Phase = 'setup' | 'ready' | 'recording' | 'uploading' | 'analyzing' | 'done';
 
@@ -47,6 +48,7 @@ const POLL_MAX_ATTEMPTS = 45; // ~3 min ceiling
 export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
   const paramLeadId: number | undefined = route.params?.leadId;
   const T = useAppTheme();
+  const r = useResponsive();
   const insets = useSafeAreaInsets();
 
   const [leads, setLeads] = useState<B2CLeadListDto[]>([]);
@@ -260,6 +262,8 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
     score >= 75 ? T.success : score >= 50 ? T.warning : T.danger;
 
   // ─── Render ────────────────────────────────────────────────────────────—
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <View style={[s.root, { backgroundColor: T.bg, paddingTop: insets.top }]}>
       <AppHeader
@@ -290,7 +294,7 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
                     style={{ width: '100%' }}
                     maxHeight={260}
                     value={selectedLeadId != null ? String(selectedLeadId) : undefined}
-                    options={leads.map(l => ({ label: `${l.studentName} · ${l.stage}`, value: String(l.id) }))}
+                    options={leads.map(l => ({ label: `${l.studentName} · ${label(l.stage)}`, value: String(l.id) }))}
                     onSelect={(v) => { setSelectedLeadId(Number(v)); setLeadPickerOpen(false); }}
                   />
                 )}
@@ -479,7 +483,7 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
           {loadingSessions ? (
             <ActivityIndicator color={T.accent} />
           ) : sessions.length === 0 ? (
-            <Text style={{ color: T.dim, fontSize: rf(12.5) }}>No recorded sessions yet.</Text>
+            <Text style={{ color: T.dim, fontSize: r.rf(12.5) }}>No recorded sessions yet.</Text>
           ) : (
             sessions.map(sess => (
               <TouchableOpacity
@@ -505,28 +509,35 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   root: { flex: 1 },
-  content: { padding: 16, gap: 12 },
+  // Gutter/gap follow the device; the cap stops a 1200pt iPad line running edge to edge.
+  content: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
   cardGap: { gap: 10 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: { fontSize: rf(12.5), fontWeight: '600', marginBottom: 6 },
-  value: { fontSize: rf(14.5), fontWeight: '700' },
-  hint: { fontSize: rf(11.5), fontWeight: '500', lineHeight: 16 },
-  timer: { fontSize: rf(40), fontWeight: '800', letterSpacing: -1, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  bigScore: { fontSize: rf(48), fontWeight: '900', letterSpacing: -2 },
-  bigScoreMax: { fontSize: rf(16), fontWeight: '700' },
+  label: { fontSize: r.rf(12.5), fontWeight: '600', marginBottom: 6 },
+  value: { fontSize: r.rf(14.5), fontWeight: '700' },
+  hint: { fontSize: r.rf(11.5), fontWeight: '500', lineHeight: 16 },
+  timer: { fontSize: r.rf(40), fontWeight: '800', letterSpacing: -1, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  bigScore: { fontSize: r.rf(48), fontWeight: '900', letterSpacing: -2 },
+  bigScoreMax: { fontSize: r.rf(16), fontWeight: '700' },
   dimRow: { gap: 5, paddingVertical: 4 },
-  dimLabel: { fontSize: rf(13), fontWeight: '700' },
-  dimScore: { fontSize: rf(13), fontWeight: '800' },
+  dimLabel: { fontSize: r.rf(13), fontWeight: '700' },
+  dimScore: { fontSize: r.rf(13), fontWeight: '800' },
   bar: { height: 6, borderRadius: 3, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3 },
-  dimComment: { fontSize: rf(11.5), fontWeight: '500', lineHeight: 16 },
-  bullet: { fontSize: rf(13), fontWeight: '500', lineHeight: 19 },
+  dimComment: { fontSize: r.rf(11.5), fontWeight: '500', lineHeight: 16 },
+  bullet: { fontSize: r.rf(13), fontWeight: '500', lineHeight: 19 },
+  // A whole session row is the touch target, so it carries the 44pt minimum height.
   sessRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: MIN_TAP,
     paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth,
   },
-  sessName: { fontSize: rf(13.5), fontWeight: '700' },
-  sessMeta: { fontSize: rf(11), fontWeight: '500', marginTop: 2 },
+  sessName: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sessMeta: { fontSize: r.rf(11), fontWeight: '500', marginTop: 2 },
 });

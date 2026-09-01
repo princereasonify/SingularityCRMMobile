@@ -19,13 +19,19 @@ import { rf } from '../../utils/responsive';
 // ─── Screen ────────────────────────────────────────────────────────────────────
 // Themed page background + top safe-area. Wrap every redesigned screen in this.
 export const Screen = ({
-  children, scroll, contentStyle, refreshing, onRefresh, edges = true,
+  children, scroll, contentStyle, refreshing, onRefresh, edges = false,
 }: {
   children: React.ReactNode;
   scroll?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Pay the top safe-area inset. Defaults to FALSE because every screen using this sits below
+   * the drawer's AppTopbar, which already covers the status-bar strip — adding it again put a
+   * dead band under the header on all 23 screens. Set true only for a screen with no header
+   * above it.
+   */
   edges?: boolean;
 } & ScrollViewProps) => {
   const T = useAppTheme();

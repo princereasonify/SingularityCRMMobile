@@ -25,6 +25,15 @@ class LocationTrackingService : Service() {
         const val NOTIFICATION_ID = 1001
         const val EXTRA_TOKEN = "auth_token"
         const val EXTRA_API_URL = "api_base_url"
+
+        /**
+         * Which tier's endpoints this session pings. One engine serves B2B and B2C — the only
+         * thing that differs is the path, so JS supplies it at start rather than the app
+         * carrying two near-identical foreground services that can drift apart.
+         * Defaults keep the historical B2B behaviour for any caller that does not pass them.
+         */
+        const val EXTRA_PING_PATH = "ping_path"
+        const val EXTRA_BATCH_PATH = "batch_path"
         const val PREFS_NAME = "LocationTrackingPrefs"
         private const val PENDING_PINGS_KEY = "pending_pings"
         private const val PING_INTERVAL_MS = 30_000L
@@ -35,9 +44,27 @@ class LocationTrackingService : Service() {
         /** Never send a fix older than this — a stale position corrupts the route. */
         private const val STALE_FIX_MS = 30_000L
 
-        /** On-device accuracy gate (metres); mirrors the server's 75 m gate so poor
-         *  WiFi/cell fixes never enter the route. */
-        private const val MAX_ACCURACY_METRES = 75f
+        /**
+         * On-device accuracy gate (metres). Tightened from 75 m: at 75 m a fix can sit on the
+         * wrong side of a dual carriageway, and the road-snapper will faithfully snap it there.
+         * A bad fix that passes the gate becomes a confident WRONG road — worse than no fix.
+         * The server keeps its own 75 m gate as a backstop for older clients.
+         */
+        private const val MAX_ACCURACY_METRES = 35f
+
+        /** Below this the device is standing still, whatever the coordinates wobble by. */
+        private const val STATIONARY_SPEED_KMH = 1.5
+
+        /** Displacement under this, at low speed, is jitter rather than travel. */
+        private const val STATIONARY_DISPLACEMENT_M = 20.0
+
+        /**
+         * Consecutive stationary checks before distance stops accumulating. Three, not one: a
+         * single slow fix at a traffic light is not a parked phone, and suppressing on the first
+         * would eat real crawling-traffic movement. A phone on a desk still wanders several
+         * metres a minute — over an eight-hour shift that is kilometres nobody walked.
+         */
+        private const val STATIONARY_STREAK = 3
 
         /** A fix this much newer wins outright (Google's isBetterLocation heuristic). */
         private const val SIGNIFICANT_TIME_MS = 15_000L
@@ -50,6 +77,10 @@ class LocationTrackingService : Service() {
     private lateinit var locationManager: LocationManager
     private val handler = Handler(Looper.getMainLooper())
     private var pingRunnable: Runnable? = null
+
+    /** Rolling stationary state — reset whenever a day starts (onStartCommand). */
+    private var stationaryStreak = 0
+    private var lastSentLocation: Location? = null
     private var lastLocation: Location? = null
 
     private val locationListener = LocationListener { location ->
@@ -96,6 +127,15 @@ class LocationTrackingService : Service() {
         intent?.getStringExtra(EXTRA_TOKEN)?.let { token ->
             prefs.edit().putString(EXTRA_TOKEN, token).apply()
         }
+        intent?.getStringExtra(EXTRA_PING_PATH)?.let { pth ->
+            prefs.edit().putString(EXTRA_PING_PATH, pth).apply()
+        }
+        intent?.getStringExtra(EXTRA_BATCH_PATH)?.let { pth ->
+            prefs.edit().putString(EXTRA_BATCH_PATH, pth).apply()
+        }
+        // A fresh start command is a fresh day: never inherit the previous shift's motion state.
+        stationaryStreak = 0
+        lastSentLocation = null
         intent?.getStringExtra(EXTRA_API_URL)?.let { url ->
             prefs.edit().putString(EXTRA_API_URL, url).apply()
         }
@@ -123,7 +163,24 @@ class LocationTrackingService : Service() {
 
     private fun currentToken(): String? = prefs().getString(EXTRA_TOKEN, null)?.takeIf { it.isNotEmpty() }
 
+    /**
+     * Battery as a 0–1 fraction, or null when it cannot be read. Diagnostic, never critical:
+     * a shift that goes dark at 3% is a flat phone, not a tracking failure, and the two need
+     * telling apart. Must never throw — a battery reading is not worth losing a location over.
+     */
+    private fun batteryFraction(): Double? = try {
+        val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+        val pct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        if (pct in 0..100) pct / 100.0 else null
+    } catch (e: Exception) {
+        null
+    }
+
     private fun currentBaseUrl(): String? = prefs().getString(EXTRA_API_URL, null)?.takeIf { it.isNotEmpty() }
+
+    /** Tier paths, defaulting to B2B so an old caller behaves exactly as before. */
+    private fun pingPath(): String = prefs().getString(EXTRA_PING_PATH, null)?.takeIf { it.isNotEmpty() } ?: "/tracking/ping"
+    private fun batchPath(): String = prefs().getString(EXTRA_BATCH_PATH, null)?.takeIf { it.isNotEmpty() } ?: "/tracking/ping/batch"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -185,10 +242,24 @@ class LocationTrackingService : Service() {
         val ageMs = System.currentTimeMillis() - location.time
         if (ageMs > STALE_FIX_MS) return Unit.also { Log.w(TAG, "Fix ${ageMs}ms old — skip ping") }
 
-        // Accuracy gate: drop poor fixes on-device (the server gates identically at 75 m).
+        // Accuracy gate: drop poor fixes on-device before they can be snapped to a wrong road.
         if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_METRES) {
             return Unit.also { Log.w(TAG, "Low-accuracy fix ${location.accuracy}m — skip ping") }
         }
+
+        // Stationary suppression: a parked phone must not accumulate distance. Only after three
+        // consecutive stationary checks, so a slow crawl in traffic still counts as travel.
+        val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
+        val movedM = lastSentLocation?.distanceTo(location)?.toDouble() ?: Double.MAX_VALUE
+        if (speedKmh < STATIONARY_SPEED_KMH && movedM < STATIONARY_DISPLACEMENT_M) {
+            stationaryStreak++
+            if (stationaryStreak >= STATIONARY_STREAK) {
+                return Unit.also { Log.d(TAG, "Stationary (${stationaryStreak}x) — suppressing ping") }
+            }
+        } else {
+            stationaryStreak = 0
+        }
+        lastSentLocation = location
 
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -203,7 +274,24 @@ class LocationTrackingService : Service() {
             // Report the real provider (gps/network/fused) so the server's fraud/quality
             // engine can weight fixes correctly instead of assuming everything is GPS.
             put("provider", location.provider?.uppercase(Locale.US) ?: "GPS")
-            put("isMocked", location.isFromMockProvider)
+
+            // Course over ground — lets the live map orient the marker instead of drifting a
+            // featureless dot, and helps disambiguate which carriageway a fix belongs to.
+            // hasBearing() is false when stationary; a bearing of 0 would read as due north.
+            if (location.hasBearing()) put("bearing", location.bearing.toDouble())
+
+            // Altitude and mock-provider under BOTH tiers' names. The two APIs were built
+            // separately and spell these differently; each ignores members it does not know,
+            // so emitting both is what lets one engine serve both without a translation layer.
+            if (location.hasAltitude()) put("altitude", location.altitude)          // B2C
+            put("isMocked", location.isFromMockProvider)                            // B2B
+            put("isMock", location.isFromMockProvider)                              // B2C
+
+            // Battery: B2B stores a 0–1 fraction, B2C a 0–100 percent. Same reason as above.
+            batteryFraction()?.let {
+                put("batteryLevel", it)                                             // B2B, 0–1
+                put("batteryPercent", Math.round(it * 100).toInt())                 // B2C, 0–100
+            }
         }
 
         Thread {
@@ -220,7 +308,7 @@ class LocationTrackingService : Service() {
             // Anything we couldn't deliver earlier goes first, so the route stays in order.
             flushQueue(baseUrl, token)
 
-            when (val code = postJson("$baseUrl/tracking/ping", token, ping.toString())) {
+            when (val code = postJson("$baseUrl${pingPath()}", token, ping.toString())) {
                 in 200..299 -> Log.d(TAG, "Ping → $code | ${location.latitude}, ${location.longitude}")
 
                 // Token expired/invalid. Keep the fix — the app will mint a new token on next
@@ -296,7 +384,7 @@ class LocationTrackingService : Service() {
         if (queue.length() == 0) return
 
         val body = JSONObject().put("pings", queue).toString()
-        when (val code = postJson("$baseUrl/tracking/ping/batch", token, body)) {
+        when (val code = postJson("$baseUrl${batchPath()}", token, body)) {
             in 200..299 -> {
                 Log.d(TAG, "Flushed ${queue.length()} queued pings")
                 writeQueue(JSONArray())

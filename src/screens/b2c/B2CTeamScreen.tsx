@@ -6,7 +6,7 @@ import { SearchBar, ListCard, Avatar, StatusBadge } from '../../components/crud'
 import { StatTile } from '../../components/ui';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /**
  * B2CTeamScreen — manager "My Team" view. Mirrors web B2CTeam.jsx: the agents who
@@ -31,6 +31,7 @@ const initialsOf = (name?: string) =>
 
 export const B2CTeamScreen = () => {
   const T = useAppTheme();
+  const r = useResponsive();
 
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +64,15 @@ export const B2CTeamScreen = () => {
       (a.mobile || '').toLowerCase().includes(q),
     );
   }, [team, search]);
+
+  // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
+  // to survive as table columns. Width is computed rather than a percentage: `49%` twice
+  // plus the gap overflows the row and silently collapses the grid back to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -108,9 +118,9 @@ export const B2CTeamScreen = () => {
             <Text style={[s.emptyTxt, { color: T.dim }]}>No agents match “{search.trim()}”.</Text>
           </View>
         ) : (
-          <View style={{ gap: 8 }}>
+          <View style={s.grid}>
             {filtered.map(a => (
-              <ListCard key={a.id} style={{ alignItems: 'flex-start' }}>
+              <ListCard key={a.id} style={{ alignItems: 'flex-start', width: cardW }}>
                 <Avatar initials={initialsOf(a.name)} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={s.rowTop}>
@@ -143,17 +153,25 @@ export const B2CTeamScreen = () => {
   );
 };
 
-const s = StyleSheet.create({
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
-  statsRow: { flexDirection: 'row', gap: 10 },
-  stat: { flex: 1 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
+  // Three tiles across a phone clips the labels; they wrap instead and fill a tablet row.
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  stat: { flexGrow: 1, flexBasis: r.isTablet ? 200 : 140, minWidth: 130 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500', flexShrink: 1 },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500', flexShrink: 1 },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
 });

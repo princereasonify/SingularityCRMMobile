@@ -18,7 +18,7 @@ import { b2cActivityService } from '../../api/b2c/b2cActivityService';
 import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection } from '../../components/b2c/useFieldStaff';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { rf } from '../../utils/responsive';
+import { useResponsive, Responsive } from '../../hooks/useResponsive';
 
 /** Web parity: B2CGeoCompliance.jsx pages 20 at a time. Admin-only route. */
 const PAGE_SIZE = 20;
@@ -42,6 +42,7 @@ type Tab = 'violations' | 'selfies';
 
 export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   const T = useAppTheme();
+  const r = useResponsive();
   const toast = useToast();
 
   const [tab, setTab] = useState<Tab>('violations');
@@ -195,6 +196,14 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
 
+  // Two cards per row on a tablet, one on a phone. Computed rather than a percentage:
+  // two 49% cards plus the gap overflow the row and collapse the grid to one column.
+  const cardW: number | '100%' = r.isTablet
+    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
+    : '100%';
+
+  const s = useMemo(() => makeStyles(r), [r]);
+
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled"
@@ -268,9 +277,9 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
               </View>
             ) : (
               <>
-                <View style={{ gap: 8 }}>
+                <View style={s.grid}>
                   {visibleRows.map(v => (
-                    <ListCard key={v.id} style={s.rowCard}>
+                    <ListCard key={v.id} style={[s.rowCard, { width: cardW }]}>
                       <Avatar initials={initialsOf(v.studentName)} color={sevColor(v.severity, T)} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <View style={s.rowTop}>
@@ -289,15 +298,15 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                         </View>
                         <View style={s.actions}>
                           {v.submittedLatitude != null && v.submittedLongitude != null && (
-                            <Btn label="Map" variant="secondary" small
+                            <Btn label="Map" variant="secondary"
                               icon={<MapPin size={13} color={T.text} strokeWidth={ICON_STROKE} />}
                               onPress={() => Linking.openURL(mapsUrl(v.submittedLatitude, v.submittedLongitude))} />
                           )}
-                          <Btn label="Lead" variant="secondary" small
+                          <Btn label="Lead" variant="secondary"
                             icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
                             onPress={() => navigation.navigate('B2CLeadDetail', { leadId: v.leadId })} />
                           {!v.reviewed && (
-                            <Btn label="Review" small
+                            <Btn label="Review"
                               onPress={() => { setReview(v); setNote(''); setError(''); }} />
                           )}
                         </View>
@@ -332,14 +341,22 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                 <Text style={[s.emptyTxt, { color: T.dim }]}>Approved and rejected selfies won't appear here.</Text>
               </View>
             ) : (
-              <View style={{ gap: 8 }}>
+              <View style={s.grid}>
                 {visibleSelfies.map(sfe => (
-                  <ListCard key={sfe.activityId} style={s.rowCard}>
-                    <TouchableOpacity activeOpacity={0.85} onPress={() => sfe.selfieUrl && Linking.openURL(sfe.selfieUrl)}>
+                  <ListCard key={sfe.activityId} style={[s.rowCard, { width: cardW }]}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      accessibilityLabel="Open selfie"
+                      onPress={() => sfe.selfieUrl && Linking.openURL(sfe.selfieUrl)}
+                    >
                       <Image source={{ uri: sfe.selfieUrl }} style={[s.thumb, { backgroundColor: T.cardAlt, borderColor: T.line }]} />
                     </TouchableOpacity>
                     <View style={{ flex: 1, gap: 4 }}>
-                      <TouchableOpacity onPress={() => navigation.navigate('B2CLeadDetail', { leadId: sfe.leadId })}>
+                      <TouchableOpacity
+                        hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                        accessibilityRole="link"
+                        onPress={() => navigation.navigate('B2CLeadDetail', { leadId: sfe.leadId })}
+                      >
                         <Text style={[s.name, { color: T.text }]} numberOfLines={1}>{sfe.studentName || 'Visit'}</Text>
                       </TouchableOpacity>
                       <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>
@@ -349,12 +366,12 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
                         <Text style={[s.sub, { color: geoColor(sfe.geoStatus, T), fontWeight: '600' }]}>Geo: {sfe.geoStatus}</Text>
                       )}
                       <View style={s.actions}>
-                        <Btn label="Approve" variant="success" small style={{ flex: 1 }}
+                        <Btn label="Approve" variant="success" style={{ flex: 1 }}
                           icon={<Check size={14} color="#FFF" strokeWidth={2.4} />}
                           loading={decidingId === sfe.activityId}
                           disabled={decidingId != null}
                           onPress={() => decideSelfie(sfe.activityId, true)} />
-                        <Btn label="Reject" variant="danger" small style={{ flex: 1 }}
+                        <Btn label="Reject" variant="danger" style={{ flex: 1 }}
                           icon={<X size={14} color="#FFF" strokeWidth={2.4} />}
                           disabled={decidingId != null}
                           onPress={() => setRejectSelfie(sfe)} />
@@ -372,6 +389,7 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
 
       {/* Review modal */}
       <FormModal
+        wide={r.isTablet}
         visible={!!review}
         title="Review violation"
         onClose={() => { setReview(null); setError(''); }}
@@ -420,30 +438,38 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
   );
 };
 
-const s = StyleSheet.create({
+
+/**
+ * Styles are a function of the live layout metrics, not a module-level constant: a
+ * `StyleSheet.create` evaluated at import freezes every font size and padding at the launch
+ * orientation, which is what leaves an iPad clipped and overlapping after a rotation.
+ */
+const makeStyles = (r: Responsive) => StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 14, gap: 12 },
-  subtitle: { fontSize: rf(12.5), fontWeight: '500' },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  // Gutter/gap follow the device; the cap keeps a full-bleed iPad line readable.
+  scroll: { padding: r.gutter, gap: r.gap, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' },
+  subtitle: { fontSize: r.rf(12.5), fontWeight: '500' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap, alignItems: 'flex-start' },
   tile: { flexGrow: 1, flexBasis: 150, minWidth: 140 },
   card: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 12 },
-  fLabel: { fontSize: rf(12.5), fontWeight: '600', marginBottom: 7 },
+  fLabel: { fontSize: r.rf(12.5), fontWeight: '600', marginBottom: 7 },
   rowCard: { alignItems: 'flex-start' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: rf(13.5), fontWeight: '700' },
-  sub: { fontSize: rf(11.5), fontWeight: '500' },
+  name: { fontSize: r.rf(13.5), fontWeight: '700' },
+  sub: { fontSize: r.rf(11.5), fontWeight: '500' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  metaStrong: { fontSize: rf(12.5), fontWeight: '800' },
+  metaStrong: { fontSize: r.rf(12.5), fontWeight: '800' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
   thumb: { width: 64, height: 64, borderRadius: 12, borderWidth: 1 },
-  count: { fontSize: rf(11.5), fontWeight: '600' },
+  count: { fontSize: r.rf(11.5), fontWeight: '600' },
   pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: rf(14), fontWeight: '700' },
-  emptyTxt: { fontSize: rf(12.5), fontWeight: '500', textAlign: 'center' },
-  errorTxt: { fontSize: rf(12.5), fontWeight: '600' },
+  emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
+  emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
+  errorTxt: { fontSize: r.rf(12.5), fontWeight: '600' },
   textarea: { minHeight: 80, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
+  textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
 });
 
 export default B2CGeoComplianceScreen;
