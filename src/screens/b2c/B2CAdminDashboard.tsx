@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Users, TrendingUp, IndianRupee, UserCheck, GraduationCap, Percent } from 'lucide-react-native';
-import { Screen, Card, StatTile, SectionLabel } from '../../components/ui';
-import { StatusBadge } from '../../components/crud';
+import { Screen, Card, StatTile } from '../../components/ui';
+import { StatusBadge, Avatar } from '../../components/crud';
 import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { B2CAdminDashboardDto } from '../../types/b2c';
 import { formatCurrency } from '../../utils/formatting';
@@ -10,6 +11,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useResponsive, Responsive } from '../../hooks/useResponsive';
 import { label } from '../../utils/labels';
+import { PREVIEW_ROWS, SectionHeader, Bar, initialsOf, sectionGrid } from '../../components/b2c/DashboardSection';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -20,11 +22,13 @@ export const B2CAdminDashboard = () => {
   const T = useAppTheme();
   const r = useResponsive();
   const { user } = useAuth();
+  const nav = useNavigation<any>();
   // Six KPI tiles: 3-up on a tablet, 2-up on a phone — never one long clipped row.
   // Bases are deliberately under a clean division: every tile also flexGrows, so it fills
   // the row, and no rounding error can bump the last one onto a line of its own.
   const kpiWidth = r.isTablet ? '30%' : '46%';
-  const geoWidth = r.isTablet ? '22%' : '46%';
+  // Sections sit two-up on a tablet and full width on a phone.
+  const grid = sectionGrid(r);
 
   const [data, setData] = useState<B2CAdminDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,19 @@ export const B2CAdminDashboard = () => {
   // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
   // push the last card under the home indicator.
   const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
+
+  // The longest bar is the biggest stage, so the shape of the funnel is readable even when
+  // every count is small. Never zero, or every bar divides by it.
+  const maxPipeline = Math.max(1, ...(data?.pipeline ?? []).map(p => p.count));
+
+  // Sections render only when they have rows, so both the count AND each section's position
+  // must be derived from what is actually on screen — a fixed 0/1/2 would mis-place the
+  // orphan the moment one of them is empty.
+  const hasPipe = (data?.pipeline?.length ?? 0) > 0;
+  const hasAgents = (data?.agentPerformance?.length ?? 0) > 0;
+  const shownSections = [hasPipe, hasAgents].filter(Boolean).length;
+  const idxPipe = 0;
+  const idxAgents = hasPipe ? 1 : 0;
 
   const s = useMemo(() => makeStyles(r), [r]);
 
@@ -76,84 +93,63 @@ export const B2CAdminDashboard = () => {
             <StatTile style={[s.cell, { width: kpiWidth }]} label="Active Counselors" value={data.activeCounselors} tint={T.warning} icon={<GraduationCap size={16} color={T.warning} />} />
           </View>
 
-            {data.pipeline.length > 0 && (
-              <View style={s.section}>
-                <SectionLabel>Pipeline</SectionLabel>
-                <Card>
-                  {data.pipeline.map((p, i) => (
-                    <View key={p.stage} style={[s.row, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                      <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{label(p.stage)}</Text>
-                      <Text style={[s.rowVal, { color: T.text }]}>{p.count}</Text>
-                    </View>
-                  ))}
-                </Card>
-              </View>
-            )}
-
-            {data.agentPerformance.length > 0 && (
-              <View style={s.section}>
-                <SectionLabel>Agent Performance</SectionLabel>
-                <Card>
-                  {data.agentPerformance.map((a, i) => (
-                    <View key={a.agentId} style={[s.row, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{a.agentName}</Text>
-                        <Text style={[s.rowSub, { color: T.dim }]}>{a.activeLeads}/{a.leadCap} leads · {a.conversions} won</Text>
-                      </View>
-                      <StatusBadge label={`${Math.round(a.conversionPercent)}%`} color={T.success} />
-                    </View>
-                  ))}
-                </Card>
-              </View>
-            )}
-
-            {data.sourceBreakdown.length > 0 && (
-              <View style={s.section}>
-                <SectionLabel>Source Breakdown</SectionLabel>
-                <Card>
-                  {data.sourceBreakdown.map((b, i) => (
-                    <View key={b.source} style={[s.row, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                      <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{b.source}</Text>
-                      <Text style={[s.rowVal, { color: T.text }]}>{b.count}</Text>
-                    </View>
-                  ))}
-                </Card>
-              </View>
-            )}
-
-            {data.geoCompliance && (
-              <View style={s.section}>
-                <SectionLabel>Geo Compliance</SectionLabel>
-                <Card>
-                  <View style={s.geoGrid}>
-                    {[
-                      { label: 'Violations', value: data.geoCompliance.violationsThisMonth ?? 0, color: T.danger },
-                      { label: 'Unverified Visits', value: data.geoCompliance.unverifiedVisits ?? 0, color: T.warning },
-                      { label: 'Pending Selfies', value: data.geoCompliance.pendingSelfies ?? 0, color: T.warning },
-                      { label: 'Pass Rate', value: `${data.geoCompliance.passRatePercent ?? 100}%`, color: T.success },
-                    ].map(item => (
-                      <View key={item.label} style={[s.geoBox, { backgroundColor: T.cardAlt, width: geoWidth }]}>
-                        <Text style={[s.geoNum, { color: item.color }]}>{item.value}</Text>
-                        <Text style={[s.geoLbl, { color: T.dim }]} numberOfLines={1}>{item.label}</Text>
+            {/* Two-up on a tablet. A home screen is a SUMMARY: on an iPad these three cards
+                stacked one per row turned a glanceable page into a long scroll with a column
+                of empty space beside it. */}
+            <View style={grid.style}>
+              {data.pipeline.length > 0 && (
+                <View style={[s.section, { width: grid.widthAt(idxPipe, shownSections) }]}>
+                  <SectionHeader
+                    title="Pipeline"
+                    total={data.pipeline.length}
+                    onViewAll={() => nav.navigate('Pipeline')}
+                  />
+                  <Card style={s.fillCard}>
+                    {data.pipeline.slice(0, PREVIEW_ROWS).map((p, i) => (
+                      <View key={p.stage} style={[s.barRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                        <View style={s.barTop}>
+                          <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{label(p.stage)}</Text>
+                          <Text style={[s.rowVal, { color: T.text }]}>{p.count}</Text>
+                        </View>
+                        <Bar pct={maxPipeline > 0 ? p.count / maxPipeline : 0} color={T.accent} track={T.cardAlt} />
                       </View>
                     ))}
-                  </View>
-                </Card>
-              </View>
-            )}
+                  </Card>
+                </View>
+              )}
 
-            <View style={s.section}>
-              <SectionLabel>Counselor Quality</SectionLabel>
-              <Card>
-                <View style={s.row}>
-                  <Text style={[s.rowLabel, { color: T.text }]}>Average score</Text>
-                  <Text style={[s.rowVal, { color: T.text }]}>{data.counselorQuality.avgScore.toFixed(1)}</Text>
+              {data.agentPerformance.length > 0 && (
+                <View style={[s.section, { width: grid.widthAt(idxAgents, shownSections) }]}>
+                  <SectionHeader
+                    title="Agent Performance"
+                    total={data.agentPerformance.length}
+                    onViewAll={() => nav.navigate('Student Leads')}
+                  />
+                  <Card style={s.fillCard}>
+                    {data.agentPerformance.slice(0, PREVIEW_ROWS).map((a, i) => (
+                      <View key={a.agentId} style={[s.agentRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                        {/* Initials, as on the web card — a column of names alone is far harder
+                            to scan than a column of faces. */}
+                        <Avatar initials={initialsOf(a.agentName)} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{a.agentName}</Text>
+                          <View style={s.agentMeta}>
+                            <Bar
+                              pct={a.leadCap > 0 ? a.activeLeads / a.leadCap : 0}
+                              color={T.accent}
+                              track={T.cardAlt}
+                              style={{ flex: 1 }}
+                            />
+                            <Text style={[s.rowSub, { color: T.dim }]}>{a.activeLeads}/{a.leadCap}</Text>
+                          </View>
+                        </View>
+                        <StatusBadge label={`${Math.round(a.conversionPercent)}%`} color={T.success} />
+                      </View>
+                    ))}
+                  </Card>
                 </View>
-                <View style={[s.row, { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-                  <Text style={[s.rowLabel, { color: T.text }]}>Sessions this month</Text>
-                  <Text style={[s.rowVal, { color: T.text }]}>{data.counselorQuality.sessionsThisMonth}</Text>
-                </View>
-              </Card>
+              )}
+
             </View>
           </>
         )}
@@ -172,13 +168,16 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
   cell: { flexGrow: 1 },
   section: { gap: 2, marginTop: r.rs(14) },
+  // The row stretches the section; this makes the card inside fill that height rather than
+  // leaving a gap under a short list next to a tall one.
+  fillCard: { flex: 1 },
+  barRow: { paddingVertical: r.rs(10), gap: 7 },
+  barTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  agentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: r.rs(10) },
+  agentMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: r.rs(11) },
   rowLabel: { fontSize: r.rf(13), fontWeight: '600', flex: 1 },
   rowSub: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 2 },
   rowVal: { fontSize: r.rf(14), fontWeight: '800' },
   empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
-  geoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: r.gap },
-  geoBox: { flexGrow: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 3 },
-  geoNum: { fontSize: r.rf(20), fontWeight: '800' },
-  geoLbl: { fontSize: r.rf(11), fontWeight: '600' },
 });

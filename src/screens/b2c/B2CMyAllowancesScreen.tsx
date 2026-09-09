@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, ActivityIndicator, TextInput } from 'react-nati
 import { IndianRupee, Send, Car } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
-import { Btn, Field, Input, ListCard, StatusBadge, FormModal } from '../../components/crud';
+import { Btn, Field, Input, ListCard, StatusBadge, FormModal, Pagination} from '../../components/crud';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cAllowanceService } from '../../api/b2c/b2cAllowanceService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 import { todayStr } from '../../utils/dates';
 
 /** Web parity: B2CMyAllowances.jsx — submit a travel/visit allowance claim + track approval. */
@@ -36,6 +36,14 @@ const statusColor = (status: string, T: any) =>
 
 const emptyForm = () => ({ claimDate: todayStr(), visitCount: '', distanceKm: '', notes: '' });
 
+/**
+ * Claims/requests accrue for as long as someone works here, and this list was rendering
+ * every one of them. On a phone that is an unbounded scroll: a year in, reaching the
+ * oldest row means flicking past three hundred cards. Paged client-side because the
+ * endpoint returns the whole set — the cost is a slice, not another request.
+ */
+const PAGE_SIZE = 8;
+
 export const B2CMyAllowancesScreen = () => {
   const T = useAppTheme();
   const r = useResponsive();
@@ -44,6 +52,13 @@ export const B2CMyAllowancesScreen = () => {
 
   const [claims, setClaims] = useState<AllowanceRow[]>([]);
   const [cfg, setCfg] = useState<RateConfig | null>(null);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(claims.length / PAGE_SIZE));
+  const pagedClaims = useMemo(
+    () => claims.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [claims, page],
+  );
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -59,6 +74,7 @@ export const B2CMyAllowancesScreen = () => {
       const res = await b2cAllowanceService.getMyClaims();
       const payload: any = res.data;
       setClaims(payload?.items ?? payload ?? []);
+      setPage(1);   // a refresh must not strand the viewer on a page that no longer exists
     } catch {
       setClaims([]);
     } finally {
@@ -108,9 +124,8 @@ export const B2CMyAllowancesScreen = () => {
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, pagedClaims.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 
@@ -133,8 +148,9 @@ export const B2CMyAllowancesScreen = () => {
           <Text style={[s.emptyTxt, { color: T.dim }]}>Tap Submit Claim to request an allowance.</Text>
         </View>
       ) : (
+        <>
         <View style={[s.grid, { marginTop: 16 }]}>
-          {claims.map(c => (
+          {pagedClaims.map(c => (
             <ListCard key={c.id} style={{ alignItems: 'flex-start', width: cardW }}>
               <View style={[s.iconTile, { backgroundColor: T.accentSoft }]}>
                 <Car size={18} color={T.accent} strokeWidth={ICON_STROKE} />
@@ -152,6 +168,15 @@ export const B2CMyAllowancesScreen = () => {
             </ListCard>
           ))}
         </View>
+        {pageCount > 1 && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onChange={p => { if (p >= 1 && p <= pageCount) setPage(p); }}
+            style={{ marginTop: 12 }}
+          />
+        )}
+        </>
       )}
 
       <FormModal

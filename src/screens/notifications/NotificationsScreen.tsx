@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert, DeviceEventEmitter,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, DeviceEventEmitter,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Check, Trash2, AlertTriangle, Clock, Sparkles, Bell, Info } from 'lucide-react-native';

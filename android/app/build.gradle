@@ -125,6 +125,13 @@ dependencies {
     // Biometric auth (Face/Fingerprint via BiometricPrompt) — used by BiometricModule.kt
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Fused Location Provider — used by LocationTrackingService.
+    // The service previously drove raw LocationManager GPS + NETWORK providers and merged them
+    // with a hand-rolled isBetterLocation(). FLP does that fusion in the platform, with the
+    // sensor hints, Wi-Fi/cell context and duty-cycling a hand-rolled merge cannot reach, and it
+    // is markedly better exactly where field tracking is worst: indoors and in urban canyons.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
     // Firebase BoM
     implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-analytics")

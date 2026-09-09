@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ClipboardList, CalendarClock, CalendarDays, Sparkles, Mic, ChevronRight } from 'lucide-react-native';
-import { Screen, Card, StatTile, SectionLabel } from '../../components/ui';
+import { Screen, Card, StatTile } from '../../components/ui';
+import { PREVIEW_ROWS, SectionHeader } from '../../components/b2c/DashboardSection';
 import { ListCard, Avatar, StatusBadge, Btn } from '../../components/crud';
 import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { B2CCounselorDashboardDto } from '../../types/b2c';
@@ -74,11 +75,12 @@ export const CounselorDashboard = () => {
 
           {/* Assigned leads */}
           <View style={{ marginTop: 18 }}>
-            <SectionLabel>Assigned Students</SectionLabel>
+            <SectionHeader title="Assigned Students" total={(data.assignedLeads || []).length}
+              onViewAll={() => nav.navigate('My Leads')} />
             {(data.assignedLeads || []).length === 0 ? (
               <Card><Text style={[st.empty, { color: T.dim }]}>No students assigned to you yet.</Text></Card>
             ) : (
-              data.assignedLeads.map(l => (
+              data.assignedLeads.slice(0, PREVIEW_ROWS).map(l => (
                 <ListCard key={l.id} onPress={() => nav.navigate('B2CLeadDetail', { leadId: l.id })} style={{ marginBottom: 8 }}>
                   <View style={st.row}>
                     <Avatar initials={initialsOf(l.studentName)} />

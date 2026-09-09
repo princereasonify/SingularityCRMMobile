@@ -37,7 +37,7 @@ import BackgroundService from '../../services/backgroundServiceShim';
 import BackgroundFetch from 'react-native-background-fetch';
 import { trackingApi, VehicleType } from '../../api/tracking';
 import { sendLocationPing } from '../../services/locationPingService';
-import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission } from '../../services/nativeLocationTracking';
+import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission, isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
 import {
   SessionResponseDto,
   TrackingSessionDto,
@@ -54,6 +54,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { DateInput } from '../../components/common/DateInput';
+import { distanceHint, distanceMethodLabel } from '../../utils/distanceProvenance';
 
 /** Values must stay parseable by the backend's VehicleType enum; labels match web. */
 const VEHICLE_OPTIONS: { value: VehicleType; label: string }[] = [
@@ -91,8 +92,10 @@ const MAP_TYPES: { label: string; value: MapKind }[] = [
 // type every pass, which remounts the whole subtree (and would restart the map).
 
 /** KPI tile. Wraps by flex-basis — 4-up on iPad landscape, 2-up on a phone. */
-const Tile = ({ label, value, icon, tint, wide }: {
+const Tile = ({ label, value, icon, tint, wide, caption }: {
   label: string; value: string; icon: React.ReactNode; tint: string; wide: boolean;
+  /** Optional provenance line under the value — see utils/distanceProvenance. */
+  caption?: string;
 }) => {
   const T = useAppTheme();
   return (
@@ -102,6 +105,9 @@ const Tile = ({ label, value, icon, tint, wide }: {
         <Text style={[s.tileLabel, { color: T.sub }]} numberOfLines={1}>{label}</Text>
       </View>
       <Text style={[s.tileValue, { color: T.text }]} numberOfLines={1}>{value}</Text>
+      {caption ? (
+        <Text style={[s.tileCaption, { color: T.dim }]} numberOfLines={2}>{caption}</Text>
+      ) : null}
     </View>
   );
 };
@@ -170,7 +176,6 @@ export const MyDayTrackingScreen = () => {
   const bgPermissionResolveRef = React.useRef<((accepted: boolean) => void) | null>(null);
 
   // iOS: JS-level ping interval ref (Android uses native Kotlin service instead)
-  const iosPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Permission Handling ─────────────────────────────────────────────────
 
@@ -457,47 +462,48 @@ export const MyDayTrackingScreen = () => {
       // survives app kill via START_STICKY, sends 30 s pings natively.
       await startNativeTracking();
 
-      // WorkManager fallback: fires every 15 min even after kill (OS minimum)
-      try {
-        BackgroundFetch.configure(
-          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
-          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
-          (taskId) => { BackgroundFetch.finish(taskId); },
-        ).then(status => console.log('[BackgroundFetch] Android status:', status))
-          .catch(e => console.warn('[BackgroundFetch] Android error:', e));
-      } catch (e) { console.warn('[BackgroundFetch] Android threw:', e); }
+      // WorkManager fallback: fires every 15 min even after kill (OS minimum). Registered ONLY
+      // when the native service is absent — running both makes two independent senders for one
+      // device, each with its own queue and its own sequence range, and the duplicate fixes cost
+      // rows and matching work for no extra fidelity. The foreground service already survives
+      // process death via START_STICKY, so it does not need the help.
+      if (!isNativeTrackingAvailable()) {
+        try {
+          BackgroundFetch.configure(
+            { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+            async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+            (taskId) => { BackgroundFetch.finish(taskId); },
+          ).then(status => console.log('[BackgroundFetch] Android status:', status))
+            .catch(e => console.warn('[BackgroundFetch] Android error:', e));
+        } catch (e) { console.warn('[BackgroundFetch] Android threw:', e); }
+      }
 
     } else {
       // ── iOS ──────────────────────────────────────────────────────────────
-      // JS setInterval drives the 30 s pings — proven working (same mechanism
-      // as the session-polling timer that fires every 30 s).
-      // sendLocationPing() gets location via Geolocation + sends fetch() to server.
-      // App stays alive in background because UIBackgroundModes:location is set
-      // in Info.plist and CLLocationManager is active inside the native module.
-      if (!iosPingRef.current) {
-        console.log('[iOS Tracking] Starting 30 s ping interval');
-        sendLocationPing(); // immediate first ping
-        iosPingRef.current = setInterval(() => {
-          console.log('[iOS Tracking] Interval fired — sending ping');
-          sendLocationPing();
-        }, PING_INTERVAL_MS);
+      // The native module owns capture: CLLocationManager with BestForNavigation, its own
+      // 10 s send timer, sequence numbers and a durable offline queue.
+      //
+      // There used to be a JS setInterval sending pings here TOO, under a comment claiming the
+      // native module "only provides keepalive". It does not — it has always sent its own pings.
+      // Every iPhone shift was therefore uploading two near-identical fixes every 30 s from two
+      // independent senders: double the rows, double the map-matching cost, and two interleaved
+      // views of the same second for the matcher to reconcile. The native path is the better of
+      // the two (it survives backgrounding, and it queues rather than dropping on failure), so
+      // JS steps out of the way entirely.
+      await startNativeTracking();
+
+      // BGAppRefresh stays as the last-resort wakeup for when the native module is missing from
+      // the build — never alongside it, or the duplicate sender comes straight back.
+      if (!isNativeTrackingAvailable()) {
+        try {
+          BackgroundFetch.configure(
+            { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+            async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+            (taskId) => { BackgroundFetch.finish(taskId); },
+          ).then(status => console.log('[BackgroundFetch] iOS status:', status))
+            .catch(e => console.warn('[BackgroundFetch] iOS error:', e));
+        } catch (e) { console.warn('[BackgroundFetch] iOS threw:', e); }
       }
-
-      // Native module: starts CLLocationManager so iOS keeps the app alive
-      // in background. Pings come from JS above; native only provides keepalive.
-      startNativeTracking().catch(e =>
-        console.warn('[iOS Tracking] Native module unavailable (OK):', e?.message),
-      );
-
-      // BGAppRefresh fallback for periodic background wakeup
-      try {
-        BackgroundFetch.configure(
-          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
-          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
-          (taskId) => { BackgroundFetch.finish(taskId); },
-        ).then(status => console.log('[BackgroundFetch] iOS status:', status))
-          .catch(e => console.warn('[BackgroundFetch] iOS error:', e));
-      } catch (e) { console.warn('[BackgroundFetch] iOS threw:', e); }
     }
   }, []);
 
@@ -506,13 +512,9 @@ export const MyDayTrackingScreen = () => {
       // Android: stop the native Kotlin service
       await stopNativeTracking();
     } else {
-      // iOS: clear JS ping interval
-      if (iosPingRef.current) {
-        clearInterval(iosPingRef.current);
-        iosPingRef.current = null;
-        console.log('[iOS Tracking] Ping interval cleared');
-      }
-      // Also stop the native location manager (keepalive)
+      // iOS: the native module is the only sender, so stopping it stops capture. There is no
+      // JS interval left to clear — see startTracking for why the one that used to live here
+      // was a second, duplicate sender rather than the primary one.
       stopNativeTracking().catch(() => {});
     }
     try { BackgroundFetch.stop(); } catch {}
@@ -743,7 +745,12 @@ export const MyDayTrackingScreen = () => {
   const renderHistoryStats = () => (
     <View style={s.histStats}>
       <View style={s.miniRow}>
-        <MiniStat label="Distance" value={`${historySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`} />
+        {/* The "Today's Distance" tile above already carries today's kilometres, and the date
+            picker opens on today — so this cell repeated the same figure on the same screen.
+            One distance per screen: this appears only for a PAST day, which the tile never shows. */}
+        {selectedDate !== toISODate(new Date()) && (
+          <MiniStat label="Distance" value={`${historySession?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`} />
+        )}
         <MiniStat label="Allowance" value={formatCurrency(historySession?.allowanceAmount ?? 0)} />
       </View>
       <View style={s.miniRow}>
@@ -936,6 +943,7 @@ export const MyDayTrackingScreen = () => {
               value={`${session?.totalDistanceKm?.toFixed(1) ?? '0.0'} km`}
               icon={<Navigation size={14} color={T.accent} strokeWidth={ICON_STROKE} />}
               tint={T.accent}
+              caption={distanceHint(session?.distanceMethod, session?.distanceStatus)}
             />
             <Tile
               wide={wide}
@@ -991,6 +999,10 @@ export const MyDayTrackingScreen = () => {
                 <View style={s.breakdownCell}>
                   <Text style={[s.miniLabel, { color: T.dim }]}>Reconstructed</Text>
                   <Text style={[s.miniValue, { color: T.text }]}>{session.reconstructedDistanceKm?.toFixed(2)} km</Text>
+                </View>
+                <View style={s.breakdownCell}>
+                  <Text style={[s.miniLabel, { color: T.dim }]}>Method</Text>
+                  <Text style={[s.miniValue, { color: T.text }]}>{distanceMethodLabel(session.distanceMethod)}</Text>
                 </View>
               </View>
             </View>
@@ -1181,6 +1193,7 @@ const s = StyleSheet.create({
   tileIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   tileLabel: { fontSize: rf(11), fontWeight: '600', flex: 1 },
   tileValue: { fontSize: rf(16), fontWeight: '700', letterSpacing: -0.2 },
+  tileCaption: { fontSize: rf(9.5), fontWeight: '500', marginTop: 3, lineHeight: rf(12.5) },
 
   inline: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, padding: 11 },
   inlineTxt: { fontSize: rf(12.5), fontWeight: '600', flex: 1 },

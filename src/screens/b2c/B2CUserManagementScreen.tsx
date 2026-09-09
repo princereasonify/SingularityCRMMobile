@@ -13,7 +13,7 @@ import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CUserListDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, MIN_TAP, gridCardWidth} from '../../hooks/useResponsive';
 
 const PAGE_SIZE = 20;
 
@@ -48,8 +48,17 @@ export const B2CUserManagementScreen = () => {
 
   // Edit
   const [editUser, setEditUser] = useState<B2CUser | null>(null);
+  // Reset-password lives in this dialog on web and had no mobile equivalent at all — so the
+  // thing an admin most often needs to do away from a desk (an agent locked out mid-shift)
+  // was the one thing only the desktop could do.
+  const [newPassword, setNewPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '', mobile: '', address: '', bio: '', referralCode: '', isActive: true, isManager: false, agentIds: [] as number[],
+    // Payout identity, fetched per-user when the dialog opens. Web has had these since the
+    // dialog was built; without them an admin could not correct a wrong bank account from
+    // a phone, which is exactly when a failed payout gets noticed.
+    panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
   });
   const [editErr, setEditErr] = useState('');
 
@@ -98,6 +107,10 @@ export const B2CUserManagementScreen = () => {
   // ── Edit ────────────────────────────────────────────────────────────────
   const openEdit = (u: B2CUser) => {
     setEditUser(u);
+    setNewPassword('');
+    // Seed the whole form FIRST, payout blank, then fill payout in when the fetch lands.
+    // The other way round, this reset would wipe the fetched values whenever the request
+    // happened to win the race.
     setEditForm({
       name: u.name || '',
       mobile: u.mobile || '',
@@ -107,8 +120,20 @@ export const B2CUserManagementScreen = () => {
       isActive: u.isActive ?? true,
       isManager: u.isManager ?? false,
       agentIds: u.teamAgentIds || [],
+      panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
     });
     setEditErr('');
+
+    // Non-fatal: a failed fetch leaves the payout fields empty rather than blocking a rename.
+    b2cUserService.getPayoutDetails(u.id)
+      .then(res => setEditForm(f => ({
+        ...f,
+        panNumber: res.data?.panNumber || '',
+        aadhaarNumber: res.data?.aadhaarNumber || '',
+        accountNumber: res.data?.accountNumber || '',
+        ifscCode: res.data?.ifscCode || '',
+      })))
+      .catch(() => {});
   };
 
   const handleEdit = async () => {
@@ -116,6 +141,10 @@ export const B2CUserManagementScreen = () => {
     setSaving(true); setEditErr('');
     try {
       await b2cUserService.updateUser(editUser.id, {
+        panNumber: editForm.panNumber.trim(),
+        aadhaarNumber: editForm.aadhaarNumber.trim(),
+        accountNumber: editForm.accountNumber.trim(),
+        ifscCode: editForm.ifscCode.trim().toUpperCase(),
         name: editForm.name.trim(),
         mobile: editForm.mobile.trim(),
         address: editForm.address.trim(),
@@ -125,7 +154,7 @@ export const B2CUserManagementScreen = () => {
         isManager: editUser.role === 'Agent' ? editForm.isManager : undefined,
         agentIds: editUser.role === 'Agent' && editForm.isManager ? editForm.agentIds : undefined,
       });
-      setEditUser(null);
+      closeEdit();
       invalidateFieldStaff();
       toast.success('User updated');
       setLoading(true); load();
@@ -178,14 +207,33 @@ export const B2CUserManagementScreen = () => {
   };
 
   // Agents this manager can oversee (exclude the edited user itself).
+  const closeEdit = () => { setEditUser(null); setNewPassword(''); };
+
+  const handleResetPassword = async () => {
+    if (!editUser || newPassword.trim().length < 6) return;
+    setResetting(true);
+    setEditErr('');
+    try {
+      await b2cUserService.resetPassword(editUser.id, newPassword.trim());
+      setNewPassword('');
+      toast.success(`Password reset for ${editUser.name}`);
+    } catch (e: any) {
+      setEditErr(e?.response?.data?.message || 'Could not reset the password.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const editSelectableAgents = allAgents.filter(a => a.id !== editUser?.id);
 
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Columns come from the shared responsive rule (1 phone / 2 tablet / 3 wide) rather than a
+  // hard-coded 2, so a wide iPad — especially with the sidebar collapsed to a rail — fills the
+  // row instead of leaving a third of it blank.
+   // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, paged.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 
@@ -286,10 +334,10 @@ export const B2CUserManagementScreen = () => {
         wide={r.isTablet}
         visible={!!editUser}
         title="Edit User"
-        onClose={() => setEditUser(null)}
+        onClose={closeEdit}
         footer={
           <>
-            <Btn label="Cancel" variant="secondary" onPress={() => setEditUser(null)} style={{ flex: 1 }} />
+            <Btn label="Cancel" variant="secondary" onPress={closeEdit} style={{ flex: 1 }} />
             <Btn label={saving ? 'Saving…' : 'Save Changes'} onPress={handleEdit} loading={saving} disabled={saving || !editForm.name.trim()} style={{ flex: 1 }} />
           </>
         }
@@ -309,6 +357,32 @@ export const B2CUserManagementScreen = () => {
             <Field label="Address">
               <Input value={editForm.address} onChangeText={v => setEditForm(f => ({ ...f, address: v }))} placeholder="Residential / base address" multiline />
             </Field>
+            {/* Payout identity — saved with the rest of the dialog. */}
+            <Input label="PAN" value={editForm.panNumber} onChangeText={v => setEditForm(f => ({ ...f, panNumber: v.toUpperCase() }))} autoCapitalize="characters" maxLength={10} placeholder="ABCDE1234F" />
+            <Input label="Aadhaar" value={editForm.aadhaarNumber} onChangeText={v => setEditForm(f => ({ ...f, aadhaarNumber: v.replace(/\D/g, '').slice(0, 12) }))} keyboardType="number-pad" maxLength={12} placeholder="12-digit Aadhaar" />
+            <Input label="Bank Account" value={editForm.accountNumber} onChangeText={v => setEditForm(f => ({ ...f, accountNumber: v.replace(/\D/g, '') }))} keyboardType="number-pad" placeholder="Account number" />
+            <Input label="IFSC" value={editForm.ifscCode} onChangeText={v => setEditForm(f => ({ ...f, ifscCode: v.toUpperCase() }))} autoCapitalize="characters" maxLength={11} placeholder="HDFC0001234" />
+
+            {/* Its own action, not part of Save: a password change is immediate and must not
+                ride along with an unrelated rename the admin may still be editing. */}
+            <Field label="Reset Password">
+              <Input
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="New password (min 6 characters)"
+                secureTextEntry
+              />
+              <Btn
+                label={resetting ? 'Resetting…' : 'Reset Password'}
+                variant="secondary"
+                small
+                loading={resetting}
+                disabled={resetting || newPassword.trim().length < 6}
+                onPress={handleResetPassword}
+                style={{ marginTop: 8 }}
+              />
+            </Field>
+
             {editUser.role === 'Counselor' && (
               <Field label="Bio">
                 <Input value={editForm.bio} onChangeText={v => setEditForm(f => ({ ...f, bio: v }))} placeholder="Short bio…" multiline />

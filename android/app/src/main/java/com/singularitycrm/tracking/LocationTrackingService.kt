@@ -9,6 +9,14 @@ import android.location.LocationManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -36,7 +44,34 @@ class LocationTrackingService : Service() {
         const val EXTRA_BATCH_PATH = "batch_path"
         const val PREFS_NAME = "LocationTrackingPrefs"
         private const val PENDING_PINGS_KEY = "pending_pings"
-        private const val PING_INTERVAL_MS = 30_000L
+        private const val SEQ_KEY = "ping_seq"
+
+        /**
+         * How often a fix is sent while the agent is moving.
+         *
+         * Dropped from 30 s to 10 s, and that change is what most improves the measured distance.
+         * A map matcher deduces the road path from the SEQUENCE of observations; at 30 s and
+         * 40 km/h consecutive fixes are ~330 m apart, and over that span a turn, a roundabout or
+         * a choice between two parallel roads is genuinely ambiguous — the algorithm is left
+         * guessing, and the geometry between two fixes is a chord across whatever the road did.
+         * At 10 s the spacing is ~110 m and the road path is essentially determined.
+         *
+         * The cost is three times the rows and three times the pings. Both are cheap; a
+         * kilometre figure nobody trusts is not.
+         */
+        private const val MOVING_INTERVAL_MS = 10_000L
+
+        /**
+         * While parked, a fix is still sent this often even though it is suppressed from the
+         * route. Not for distance — the server flags these as stationary and they add none — but
+         * because silence is ambiguous. A shift that goes quiet at 14:00 could be an agent
+         * sitting in a meeting or a phone that died, and without a heartbeat those look identical
+         * in the data.
+         */
+        private const val STATIONARY_HEARTBEAT_MS = 300_000L
+
+        /** How often the loop wakes to decide whether to send. */
+        private const val TICK_MS = 10_000L
 
         /** Cap the offline queue so a device left offline for days can't grow it without bound. */
         private const val MAX_QUEUED_PINGS = 500
@@ -45,12 +80,17 @@ class LocationTrackingService : Service() {
         private const val STALE_FIX_MS = 30_000L
 
         /**
-         * On-device accuracy gate (metres). Tightened from 75 m: at 75 m a fix can sit on the
-         * wrong side of a dual carriageway, and the road-snapper will faithfully snap it there.
-         * A bad fix that passes the gate becomes a confident WRONG road — worse than no fix.
-         * The server keeps its own 75 m gate as a backstop for older clients.
+         * On-device accuracy gate (metres).
+         *
+         * LOOSENED from 35 m, which is counter-intuitive and deliberate. With per-point snapping
+         * a poor fix became a confident wrong road, so a tight gate helped. A sequence-aware
+         * matcher inverts that: it is handed each point's accuracy as a matching radius and
+         * resolves an uncertain fix from its neighbours and the road network. What it cannot
+         * recover from is a STARVED trace — and in an urban canyon, where accuracy sits in the
+         * 20–50 m band, a 35 m gate discarded most of the day exactly where the route was
+         * hardest to infer. 50 m keeps the evidence and lets the algorithm weigh it.
          */
-        private const val MAX_ACCURACY_METRES = 35f
+        private const val MAX_ACCURACY_METRES = 50f
 
         /** Below this the device is standing still, whatever the coordinates wobble by. */
         private const val STATIONARY_SPEED_KMH = 1.5
@@ -59,7 +99,7 @@ class LocationTrackingService : Service() {
         private const val STATIONARY_DISPLACEMENT_M = 20.0
 
         /**
-         * Consecutive stationary checks before distance stops accumulating. Three, not one: a
+         * Consecutive stationary checks before the route stops accumulating. Three, not one: a
          * single slow fix at a traffic light is not a parked phone, and suppressing on the first
          * would eat real crawling-traffic movement. A phone on a desk still wanders several
          * metres a minute — over an eight-hour shift that is kilometres nobody walked.
@@ -74,25 +114,32 @@ class LocationTrackingService : Service() {
             private set
     }
 
-    private lateinit var locationManager: LocationManager
     private val handler = Handler(Looper.getMainLooper())
     private var pingRunnable: Runnable? = null
 
-    /** Rolling stationary state — reset whenever a day starts (onStartCommand). */
+    // Fused provider — the primary source. LocationManager stays as the fallback for devices
+    // without Play Services, so tracking degrades rather than disappearing on them.
+    private var fusedClient: FusedLocationProviderClient? = null
+    private var fusedCallback: LocationCallback? = null
+    private var legacyManager: LocationManager? = null
+
+    /** Rolling motion state — reset whenever a day starts (onStartCommand). */
     private var stationaryStreak = 0
     private var lastSentLocation: Location? = null
     private var lastLocation: Location? = null
+    private var lastHeartbeatAt = 0L
 
-    private val locationListener = LocationListener { location ->
-        // Accept the fix only when it's genuinely better than what we hold (Google's
-        // canonical heuristic): a much newer fix wins, a much older one is ignored,
-        // and among comparable-age fixes the more accurate one wins. This stops an
-        // optimistic NETWORK fix from displacing a real GPS fix.
-        if (isBetterLocation(location, lastLocation)) {
-            lastLocation = location
-        }
-        Log.d(TAG, "Location: ${location.latitude}, ${location.longitude} acc=${location.accuracy}m provider=${location.provider}")
+    // ─── Fix intake ───────────────────────────────────────────────────────────
+
+    private fun onFix(location: Location) {
+        // Accept the fix only when it's genuinely better than what we hold (Google's canonical
+        // heuristic): a much newer fix wins, a much older one is ignored, and among
+        // comparable-age fixes the more accurate one wins. Still applied under FLP because a
+        // fused stream can interleave a coarse fix with a fine one.
+        if (isBetterLocation(location, lastLocation)) lastLocation = location
     }
+
+    private val legacyListener = LocationListener { onFix(it) }
 
     /** Trimmed form of Google's isBetterLocation() — decides whether [candidate] should
      *  replace the fix we're currently holding. */
@@ -114,7 +161,7 @@ class LocationTrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        legacyManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         createNotificationChannel()
     }
 
@@ -124,21 +171,16 @@ class LocationTrackingService : Service() {
         // Persist token/url so the service can restart itself after kill (START_STICKY).
         // Note the token is NOT cached in a field: JS refreshes it periodically and writes
         // the new value straight to these prefs, so every ping re-reads it (see currentToken()).
-        intent?.getStringExtra(EXTRA_TOKEN)?.let { token ->
-            prefs.edit().putString(EXTRA_TOKEN, token).apply()
-        }
-        intent?.getStringExtra(EXTRA_PING_PATH)?.let { pth ->
-            prefs.edit().putString(EXTRA_PING_PATH, pth).apply()
-        }
-        intent?.getStringExtra(EXTRA_BATCH_PATH)?.let { pth ->
-            prefs.edit().putString(EXTRA_BATCH_PATH, pth).apply()
-        }
+        intent?.getStringExtra(EXTRA_TOKEN)?.let { prefs.edit().putString(EXTRA_TOKEN, it).apply() }
+        intent?.getStringExtra(EXTRA_PING_PATH)?.let { prefs.edit().putString(EXTRA_PING_PATH, it).apply() }
+        intent?.getStringExtra(EXTRA_BATCH_PATH)?.let { prefs.edit().putString(EXTRA_BATCH_PATH, it).apply() }
+        intent?.getStringExtra(EXTRA_API_URL)?.let { prefs.edit().putString(EXTRA_API_URL, it).apply() }
+
         // A fresh start command is a fresh day: never inherit the previous shift's motion state.
+        // The sequence counter is NOT reset here — see nextSeq().
         stationaryStreak = 0
         lastSentLocation = null
-        intent?.getStringExtra(EXTRA_API_URL)?.let { url ->
-            prefs.edit().putString(EXTRA_API_URL, url).apply()
-        }
+        lastHeartbeatAt = 0L
 
         isRunning = true
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -153,7 +195,9 @@ class LocationTrackingService : Service() {
         super.onDestroy()
         isRunning = false
         stopPings()
-        try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+        try { fusedCallback?.let { fusedClient?.removeLocationUpdates(it) } } catch (_: Exception) {}
+        try { legacyManager?.removeUpdates(legacyListener) } catch (_: Exception) {}
+        fusedCallback = null
         Log.d(TAG, "Service destroyed")
     }
 
@@ -164,13 +208,35 @@ class LocationTrackingService : Service() {
     private fun currentToken(): String? = prefs().getString(EXTRA_TOKEN, null)?.takeIf { it.isNotEmpty() }
 
     /**
+     * The next sequence number for this device.
+     *
+     * Monotonic and never reset, not even across days or reinstalls of the session — a number
+     * that restarts can collide with one the server already holds for the same session, and a
+     * collision is silently dropped as a duplicate, which loses a real fix. Uniqueness only has
+     * to hold within a session, so a forever-increasing counter is trivially safe.
+     *
+     * This is the idempotency key. Without it the server cannot tell a retried offline batch from
+     * genuine new travel, and a request that was committed but whose reply was lost had its whole
+     * queue inserted a second time — the route then walked the same road twice and billed it.
+     */
+    @Synchronized
+    private fun nextSeq(): Long {
+        val next = prefs().getLong(SEQ_KEY, 0L) + 1L
+        // commit(), not apply(): the number must be durable BEFORE it goes out on the wire. With
+        // apply() a process death between the send and the async flush would hand the same
+        // sequence to a different fix, and the server would drop one of them as a duplicate.
+        prefs().edit().putLong(SEQ_KEY, next).commit()
+        return next
+    }
+
+    /**
      * Battery as a 0–1 fraction, or null when it cannot be read. Diagnostic, never critical:
      * a shift that goes dark at 3% is a flat phone, not a tracking failure, and the two need
      * telling apart. Must never throw — a battery reading is not worth losing a location over.
      */
     private fun batteryFraction(): Double? = try {
-        val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
-        val pct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        val pct = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
         if (pct in 0..100) pct / 100.0 else null
     } catch (e: Exception) {
         null
@@ -184,30 +250,79 @@ class LocationTrackingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // ─── Location ────────────────────────────────────────────────────────────────
+    // ─── Location acquisition ────────────────────────────────────────────────────
 
     private fun startLocationUpdates() {
-        try {
-            // Network provider: fast, works indoors, low battery
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    10_000L, 0f, locationListener
-                )
-                locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                    ?.let { lastLocation = it }
+        if (startFusedUpdates()) return
+        Log.w(TAG, "Play Services unavailable — falling back to raw LocationManager")
+        startLegacyUpdates()
+    }
+
+    /**
+     * Fused Location Provider: the platform's own fusion of GPS, Wi-Fi, cell and motion sensors.
+     *
+     * The service used to drive GPS_PROVIDER and NETWORK_PROVIDER directly and pick between them
+     * with a hand-rolled heuristic. That works, but it competes with a fusion the platform does
+     * far better — FLP has the sensor hints, the Wi-Fi/cell fingerprint database and the
+     * duty-cycling that raw providers do not expose, and the gap is widest exactly where field
+     * tracking is worst: indoors, in traffic and between tall buildings.
+     */
+    private fun startFusedUpdates(): Boolean {
+        val available = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)
+        if (available != ConnectionResult.SUCCESS) return false
+
+        return try {
+            val client = LocationServices.getFusedLocationProviderClient(this)
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, MOVING_INTERVAL_MS)
+                // The floor on how fast a fix may arrive. Held at half the send interval so a
+                // fresh fix is always waiting when the ping loop wakes, rather than the loop
+                // sending whatever happened to be lying around from the previous cycle.
+                .setMinUpdateIntervalMillis(MOVING_INTERVAL_MS / 2)
+                // Small, not zero: below this the device is not travelling, and a displacement
+                // floor is the cheapest way to stop a parked phone spinning up the GPS radio.
+                .setMinUpdateDistanceMeters(5f)
+                // Wait for a real fix rather than immediately handing back a coarse network one.
+                .setWaitForAccurateLocation(true)
+                .build()
+
+            val callback = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    // FLP can deliver several fixes at once after a doze window; take them in
+                    // order so the "better location" comparison sees them chronologically.
+                    result.locations.sortedBy { it.time }.forEach { onFix(it) }
+                }
             }
-            // GPS provider: more accurate outdoors
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    10_000L, 0f, locationListener
+
+            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+            client.lastLocation.addOnSuccessListener { loc -> loc?.let { onFix(it) } }
+            fusedClient = client
+            fusedCallback = callback
+            Log.d(TAG, "Fused location updates started (${MOVING_INTERVAL_MS}ms, high accuracy)")
+            true
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Location permission denied: ${e.message}")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Fused provider unavailable: ${e.message}")
+            false
+        }
+    }
+
+    /** Raw-provider fallback for devices without Play Services. */
+    private fun startLegacyUpdates() {
+        val manager = legacyManager ?: return
+        try {
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                manager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER, MOVING_INTERVAL_MS, 0f, legacyListener
                 )
-                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?.let { gps ->
-                        val prev = lastLocation
-                        if (prev == null || gps.accuracy < prev.accuracy) lastLocation = gps
-                    }
+                manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let { onFix(it) }
+            }
+            if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                manager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER, MOVING_INTERVAL_MS, 0f, legacyListener
+                )
+                manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { onFix(it) }
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Location permission denied: ${e.message}")
@@ -221,7 +336,7 @@ class LocationTrackingService : Service() {
         pingRunnable = object : Runnable {
             override fun run() {
                 sendPingAsync()
-                handler.postDelayed(this, PING_INTERVAL_MS)
+                handler.postDelayed(this, TICK_MS)
             }
         }
         handler.post(pingRunnable!!)
@@ -238,26 +353,39 @@ class LocationTrackingService : Service() {
         val baseUrl = currentBaseUrl() ?: return Unit.also { Log.w(TAG, "No API URL — skip ping") }
         val location = lastLocation ?: return Unit.also { Log.w(TAG, "No location yet — skip ping") }
 
-        // Staleness gate: a fix older than 30 s no longer reflects where the agent is.
+        // Staleness gate: a fix older than 30 s no longer reflects where the agent is, and one
+        // stamped "now" would drag the route back to where they used to be and forward again.
         val ageMs = System.currentTimeMillis() - location.time
         if (ageMs > STALE_FIX_MS) return Unit.also { Log.w(TAG, "Fix ${ageMs}ms old — skip ping") }
 
-        // Accuracy gate: drop poor fixes on-device before they can be snapped to a wrong road.
+        // Accuracy gate. Loose by design — see MAX_ACCURACY_METRES. The fix's own accuracy goes
+        // out with it and becomes the matcher's search radius, so an uncertain point is weighed
+        // rather than trusted.
         if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_METRES) {
             return Unit.also { Log.w(TAG, "Low-accuracy fix ${location.accuracy}m — skip ping") }
         }
 
-        // Stationary suppression: a parked phone must not accumulate distance. Only after three
-        // consecutive stationary checks, so a slow crawl in traffic still counts as travel.
+        // Stationary handling. A parked phone must not accumulate distance, but it must also not
+        // go silent: after the streak the cadence drops to a heartbeat rather than stopping, so
+        // "parked" and "phone died" stay distinguishable in the data.
         val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
         val movedM = lastSentLocation?.distanceTo(location)?.toDouble() ?: Double.MAX_VALUE
+        val now = System.currentTimeMillis()
         if (speedKmh < STATIONARY_SPEED_KMH && movedM < STATIONARY_DISPLACEMENT_M) {
             stationaryStreak++
             if (stationaryStreak >= STATIONARY_STREAK) {
-                return Unit.also { Log.d(TAG, "Stationary (${stationaryStreak}x) — suppressing ping") }
+                if (now - lastHeartbeatAt < STATIONARY_HEARTBEAT_MS) {
+                    // Still parked and the heartbeat isn't due. Drain anything queued so a
+                    // recovered network isn't left waiting for the agent to move again.
+                    currentToken()?.let { token -> Thread { flushQueue(baseUrl, token) }.start() }
+                    return Unit.also { Log.d(TAG, "Stationary (${stationaryStreak}x) — suppressed") }
+                }
+                lastHeartbeatAt = now
+                Log.d(TAG, "Stationary heartbeat")
             }
         } else {
             stationaryStreak = 0
+            lastHeartbeatAt = now
         }
         lastSentLocation = location
 
@@ -265,6 +393,10 @@ class LocationTrackingService : Service() {
             timeZone = TimeZone.getTimeZone("UTC")
         }
         val ping = JSONObject().apply {
+            // Allocated once, before the first send attempt, and carried through every retry —
+            // that is the whole point. Re-allocating on retry would make the retry look like a
+            // new fix and defeat the deduplication it exists to enable.
+            put("seq", nextSeq())
             put("latitude", location.latitude)
             put("longitude", location.longitude)
             if (location.hasAccuracy()) put("accuracyMetres", location.accuracy.toDouble())
@@ -273,7 +405,7 @@ class LocationTrackingService : Service() {
             put("recordedAt", sdf.format(Date(location.time)))
             // Report the real provider (gps/network/fused) so the server's fraud/quality
             // engine can weight fixes correctly instead of assuming everything is GPS.
-            put("provider", location.provider?.uppercase(Locale.US) ?: "GPS")
+            put("provider", location.provider?.uppercase(Locale.US) ?: "FUSED")
 
             // Course over ground — lets the live map orient the marker instead of drifting a
             // featureless dot, and helps disambiguate which carriageway a fix belongs to.
@@ -321,7 +453,9 @@ class LocationTrackingService : Service() {
                 // No active tracking session — the day is over; this fix is genuinely unwanted.
                 403 -> Log.w(TAG, "Ping → 403 (no active session) — dropping")
 
-                // Network failure or server error — retry later.
+                // Network failure or server error — retry later. Safe now that the fix carries a
+                // sequence: if the server did commit it and only the reply was lost, the retry is
+                // recognised as a duplicate rather than counted twice.
                 -1, in 500..599 -> {
                     Log.w(TAG, "Ping → $code — queueing for retry")
                     enqueuePing(ping)
@@ -332,8 +466,10 @@ class LocationTrackingService : Service() {
         }.start()
     }
 
-    /** Returns the HTTP status, or -1 when the request never completed. */
-    private fun postJson(urlString: String, token: String, body: String): Int =
+    /** Returns the HTTP status and body, or status -1 when the request never completed. */
+    private fun postJson(urlString: String, token: String, body: String): Int = postJsonWithBody(urlString, token, body).first
+
+    private fun postJsonWithBody(urlString: String, token: String, body: String): Pair<Int, String?> =
         try {
             val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -345,11 +481,15 @@ class LocationTrackingService : Service() {
             }
             OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(body) }
             val code = conn.responseCode
+            val text = try {
+                (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }
+            } catch (_: Exception) { null }
             conn.disconnect()
-            code
+            code to text
         } catch (e: Exception) {
             Log.e(TAG, "POST $urlString failed: ${e.message}")
-            -1
+            -1 to null
         }
 
     // ─── Offline queue ────────────────────────────────────────────────────────────
@@ -377,26 +517,55 @@ class LocationTrackingService : Service() {
         Log.d(TAG, "Queued ping. Pending=${trimmed.length()}")
     }
 
-    /** Delivers queued pings via the batch endpoint. Keeps them on failure. */
+    /**
+     * Delivers queued pings via the batch endpoint.
+     *
+     * Trimming is driven by the server's `acceptedThroughSeq` rather than by the response code
+     * alone. A 200 says the request was handled; it does not say every fix in it was stored, and
+     * clearing the whole queue on a 200 is how a partially-processed batch silently loses its
+     * tail. Anything at or below the acknowledged sequence is durable and safe to drop; anything
+     * above it stays for the next cycle, where the server's deduplication makes the re-send free.
+     */
     @Synchronized
     private fun flushQueue(baseUrl: String, token: String) {
         val queue = readQueue()
         if (queue.length() == 0) return
 
         val body = JSONObject().put("pings", queue).toString()
-        when (val code = postJson("$baseUrl${batchPath()}", token, body)) {
-            in 200..299 -> {
-                Log.d(TAG, "Flushed ${queue.length()} queued pings")
-                writeQueue(JSONArray())
+        val (code, response) = postJsonWithBody("$baseUrl${batchPath()}", token, body)
+        when {
+            code in 200..299 -> {
+                val through = acceptedThroughSeq(response)
+                if (through == null) {
+                    Log.d(TAG, "Flushed ${queue.length()} queued pings")
+                    writeQueue(JSONArray())
+                } else {
+                    val remaining = JSONArray()
+                    for (i in 0 until queue.length()) {
+                        val item = queue.optJSONObject(i) ?: continue
+                        if (item.optLong("seq", Long.MAX_VALUE) > through) remaining.put(item)
+                    }
+                    Log.d(TAG, "Flushed through seq $through; ${remaining.length()} still pending")
+                    writeQueue(remaining)
+                }
             }
             // Session is over — these will never be accepted, so stop carrying them.
-            403 -> {
+            code == 403 -> {
                 Log.w(TAG, "Batch → 403 (no active session) — discarding ${queue.length()} queued pings")
                 writeQueue(JSONArray())
             }
             // 401 / 5xx / network: leave the queue intact and try again next cycle.
             else -> Log.w(TAG, "Batch → $code — keeping ${queue.length()} pings queued")
         }
+    }
+
+    /** Pulls acceptedThroughSeq out of either tier's response envelope. */
+    private fun acceptedThroughSeq(body: String?): Long? = try {
+        val data = body?.let { JSONObject(it) }?.optJSONObject("data")
+        data?.takeIf { it.has("acceptedThroughSeq") && !it.isNull("acceptedThroughSeq") }
+            ?.optLong("acceptedThroughSeq")
+    } catch (_: Exception) {
+        null
     }
 
     // ─── Notification ─────────────────────────────────────────────────────────────
@@ -418,7 +587,7 @@ class LocationTrackingService : Service() {
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Day Tracking Active")
-            .setContentText("Sending location updates every 30 seconds")
+            .setContentText("Recording your route while your day is on")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

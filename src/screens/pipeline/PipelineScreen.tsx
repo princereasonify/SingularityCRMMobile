@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  useWindowDimensions, Animated, RefreshControl, Alert,
+  View, Text, ScrollView, StyleSheet, useWindowDimensions, Animated, RefreshControl, Alert,
 } from 'react-native';
 import {
   PanGestureHandler,

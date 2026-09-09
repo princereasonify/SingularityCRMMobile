@@ -5,12 +5,15 @@
  * Used by the foreground B2CMyDayScreen watch loop AND the background drivers
  * (react-native-background-actions / react-native-background-fetch).
  *
- * Guarantees for ~99% route fidelity:
- *  - On-device accuracy gate: a fix worse than 75 m never enters the route.
- *  - Client capture time (recordedAt): the server orders offline/batched fixes
- *    by true capture time instead of receive time.
- *  - Offline queue + batch flush: a fix is never lost to a transient network drop;
- *    queued fixes drain via /b2c/tracking/ping/batch on the next successful cycle.
+ * What this guarantees:
+ *  - On-device accuracy gate (B2C_MAX_ACCURACY_METRES): unusable fixes never leave the device,
+ *    while every fix that does carries its own accuracy for the server's matcher to weigh.
+ *  - Client capture time (recordedAt): the server orders offline/batched fixes by true capture
+ *    time instead of receive time.
+ *  - Sequence numbers (seq): a re-sent fix is recognised and dropped by the server rather than
+ *    counted a second time, so retrying after a lost response is free.
+ *  - Offline queue + batch flush: a fix is never lost to a transient network drop; queued fixes
+ *    drain via /b2c/tracking/ping/batch and are trimmed against the server's acceptedThroughSeq.
  *
  * Goes through b2cTrackingService (apiClient), so auth + token refresh are handled
  * centrally and this works from a headless task too.
@@ -20,22 +23,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import DeviceInfo from 'react-native-device-info';
 import { b2cTrackingService, B2CPingBody } from '../api/b2c/b2cTrackingService';
+import { nextPingSeq } from './pingSequence';
 
 const QUEUE_KEY = 'b2c_tracking_ping_queue';
 
 /**
- * On-device accuracy gate (metres). Tightened from 75 m to 35 m: at 75 m a fix can sit on the
- * wrong side of a dual carriageway, and the road-snapper will faithfully snap it there — a bad
- * fix that passes the gate becomes a confident wrong road, which is worse than no fix at all.
+ * On-device accuracy gate (metres).
  *
- * The server keeps its own 75 m gate as a backstop for older clients; this is the stricter of
- * the two and runs first, so a poor fix never costs a round trip.
+ * LOOSENED from 35 m, and that is deliberate rather than a regression. Under per-point road
+ * snapping a poor fix became a confident WRONG road, so a tight gate genuinely helped. A
+ * sequence-aware map matcher inverts the trade: each fix's accuracy is sent with it and becomes
+ * the matcher's search radius, so an uncertain point is weighed against its neighbours and the
+ * road network rather than trusted outright.
  *
- * Trade-off worth knowing: in a dense urban canyon, accuracy often sits in the 20–50 m band, so
- * 35 m will thin the route where buildings are tallest. That is the intended bargain — fewer,
- * trustworthy points beat many that quietly invent distance.
+ * What a matcher cannot recover from is a STARVED trace. In a dense urban canyon accuracy sits
+ * in the 20–50 m band, so a 35 m gate discarded most of the day exactly where the route was
+ * hardest to infer — and with too few points, parallel roads and turns become genuinely
+ * ambiguous. 50 m keeps the evidence and lets the algorithm weigh it. Kept in step with the
+ * native services and the server so one walk cannot be measured two different ways.
  */
-export const B2C_MAX_ACCURACY_METRES = 35;
+export const B2C_MAX_ACCURACY_METRES = 50;
 
 /**
  * A fix older than this is stale and dropped. A GPS chip will happily hand back a cached fix
@@ -119,13 +126,33 @@ const enqueue = async (body: B2CPingBody): Promise<void> => {
 
 const statusOf = (err: any): number | undefined => err?.response?.status ?? err?.status;
 
-/** Delivers any queued fixes via the batch endpoint. Keeps them on failure; drops on 403 (day over). */
+/**
+ * Delivers any queued fixes via the batch endpoint.
+ *
+ * Trimming is driven by the server's `acceptedThroughSeq`, not by the call merely not throwing.
+ * A 200 says the request was handled; it does not say every fix in it was stored, and clearing
+ * the whole queue on a 200 is how a partially-processed batch silently loses its tail. Anything
+ * at or below the acknowledged sequence is durable and safe to drop; anything above it stays for
+ * the next cycle, where the server's deduplication makes the re-send free.
+ *
+ * Keeps the queue on failure; drops it on 403 (the day is over, so these can never be accepted).
+ */
 export const flushB2CQueue = async (): Promise<void> => {
   const queue = await readQueue();
   if (queue.length === 0) return;
   try {
-    await b2cTrackingService.pingBatch(queue);
-    await writeQueue([]);   // delivered → clear
+    const res: any = await b2cTrackingService.pingBatch(queue);
+    const through = res?.data?.acceptedThroughSeq;
+    if (typeof through === 'number') {
+      // Re-read rather than filtering the snapshot: fixes captured while the flush was in
+      // flight are already in the queue and must not be discarded along with it. A row whose
+      // sequence cannot be read is KEPT — losing a fix is worse than re-sending one the server
+      // will recognise and drop.
+      const remaining = (await readQueue()).filter(p => typeof p.seq !== 'number' || p.seq > through);
+      await writeQueue(remaining);
+    } else {
+      await writeQueue([]);
+    }
   } catch (err: any) {
     if (statusOf(err) === 403) await writeQueue([]);   // no active session — these will never be accepted
     // else: keep the queue and retry next cycle
@@ -169,6 +196,10 @@ export const sendB2CPing = async (body: B2CPingBody): Promise<boolean> => {
 
   const withTime: B2CPingBody = {
     ...body,
+    // Allocated once, here, and carried through every retry and every queue flush — that is the
+    // whole point. Re-allocating on retry would make the retry look like a new fix and defeat
+    // the deduplication it exists to enable.
+    seq: body.seq ?? (await nextPingSeq()),
     recordedAt: body.recordedAt ?? new Date().toISOString(),
     batteryLevel: body.batteryLevel ?? (await readBatteryPct()),
   };
@@ -206,12 +237,22 @@ export const captureAndSendB2CPing = async (): Promise<void> => {
     await flushB2CQueue();   // no fix this cycle, but still try to drain anything queued
     return;
   }
-  const { latitude, longitude, accuracy, speed } = pos.coords;
+  const { latitude, longitude, accuracy, speed, heading } = pos.coords;
   await sendB2CPing({
     latitude,
     longitude,
     accuracyMetres: accuracy != null ? Math.round(accuracy) : undefined,
     speedKmh: speed != null ? Math.max(0, speed * 3.6) : undefined,
-    recordedAt: new Date().toISOString(),
+    // Course over ground. The foreground screen has always sent this; the background drivers
+    // dropped it, so precisely the fixes taken while the app was backgrounded — most of a
+    // driving day — reached the matcher with no direction to disambiguate them. Negative means
+    // the OS could not determine a heading (typically stationary), and sending 0 there would
+    // assert "due north" rather than "unknown".
+    bearing: heading != null && heading >= 0 ? Math.round(heading) : undefined,
+    // The fix's OWN capture time. Stamping "now" onto a position the OS took a minute ago
+    // drags the route back to where the agent used to be and forward again — two phantom legs
+    // out of one stale reading — and it defeats the staleness check above, which is measured
+    // against exactly this field.
+    recordedAt: pos.timestamp ? new Date(pos.timestamp).toISOString() : new Date().toISOString(),
   });
 };

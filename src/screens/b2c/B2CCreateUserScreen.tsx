@@ -66,8 +66,16 @@ export function payoutState(v: PayoutValues) {
     accountError: v.accountNumber.length > 0 && !accountValid ? 'Account number must be 9-18 digits' : '',
     ifscError: v.ifscCode.length > 0 && !ifscValid ? 'Format: HDFC0001234' : '',
     // All four, with no partial state: a transfer needs the account AND the IFSC, and the
-    // tax identifiers are reported together.
+    // tax identifiers are reported together. Still used to report who is incomplete — it just
+    // no longer gates creation.
     isComplete: panValid && aadhaarValid && accountValid && ifscValid,
+    /** Something has been typed that is WRONG — distinct from merely empty. This is what
+     *  blocks submission now that the four fields are optional. */
+    hasErrors:
+      (v.panNumber.length > 0 && !panValid)
+      || (v.aadhaarNumber.length > 0 && !aadhaarValid)
+      || (v.accountNumber.length > 0 && !accountValid)
+      || (v.ifscCode.length > 0 && !ifscValid),
   };
 }
 
@@ -90,7 +98,7 @@ export const PayoutFields = ({ values, onChange, colW }: {
   return (
     <>
       <Input
-        label="PAN Number *"
+        label="PAN Number"
         value={values.panNumber}
         error={st.panError}
         onChangeText={v => onChange('panNumber', upperAlnum(v, 10))}
@@ -98,7 +106,7 @@ export const PayoutFields = ({ values, onChange, colW }: {
         containerStyle={w}
       />
       <Input
-        label="Aadhaar Number *"
+        label="Aadhaar Number"
         value={values.aadhaarNumber}
         error={st.aadhaarError}
         onChangeText={v => onChange('aadhaarNumber', formatAadhaar(v))}
@@ -108,7 +116,7 @@ export const PayoutFields = ({ values, onChange, colW }: {
         containerStyle={w}
       />
       <Input
-        label="Bank Account Number *"
+        label="Bank Account Number"
         value={values.accountNumber}
         error={st.accountError}
         onChangeText={v => onChange('accountNumber', digitsOnly(v).slice(0, 18))}
@@ -118,7 +126,7 @@ export const PayoutFields = ({ values, onChange, colW }: {
         containerStyle={w}
       />
       <Input
-        label="IFSC Code *"
+        label="IFSC Code"
         value={values.ifscCode}
         error={st.ifscError}
         onChangeText={v => onChange('ifscCode', upperAlnum(v, 11))}
@@ -130,7 +138,10 @@ export const PayoutFields = ({ values, onChange, colW }: {
 };
 
 // ── Screen ───────────────────────────────────────────────────────────────────
-type Role = 'Agent' | 'Counselor';
+// A B2CAdmin can create another B2CAdmin. Mobile stays required for every role: it is the
+// number the lead-creation WhatsApp goes to, so an account without one silently stops
+// receiving the details of every lead that user enters.
+type Role = 'Agent' | 'Counselor' | 'B2CAdmin';
 
 const emptyForm = {
   name: '', email: '', mobile: '', address: '', password: '',
@@ -176,7 +187,10 @@ export const B2CCreateUserScreen = () => {
   const kyc = payoutState(form);
 
   const canSubmit = !!form.name.trim() && !!form.email.trim() && mobileValid
-    && form.password.length >= 6 && kyc.isComplete;
+    // KYC is optional: block on a malformed entry, never on an empty one. An admin creating
+    // an account rarely has the joiner's PAN and bank details to hand, and requiring them
+    // blocked the account itself. They stay editable afterwards.
+    && form.password.length >= 6 && !kyc.hasErrors;
 
   const submit = async () => {
     if (!canSubmit || saving) return;
@@ -241,7 +255,7 @@ export const B2CCreateUserScreen = () => {
           <Segmented<Role>
             value={form.role}
             onChange={v => set('role', v)}
-            options={[{ label: 'Agent', value: 'Agent' }, { label: 'Counselor', value: 'Counselor' }]}
+            options={[{ label: 'Agent', value: 'Agent' }, { label: 'Counselor', value: 'Counselor' }, { label: 'Admin', value: 'B2CAdmin' }]}
           />
         </Field>
         <View style={s.grid}>

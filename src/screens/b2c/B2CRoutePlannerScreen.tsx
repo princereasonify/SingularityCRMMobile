@@ -46,9 +46,6 @@ import {
 // are counted, and a family visit is never the five minutes optimism suggests.
 const AVG_SPEED_KMH = 25;
 const DWELL_MINUTES = 30;   // time spent with one family
-const BUFFER_MINUTES = 10;  // never cut an appointment finer than this
-const DAY_START_HOUR = 9;
-const MIN = 60_000;
 
 const INDIA_REGION: MapRegion = { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 };
 
@@ -70,99 +67,9 @@ interface PlannedVisit {
   sortOrder?: number | null;
 }
 
-function haversineKm(a: Coord, b: Coord) {
-  const R = 6371, toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-const travelMs = (a: Coord, b: Coord) => (haversineKm(a, b) / AVG_SPEED_KMH) * 60 * MIN;
 
-/** Picks the nearest stop to `from`, returning its index. */
-function nearestIndex(from: Coord, stops: Stop[]) {
-  let bi = 0, bd = haversineKm(from, stops[0]);
-  for (let i = 1; i < stops.length; i++) {
-    const d = haversineKm(from, stops[i]);
-    if (d < bd) { bd = d; bi = i; }
-  }
-  return bi;
-}
 
-/**
- * Orders one day's stops around the appointments that cannot move.
- *
- * Booked appointments are fixed points taken in time order; the flexible stops are slotted
- * into the gaps between them, nearest-first, but only where the arithmetic says you would
- * still reach the next appointment on time. An appointment we would reach after the promised
- * time comes back marked `late` rather than quietly reordered — the fix for that is dropping a
- * stop or calling the family, and both are the agent's call, not the planner's.
- */
-function planDay(origin: Coord | null, stops: Stop[], dayStart: Date, earliest: Date): PlannedStop[] {
-  const timed = stops.filter(s => s.appointmentAt)
-    .sort((a, b) => (a.appointmentAt as Date).getTime() - (b.appointmentAt as Date).getTime());
-  const free = stops.filter(s => !s.appointmentAt);
 
-  const route: PlannedStop[] = [];
-  let cur: Coord | undefined = origin || timed[0] || free[0];
-  let clockAt = dayStart.getTime();
-  if (!cur) return route;
-
-  // Set off early enough to make the first promised time. Anchoring the day rigidly at 9am
-  // would mark a 9am appointment twelve kilometres out as unreachable when the real answer is
-  // "leave at half past eight" — but never earlier than `earliest`, which is the present moment
-  // when the day being planned is today. You cannot depart in the past.
-  if (timed.length && origin) {
-    const leaveBy = (timed[0].appointmentAt as Date).getTime() - travelMs(origin, timed[0]) - BUFFER_MINUTES * MIN;
-    clockAt = Math.max(earliest.getTime(), Math.min(clockAt, leaveBy));
-  }
-
-  const push = (stop: Stop, etaMs: number, late = false) => {
-    route.push({ ...stop, eta: new Date(etaMs), late });
-    cur = stop;
-    clockAt = etaMs + DWELL_MINUTES * MIN;
-  };
-
-  for (const anchor of timed) {
-    // Fill the gap before this appointment with whatever fits, nearest first.
-    while (free.length) {
-      const i = nearestIndex(cur as Coord, free);
-      const cand = free[i];
-      const arriveCand = clockAt + travelMs(cur as Coord, cand);
-      const arriveAnchor = arriveCand + DWELL_MINUTES * MIN + travelMs(cand, anchor);
-      // Would this detour make us late for a time we promised? Then it waits.
-      if (arriveAnchor + BUFFER_MINUTES * MIN > (anchor.appointmentAt as Date).getTime()) break;
-      free.splice(i, 1);
-      push(cand, arriveCand);
-    }
-
-    const arrive = clockAt + travelMs(cur as Coord, anchor);
-    const promised = (anchor.appointmentAt as Date).getTime();
-    // Arriving early means waiting, which is fine and worth showing as the promised time.
-    push(anchor, Math.max(arrive, promised), arrive > promised);
-  }
-
-  // Anything left over: nearest-neighbour from wherever the last appointment left us.
-  while (free.length) {
-    const i = nearestIndex(cur as Coord, free);
-    const next = free.splice(i, 1)[0];
-    push(next, clockAt + travelMs(cur as Coord, next));
-  }
-
-  return route;
-}
-
-/**
- * When the plan says to set off — the ETA of the first stop, less the drive to it. Clamped to
- * `earliest`, because planDay already refuses to depart before it and a minute of float drift
- * rendered as "11:59 pm -1d" is pure confusion.
- */
-function departureTime(origin: Coord | null, route: PlannedStop[], fallback: Date, earliest: Date): Date {
-  if (!route.length) return fallback;
-  const first = route[0];
-  const eta = first.eta.getTime();
-  const leave = origin ? eta - travelMs(origin, first) : eta;
-  return new Date(Math.max(leave, earliest.getTime()));
-}
 
 function buildMapsUrl(ordered: PlannedStop[], origin: Coord | null) {
   if (!ordered.length) return '';
@@ -303,19 +210,16 @@ export const B2CRoutePlannerScreen = () => {
   );
 
   /**
-   * Two different clocks. `dayStart` is when you would normally set off; `earliest` is the hard
-   * floor you cannot depart before — the present moment when the day is today, and the start of
-   * the day itself when it is a future one you are planning ahead.
+   * The hard floor you cannot depart before — the present moment when the day is today, and
+   * the start of the day itself when planning a future one.
+   *
+   * There used to be a second clock here, `dayStart` ("when you would normally set off"), read
+   * only by the local planDay() this screen no longer uses: the ordering now comes from
+   * utils/routeOptimizationEngine, which takes `earliest` and derives its own schedule.
    */
-  const { dayStart, earliest } = useMemo(() => {
+  const earliest = useMemo(() => {
     const base = parseDayLocal(date);
-    const nine = new Date(base.getFullYear(), base.getMonth(), base.getDate(), DAY_START_HOUR, 0, 0, 0);
-    const now = new Date();
-    const isToday = date === todayStr();
-    return {
-      dayStart: isToday && now > nine ? now : nine,
-      earliest: isToday ? now : base,
-    };
+    return date === todayStr() ? new Date() : base;
   }, [date]);
 
   // Same pattern as B2CAgentVisitScreen — without this, getCurrentPosition fails silently on

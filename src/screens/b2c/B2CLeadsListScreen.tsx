@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Filter, Plus, Phone, MapPin, Upload, FileSpreadsheet, User, Users, GraduationCap, CalendarClock } from 'lucide-react-native';
+import { Filter, Plus, Phone, MapPin, Upload, FileSpreadsheet, User, Users, GraduationCap, CalendarClock, Eye } from 'lucide-react-native';
 import { pick, types } from '@react-native-documents/picker';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
@@ -17,7 +17,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme';
 import { appointmentLabel } from '../../utils/dates';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, MIN_TAP, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
 /** Web parity: B2CLeadsList.jsx pages 10 at a time. */
 const PAGE_SIZE = 10;
@@ -76,15 +76,6 @@ export const B2CLeadsListScreen = () => {
   // paid here — otherwise the FAB and the last row sit under it.
   const insets = useSafeAreaInsets();
   const s = useMemo(() => makeStyles(r, insets.bottom), [r, insets.bottom]);
-  // Exact point widths, not percentages: in a wrapping row with a `gap`, N × (100/N)% always
-  // overflows by the gaps and the last card silently drops onto its own line.
-  // A phone gets one card per row; the tablet's extra width becomes columns rather than
-  // 900pt-wide rows with a name floating in the middle of them.
-  const listInnerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
-  const cardWidth: number | '100%' = r.columns > 1
-    ? Math.floor((listInnerW - r.gap * (r.columns - 1)) / r.columns)
-    : '100%';
-
   const role = (user as any)?.role;
   const isAdmin = role === 'B2CAdmin';
   // Web parity: canCreate / canUpload = ['B2CAdmin', 'Agent'].
@@ -92,6 +83,9 @@ export const B2CLeadsListScreen = () => {
   const canUpload = role === 'B2CAdmin' || role === 'Agent';
 
   const [leads, setLeads] = useState<B2CLeadListDto[]>([]);
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardWidth = gridCardWidth(r, leads.length);
+
   const [loading, setLoading] = useState(true);
   // Why the last load failed, or null. Distinguishes "no results" from "could not fetch".
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -359,6 +353,21 @@ export const B2CLeadsListScreen = () => {
                       </View>
                       <StatusBadge label={spaced(lead.source)} color={T.info} />
                     </View>
+
+                    {/* An explicit View control. The whole card has always opened the lead, but
+                        a card that is silently tappable is a secret: nothing on it said so, so
+                        people read the list and never opened a lead. The card stays tappable —
+                        this just makes the affordance visible. */}
+                    <TouchableOpacity
+                      onPress={() => openDetail(lead.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${lead.studentName}`}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      style={[s.viewBtn, { backgroundColor: T.accentSoft }]}
+                    >
+                      <Eye size={13} color={T.accent} strokeWidth={ICON_STROKE} />
+                      <Text style={[s.viewTxt, { color: T.accent }]}>View</Text>
+                    </TouchableOpacity>
                   </View>
                 </ListCard>
               ))}
@@ -603,6 +612,11 @@ const makeStyles = (r: Responsive, bottomInset: number) => StyleSheet.create({
   rowCard: { alignItems: 'flex-start' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  viewBtn: {
+    marginTop: r.rs(8), alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+    gap: 5, paddingHorizontal: 12, minHeight: 32, borderRadius: 8,
+  },
+  viewTxt: { fontSize: r.rf(11.5), fontWeight: '700' },
   rowFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   agentWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 },
   name: { fontSize: r.rf(13.5), fontWeight: '700', flex: 1, minWidth: 0 },

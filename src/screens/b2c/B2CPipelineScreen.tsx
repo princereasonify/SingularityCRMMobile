@@ -70,8 +70,13 @@ export const B2CPipelineScreen = () => {
     [personVal, agents, counselors],
   );
 
-  // Collapsed stage keys (default: everything expanded).
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Which single stage is open. An ACCORDION, and closed to start with.
+  //
+  // Every stage used to be expanded at once, which meant the board opened as one enormous
+  // scroll — each student appears in every stage they have reached, so the rows multiply
+  // fast. Starting closed makes the board a set of counts you can read at a glance, and
+  // opening one closes the last so the page never grows past a screen or two.
+  const [openStage, setOpenStage] = useState<string | null>(null);
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -146,13 +151,13 @@ export const B2CPipelineScreen = () => {
           {COLUMNS.map((col, ci) => {
             // Trail: everyone whose current stage is at or past this column.
             const reached = leads.filter(l => idxOf(l.stage) >= ci);
-            const isOpen = !collapsed[col.key];
+            const isOpen = openStage === col.key;
             return (
               <View key={col.key} style={{ width: colWidth }}>
                 <Card padded={false}>
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => setCollapsed(m => ({ ...m, [col.key]: isOpen }))}
+                    onPress={() => setOpenStage(cur => (cur === col.key ? null : col.key))}
                     style={s.stageHead}
                   >
                     {isOpen

@@ -129,6 +129,7 @@ export const DealEstimateScreen = ({ navigation }: any) => {
           value={basePrice}
           onChangeText={setBasePrice}
           placeholder="e.g. 1000"
+          error={bpErr}
         />
         <NumField
           label="Total Logins (Teachers) *"
@@ -136,12 +137,14 @@ export const DealEstimateScreen = ({ navigation }: any) => {
           onChangeText={setTotalLogins}
           placeholder="e.g. 50"
           allowDecimal={false}
+          error={tlErr}
         />
         <NumField
           label="Discount %"
           value={discount}
           onChangeText={setDiscount}
           placeholder={`0 – ${DISCOUNT_MAX}`}
+          error={discErr}
         />
         <Field label="Billing Frequency">
           <Trigger

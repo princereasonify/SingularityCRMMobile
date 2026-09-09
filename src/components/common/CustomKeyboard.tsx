@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Delete, ArrowBigUp, X, ArrowRight } from 'lucide-react-native';
 import { AuthTheme } from '../../theme';
 import { isTabletDevice } from '../../utils/responsive';
+import { useKeyPress } from './useKeyPress';
 
 interface Props {
   visible: boolean;
@@ -196,17 +197,29 @@ const Key = ({
   onPressOut?: () => void;
   bg: string;
   flexAmt?: number;
-}) => (
-  <TouchableOpacity
-    activeOpacity={0.6}
-    onPress={onPress}
-    onPressIn={onPressIn}
-    onPressOut={onPressOut}
-    style={[styles.key, { backgroundColor: bg, flex: flexAmt, height: KEY_H }]}
-  >
-    {children}
-  </TouchableOpacity>
-);
+}) => {
+  const { scale, pressIn, pressOut } = useKeyPress();
+
+  // The wrapper carries the flex; the animated child carries the face. Scaling a flex child
+  // directly would make the key fight its own row for width on every press.
+  return (
+    <View style={{ flex: flexAmt }}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <TouchableOpacity
+          activeOpacity={0.6}
+          onPress={onPress}
+          // The caller's own press handlers still run — backspace hold-to-repeat is wired
+          // through these, so swallowing them would break it.
+          onPressIn={() => { pressIn(); onPressIn?.(); }}
+          onPressOut={() => { pressOut(); onPressOut?.(); }}
+          style={[styles.key, { backgroundColor: bg, height: KEY_H }]}
+        >
+          {children}
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   panel: {

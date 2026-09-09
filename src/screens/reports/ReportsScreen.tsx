@@ -9,8 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Eye, ChevronDown, ChevronUp, AlertTriangle, CheckCircle,
   TrendingUp, ArrowLeft, Users, Clock, Target, Download, Sparkles,
-  XCircle, BarChart3, AlertCircle, Calendar,
-} from 'lucide-react-native';
+  XCircle, BarChart3, AlertCircle, } from 'lucide-react-native';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
 import { useAuth } from '../../context/AuthContext';

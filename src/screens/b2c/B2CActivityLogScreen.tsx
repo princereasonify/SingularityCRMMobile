@@ -101,6 +101,9 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
   // Client-side filters (getActivities has no type/search query, so filter the loaded page).
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
+  // Server-side date range, matching the web page's From/To.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
 
   // ─── Log modal ─────────────────────────────────────────────────────────────
@@ -124,11 +127,25 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
   }, []);
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
-  // ─── Load the viewed student's activity log ────────────────────────────────
+  // ─── Load the activity log ─────────────────────────────────────────────────
+  //
+  // Defaults to the CROSS-STUDENT feed, matching the web page. This screen used to demand a
+  // student before it would show anything, because the mobile service exposed only the
+  // per-lead list — that is no longer true, and the type/date filters were being applied to
+  // the loaded page in JS, so a filter silently searched one page of results instead of all
+  // of them. Both are server-side now; picking a student narrows the same feed, which is a
+  // superset of what web offers rather than a substitute for it.
   const fetchActivities = useCallback(async (pg = 1) => {
-    if (!viewLeadId) { setRows([]); setTotalPages(1); setTotalCount(0); setLoading(false); setRefreshing(false); return; }
     try {
-      const res = await b2cActivityService.getActivities(Number(viewLeadId), { page: pg, pageSize: PAGE_SIZE });
+      const res = viewLeadId
+        ? await b2cActivityService.getActivities(Number(viewLeadId), { page: pg, pageSize: PAGE_SIZE })
+        : await b2cActivityService.getMyActivities({
+            page: pg,
+            pageSize: PAGE_SIZE,
+            type: typeFilter || undefined,
+            from: fromDate || undefined,
+            to: toDate || undefined,
+          });
       setRows((res.data?.items ?? []) as ActivityRow[]);
       setTotalPages(res.data?.totalPages ?? 1);
       setTotalCount(res.data?.totalCount ?? 0);
@@ -137,18 +154,17 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [viewLeadId]);
+  }, [viewLeadId, typeFilter, fromDate, toDate]);
 
   useEffect(() => {
-    if (!viewLeadId) return;
     setLoading(true); setPage(1); fetchActivities(1);
-  }, [viewLeadId, fetchActivities]);
+  }, [fetchActivities]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadLeads();
-    if (viewLeadId) fetchActivities(page); else setRefreshing(false);
-  }, [loadLeads, fetchActivities, viewLeadId, page]);
+    fetchActivities(page);
+  }, [loadLeads, fetchActivities, page]);
 
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
@@ -158,11 +174,13 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(a => {
-      if (typeFilter && a.type !== typeFilter) return false;
+      // Type is filtered server-side on the cross-student feed; still applied here for the
+      // per-student view, whose endpoint takes no type parameter.
+      if (viewLeadId && typeFilter && a.type !== typeFilter) return false;
       if (!q) return true;
       return `${a.type} ${a.notes ?? ''} ${feedbackLabel(a.feedback)} ${a.performedByName ?? ''}`.toLowerCase().includes(q);
     });
-  }, [rows, search, typeFilter]);
+  }, [rows, search, typeFilter, viewLeadId]);
 
   // ─── Android permissions (mirrors B2CAgentVisitScreen) ─────────────────────
   const askAndroid = async (permission: any, title: string, message: string) => {
@@ -328,12 +346,10 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
         </Field>
       </View>
 
-      {!viewLeadId ? (
-        <View style={[s.empty, { backgroundColor: T.card, borderColor: T.line }]}>
-          <Text style={[s.emptyTitle, { color: T.text }]}>Pick a student</Text>
-          <Text style={[s.emptyTxt, { color: T.dim }]}>Choose a student above to see their activity log, or tap “Log Activity” to record a new one.</Text>
-        </View>
-      ) : (
+      {/* No student picked is the DEFAULT now, not a dead end: it shows every activity the
+          user logged, across students, exactly as the web page does. The picker narrows that
+          feed rather than being the price of admission to it. */}
+      {(
         <>
           {/* Filters */}
           <View style={{ marginTop: r.rs(12) }}>
@@ -356,6 +372,26 @@ export const B2CActivityLogScreen = ({ navigation }: any) => {
               />
             )}
           </View>
+
+          {/* Date range — server-side, and only on the cross-student feed: the per-student
+              endpoint takes no date parameters, so offering them there would be a control
+              that silently does nothing. */}
+          {!viewLeadId && (
+            <View style={[s.dateRow, { marginTop: r.rs(12) }]}>
+              <View style={s.dateCell}>
+                <DateInput label="From" value={fromDate} maxDate={toDate || undefined}
+                  onChange={setFromDate} placeholder="Any date" />
+              </View>
+              <View style={s.dateCell}>
+                <DateInput label="To" value={toDate} minDate={fromDate || undefined}
+                  onChange={setToDate} placeholder="Any date" />
+              </View>
+              {(!!fromDate || !!toDate) && (
+                <Btn label="Clear" variant="secondary" small
+                  onPress={() => { setFromDate(''); setToDate(''); }} />
+              )}
+            </View>
+          )}
 
           <Text style={[s.count, { color: T.dim }]}>
             {totalCount} activit{totalCount === 1 ? 'y' : 'ies'}
@@ -588,6 +624,8 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   topWide: { flexDirection: 'row', alignItems: 'center' },
   subtitle: { fontSize: r.rf(13), fontWeight: '500', lineHeight: r.rf(18) },
 
+  dateRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' },
+  dateCell: { flex: 1, minWidth: 140 },
   count: { fontSize: r.rf(11.5), fontWeight: '600', marginTop: r.rs(12) },
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: r.rs(40), paddingHorizontal: r.rs(20), alignItems: 'center', gap: 8, marginTop: r.rs(12) },
   emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },

@@ -47,6 +47,19 @@ export const authApi = {
     password: string;
     phoneNumber: string;
     role: string;
+    /** "B2B" (schools CRM) or "B2C" (student CRM) — decides which user table the account
+     *  lands in and which roles are legal. Defaults to B2B server-side when omitted. */
+    family?: string;
+    /** B2C Agent only — marks them a manager. Ignored for every other role. */
+    isManager?: boolean;
+    /** B2C profile, mirroring the admin create form. All optional; ignored for B2B. */
+    address?: string;
+    /** Counselors only. */
+    bio?: string;
+    panNumber?: string;
+    aadhaarNumber?: string;
+    accountNumber?: string;
+    ifscCode?: string;
   }) => apiClient.post('/auth/signup', data),
 
   // Sends the refresh token so the server can revoke it — otherwise it stays

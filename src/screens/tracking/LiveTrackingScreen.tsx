@@ -2189,14 +2189,19 @@ export const LiveTrackingScreen = () => {
                  leaves a short tile with dead space beside a tall one. On the iPad rail
                  they stay two-up (flexBasis 47%); the rail is too narrow for six across. */
               <View style={mdStyles.historyGrid}>
-                {([
-                  ['Distance', `${historySession.totalDistanceKm?.toFixed(1) ?? '0.0'} km`],
+                {(([
+                  // Today's kilometres are already on the "Today's Distance" tile above and the
+                  // history picker opens on today, so this row rendered the same figure twice on
+                  // one screen. Kept for past days, where nothing else on the screen shows it.
+                  ...(historyDate !== toISODate(new Date())
+                    ? [['Distance', `${historySession.totalDistanceKm?.toFixed(1) ?? '0.0'} km`]]
+                    : []),
                   ['Allowance', formatCurrency(historySession.allowanceAmount)],
                   ['Start', formatTime(historySession.startedAt)],
                   ['End', historySession.endedAt ? formatTime(historySession.endedAt) : '--'],
                   ['Duration', getSessionDuration(historySession)],
                   ['Pings', String(historySession.pingCount ?? 0)],
-                ] as [string, string][]).map(([lbl, val]) => (
+                ]) as [string, string][]).map(([lbl, val]) => (
                   <View key={lbl} style={[mdStyles.histItem, { backgroundColor: T.cardAlt }]}>
                     <Text style={[mdStyles.histLbl, { color: T.dim }]}>{lbl}</Text>
                     <Text style={[mdStyles.histVal, { color: T.text }]} numberOfLines={1}>{val}</Text>

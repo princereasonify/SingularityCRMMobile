@@ -6,8 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Callout, Circle } from 'react-native-maps';
 import {
-  Plus, Navigation, Filter, List as ListIcon, Map as MapIcon,
-  Edit2, Trash2, UserCheck, MapPin, Users, Phone, X,
+  Plus, Navigation, Filter, Edit2, Trash2, UserCheck, MapPin, Users, Phone, X,
 } from 'lucide-react-native';
 
 import { schoolsApi } from '../../api/schools';

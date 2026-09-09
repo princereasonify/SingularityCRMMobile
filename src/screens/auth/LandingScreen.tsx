@@ -29,7 +29,7 @@ import Svg, {
   G,
   Text as SvgText,
 } from 'react-native-svg';
-import { LogIn, Building2, GraduationCap, ChevronRight } from 'lucide-react-native';
+import { LogIn, Building2, GraduationCap, ChevronRight, Info } from 'lucide-react-native';
 import { SingularityLogo } from '../../components/common/SingularityLogo';
 import { Wordmark } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -561,6 +561,37 @@ export const LandingScreen = ({ navigation }: any) => {
     </View>
   );
 
+  // The single About Us entry point, always at the top-right edge of the screen.
+  //
+  // Placement differs by layout on purpose. The tablet split view is fixed and its
+  // left column is only 55% wide, so a chip inside the brand row was stranded
+  // mid-screen — there it is pinned to the root instead. The phone layout scrolls,
+  // where a pinned chip would float over the hero as you scroll, so it rides in the
+  // brand row, which spans the full width and puts it at the same right edge.
+  const aboutChip = (
+    <TouchableOpacity
+      style={twoPane ? [styles.aboutChipPinned, { top: insets.top + 28 }] : undefined}
+      onPress={() => navigation.navigate('AboutUs')}
+      activeOpacity={0.8}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel="About Us"
+    >
+      <View style={styles.aboutChip}>
+        <Info size={14} color={WHITE} strokeWidth={2.2} />
+        <Text style={styles.aboutChipText}>About Us</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  // Phone: brand lockup left, About Us right, on one full-width row.
+  const brandBar = (
+    <View style={styles.brandBar}>
+      {brand}
+      {aboutChip}
+    </View>
+  );
+
   const heroText = (
     <View>
       <View style={styles.eyebrowRow}>
@@ -623,12 +654,17 @@ export const LandingScreen = ({ navigation }: any) => {
     />
   );
 
-  const footer = <Text style={styles.footer}>© SingularityCRM · Edtech sales, unified</Text>;
+  const footer = (
+    <Text style={styles.footer}>
+      © {new Date().getFullYear()} SingularityCRM™, by Reasonify Technology Pvt. Ltd.
+    </Text>
+  );
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
       <HeroBackground reduce={reduce} />
+      {twoPane && aboutChip}
 
       {twoPane ? (
         // ── Tablet landscape (1b): fixed (no-scroll) — hero + cards left (~55%), map right.
@@ -664,7 +700,7 @@ export const LandingScreen = ({ navigation }: any) => {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {brand}
+          {brandBar}
           <View style={styles.stackBody}>{heroText}</View>
           <TerritoryMapCard uid="map" reduce={reduce} style={styles.mapCardPortrait} />
           <View style={styles.stackSection}>{sectionHeader}</View>
@@ -735,6 +771,20 @@ const styles = StyleSheet.create({
 
   // Brand lockup
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  aboutChipPinned: { position: 'absolute', right: 24, zIndex: 30 },
+  aboutChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 34,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  aboutChipText: { color: WHITE, fontSize: rf(12.5), fontWeight: '700' },
   brandText: { justifyContent: 'center' },
   wordmark: { fontFamily: Wordmark.bold, color: WHITE, letterSpacing: -0.6 },
   wordmarkAccent: { color: CYAN },

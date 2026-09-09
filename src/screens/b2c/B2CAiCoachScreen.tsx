@@ -7,7 +7,7 @@ import { Pagination, Avatar } from '../../components/crud';
 import { b2cRecordingService } from '../../api/b2c/b2cRecordingService';
 import { CounselorQualityOverviewItem } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
 /**
  * B2CAiCoach — admin (B2CAdmin) COUNSELOR QUALITY OVERVIEW. Read-only dashboard
@@ -68,9 +68,8 @@ export const B2CAiCoachScreen = () => {
 
   // Two leaderboard cards per row on a tablet; computed width, because two 49% cards plus
   // the gap overflow the row and collapse the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, items.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 

@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { School, SchoolFilters, CreateSchoolRequest, PaginatedResult, DuplicateMatch, SchoolWithPriority, BulkUploadResult } from '../types';
+import { School, SchoolFilters, CreateSchoolRequest, BulkUploadResult } from '../types';
 
 /**
  * GET /schools actually returns `{ schools, total, page, limit }` — NOT the

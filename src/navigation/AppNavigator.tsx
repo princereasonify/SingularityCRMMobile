@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { applyLoginOrientation, applyAuthedOrientation } from '../utils/orientation';
@@ -15,22 +15,14 @@ export const StatusStripConsumed = React.createContext(false);
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  LayoutDashboard, Contact2, GitBranch,
-  Target, TrendingUp, UserPlus, BarChart3, MapPin, Navigation,
-  Building2, Settings, CreditCard, Monitor,
-  ClipboardList, CalendarClock, CalendarDays,
-  Activity, Briefcase, Menu, DollarSign, FileEdit, Home, Calculator,
-  CalendarOff, Wallet, Map, Library, Users,
-} from 'lucide-react-native';
+  } from 'lucide-react-native';
 import { useOffline } from '../context/OfflineContext';
-import { CustomDrawerContent } from '../components/common/CustomDrawerContent';
 import messaging from '@react-native-firebase/messaging';
 import { requestFCMPermission } from '../services/pushNotificationService';
 
 import { useAuth } from '../context/AuthContext';
 import { RoleSplash } from '../components/splash/RoleSplash';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
-import { ROLE_COLORS } from '../utils/constants';
 import { rf, isTabletDevice } from '../utils/responsive';
 
 // Auth
@@ -38,6 +30,7 @@ import { LandingScreen } from '../screens/auth/LandingScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
 import { DeleteAccountScreen } from '../screens/auth/DeleteAccountScreen';
+import { AboutUsScreen } from '../screens/auth/AboutUsScreen';
 
 // Dashboard
 import { FODashboard } from '../screens/dashboard/FODashboard';
@@ -96,6 +89,7 @@ import { AiInsightsScreen } from '../screens/ai/AiInsightsScreen';
 // Payments
 import { PaymentsScreen } from '../screens/payments/PaymentsScreen';
 import { AppSidebar, SIDEBAR_W, SIDEBAR_RAIL_W, SIDEBAR_PHONE_W } from '../components/layout/AppSidebar';
+import { SidebarWidthProvider } from '../hooks/useResponsive';
 import { AppTopbar } from '../components/layout/AppTopbar';
 import { GradientBackground } from '../components/common/GradientBackground';
 import { Sunstone } from '../theme';
@@ -148,6 +142,7 @@ import { B2CCalendarScreen } from '../screens/b2c/B2CCalendarScreen';
 import { B2CMyDayScreen } from '../screens/b2c/B2CMyDayScreen';
 import { B2CRoutePlannerScreen } from '../screens/b2c/B2CRoutePlannerScreen';
 import { B2CActivityLogScreen } from '../screens/b2c/B2CActivityLogScreen';
+import { B2CUsageReportScreen } from '../screens/b2c/B2CUsageReportScreen';
 import { B2CMyLeavesScreen } from '../screens/b2c/B2CMyLeavesScreen';
 import { B2CMyAllowancesScreen } from '../screens/b2c/B2CMyAllowancesScreen';
 import { B2CMyExpensesScreen } from '../screens/b2c/B2CMyExpensesScreen';
@@ -163,63 +158,7 @@ import { B2CConvertScreen } from '../screens/b2c/B2CConvertScreen';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-const DrawerIcon =
-  (IconComponent: any, size = 20) =>
-  ({ focused, color: c }: any) =>
-    <IconComponent size={size} color={c} strokeWidth={focused ? 2.5 : 1.8} />;
 
-const drawerStyle = (primaryColor: string) => ({
-  headerShown: false,
-  headerTitleStyle: { fontSize: rf(14), fontWeight: '700' as const },
-  headerStyle: { backgroundColor: '#FFF' },
-  headerTintColor: '#111827',
-  headerShadowVisible: false,
-  headerTitleAlign: 'center' as const,
-  drawerActiveTintColor: primaryColor,
-  drawerInactiveTintColor: '#6B7280',
-  drawerLabelStyle: { fontSize: rf(12), fontWeight: '600' as const },
-  drawerStyle: { backgroundColor: '#FFF' },
-  drawerType: 'front' as const,
-  overlayColor: 'rgba(17,24,39,0.25)',
-  sceneContainerStyle: { backgroundColor: '#F8FAFC' },
-});
-
-const withHeader = { headerShown: true as const };
-
-const withDrawerHeader =
-  (primaryColor: string) =>
-  ({ navigation }: any) => ({
-    ...drawerStyle(primaryColor),
-    headerLeft: () => (
-      <Pressable
-        onPress={() => navigation.toggleDrawer()}
-        style={({ pressed }) => [
-          navStyles.headerLeftButton,
-          pressed && navStyles.headerLeftButtonPressed,
-        ]}
-        android_ripple={{ color: 'rgba(17,24,39,0.08)', borderless: true }}
-        hitSlop={12}
-      >
-        <View style={navStyles.headerLeftIconWrap}>
-          <Menu size={20} color={primaryColor} />
-        </View>
-      </Pressable>
-    ),
-  });
-
-const navStyles = StyleSheet.create({
-  headerLeftButton: {
-    marginLeft: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  headerLeftButtonPressed: { opacity: 0.6 },
-  headerLeftIconWrap: { alignItems: 'center', justifyContent: 'center' },
-});
 
 // ─── FO Drawer Navigator ──────────────────────────────────────────────────────
 /**
@@ -234,6 +173,9 @@ function FODrawer() {
   const permanent = isTabletDevice;
 
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => (
@@ -286,6 +228,7 @@ function FODrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -296,6 +239,9 @@ function ZHDrawer() {
   const permanent = isTabletDevice;
 
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => (
@@ -350,6 +296,7 @@ function ZHDrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -360,6 +307,9 @@ function RHDrawer() {
   const permanent = isTabletDevice;
 
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => (
@@ -415,6 +365,7 @@ function RHDrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -424,6 +375,9 @@ function SHDrawer() {
   const permanent = isTabletDevice;
 
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => (
@@ -481,6 +435,7 @@ function SHDrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -491,6 +446,9 @@ function SCADrawer() {
   const permanent = isTabletDevice;
 
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => (
@@ -547,6 +505,7 @@ function SCADrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -579,6 +538,9 @@ function B2CAdminDrawer() {
   const [collapsed, setCollapsed] = useState(false);
   const permanent = isTabletDevice;
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
@@ -591,22 +553,29 @@ function B2CAdminDrawer() {
       <Drawer.Screen name="Counselors" component={B2CCounselorsListScreen} />
       <Drawer.Screen name="User Management" component={B2CUserManagementScreen} />
       {/* Also pushed by the "Add" button on User Management / Counselors. */}
-      <Drawer.Screen name="Add User" component={B2CCreateUserScreen} />
-      <Drawer.Screen name="Add Counselor" component={B2CCreateCounselorScreen} />
+      {/* Reached from the + on User Management, not from the drawer — that one screen creates
+          Counselor, Agent and Agent+Manager alike. Marked hidden to match the other
+          reachable-but-unlisted routes below. */}
+      <Drawer.Screen name="Add User" component={B2CCreateUserScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Add Counselor" component={B2CCreateCounselorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Approval Center" component={B2CApprovalCenterScreen} />
       <Drawer.Screen name="Allowance Config" component={B2CAllowanceConfigScreen} />
       <Drawer.Screen name="Live Tracking" component={B2CLiveTrackingScreen} />
       <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
       <Drawer.Screen name="Geo Compliance" component={B2CGeoComplianceScreen} />
       <Drawer.Screen name="Reports" component={B2CReportsScreen} />
+      <Drawer.Screen name="Usage Report" component={B2CUsageReportScreen} />
       <Drawer.Screen name="Counseling" component={B2CCounselingScreen} />
-      <Drawer.Screen name="Billing" component={B2CBillingScreen} />
+      {/* Deliberately off the B2C admin sidebar (web dropped it too), but kept registered
+          and reachable. Marked hidden to match every other reachable-but-unlisted route. */}
+      <Drawer.Screen name="Billing" component={B2CBillingScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       {/* Read-only counselor-quality overview (AI Coach) — reachable route, not in the sidebar. */}
       <Drawer.Screen name="B2CAiCoach" component={B2CAiCoachScreen} options={{ drawerItemStyle: { display: 'none' } }} />
 
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -616,6 +585,9 @@ function AgentDrawer() {
   const [collapsed, setCollapsed] = useState(false);
   const permanent = isTabletDevice;
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
@@ -634,6 +606,7 @@ function AgentDrawer() {
       <Drawer.Screen name="My Allowances" component={B2CMyAllowancesScreen} />
       <Drawer.Screen name="My Expenses" component={B2CMyExpensesScreen} />
       <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
+      <Drawer.Screen name="Usage Report" component={B2CUsageReportScreen} />
       {/* Native geo-verified visit capture. Also reachable from a lead's detail (with leadId). */}
       <Drawer.Screen name="Visit" component={B2CAgentVisitScreen} />
 
@@ -647,6 +620,7 @@ function AgentDrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -656,6 +630,9 @@ function CounselorDrawer() {
   const [collapsed, setCollapsed] = useState(false);
   const permanent = isTabletDevice;
   return (
+    // A permanent drawer sits INSIDE the window, so screens must size themselves against
+    // what is left of it. Without this every grid measured the sidebar as usable space.
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
     <Drawer.Navigator
       initialRouteName="Dashboard"
       drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
@@ -674,6 +651,7 @@ function CounselorDrawer() {
       <Drawer.Screen name="My Allowances" component={B2CMyAllowancesScreen} />
       <Drawer.Screen name="My Expenses" component={B2CMyExpensesScreen} />
       <Drawer.Screen name="My Performance" component={B2CMyPerformanceScreen} />
+      <Drawer.Screen name="Usage Report" component={B2CUsageReportScreen} />
       {/* Native session recording + AI coaching (labelled "AI Coach" in the sidebar). */}
       <Drawer.Screen name="Recording" component={B2CCounselorRecordingScreen} />
       {/* Credits — reuses the shared B2C billing/wallet screen (reachable route, not in the sidebar). */}
@@ -682,6 +660,7 @@ function CounselorDrawer() {
       <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
+    </SidebarWidthProvider>
   );
 }
 
@@ -812,6 +791,7 @@ export const AppNavigator = () => {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="AboutUs" component={AboutUsScreen} options={{ animation: 'slide_from_right' }} />
           </>
         ) : (
           <>

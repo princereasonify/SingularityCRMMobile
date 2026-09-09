@@ -4,6 +4,15 @@ import { apiClient } from '../client';
 const BASE = '/b2c/tracking';
 
 export interface B2CPingBody {
+  /**
+   * Device-allocated sequence, unique and monotonic within a tracking session.
+   *
+   * The idempotency key. A client cannot know whether a request that timed out was committed,
+   * so it retries; without this the server cannot tell that retry from genuine new travel and
+   * counts the distance twice. With it, any number of retries settle to exactly the distance of
+   * one clean upload. Allocated by pingSequence.nextPingSeq() and carried through every retry.
+   */
+  seq?: number;
   latitude: number;
   longitude: number;
   speedKmh?: number;

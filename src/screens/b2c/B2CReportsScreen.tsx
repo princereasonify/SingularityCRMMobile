@@ -10,7 +10,7 @@ import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { FEEDBACK_TYPES } from '../../api/b2c/b2cObjectionService';
 import { B2CAdminDashboardDto, AgentPerformanceItem, StageFunnelItem, SourceBreakdownItem } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
 /**
  * B2CReportsScreen — read-only admin reports. Mirrors web B2CReports.jsx:
@@ -220,9 +220,9 @@ export const B2CReportsScreen = () => {
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // One width feeds several different grids on this screen (agents, feedback, KPIs), so
+  // it uses the full column count rather than capping to any one list's length.
+  const cardW = gridCardWidth(r, r.columns);
 
   const s = useMemo(() => makeStyles(r), [r]);
 

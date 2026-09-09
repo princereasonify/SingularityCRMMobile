@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, useWindowDimensions,
+  View, Text, ScrollView, StyleSheet, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, Edit2, Trash2, Map, MapPin, Check, Info } from 'lucide-react-native';

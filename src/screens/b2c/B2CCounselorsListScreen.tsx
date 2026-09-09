@@ -9,11 +9,12 @@ import {
 } from '../../components/crud';
 import { Chip } from '../../components/ui';
 import { b2cCounselorService } from '../../api/b2c/b2cCounselorService';
+import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CCounselorListDto, B2CCounselorDetailDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, MIN_TAP, gridCardWidth} from '../../hooks/useResponsive';
 
 const PAGE_SIZE = 20;
 
@@ -41,7 +42,16 @@ export const B2CCounselorsListScreen = () => {
   const [detail, setDetail] = useState<B2CCounselorDetailDto | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', mobile: '', bio: '', specializations: [] as string[], isActive: true });
+  // Email and the four payout fields belong to the underlying B2CUser, not the counselor
+  // record — the counselor endpoint does not touch them. Web saves both in one action; this
+  // screen could not edit them at all, so an admin had to open the web app to change a
+  // counselor's email or bank details.
+  const [editForm, setEditForm] = useState({
+    name: '', mobile: '', bio: '', specializations: [] as string[], isActive: true,
+    email: '', panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
+  });
+  const [newPassword, setNewPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
 
   const fetchList = useCallback(async (pg = 1) => {
@@ -84,8 +94,37 @@ export const B2CCounselorsListScreen = () => {
     setEditForm({
       name: detail.name || '', mobile: detail.mobile ?? '', bio: detail.bio || '',
       specializations: detail.specializations || [], isActive: detail.isActive ?? true,
+      email: detail.email || '',
+      panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
     });
+    setNewPassword('');
     setEditing(true);
+
+    // Non-fatal: if this fails the rest of the dialog still works and the payout fields
+    // simply start empty, rather than one failed fetch blocking a rename.
+    if (detail.userId) {
+      b2cUserService.getPayoutDetails(detail.userId)
+        .then(res => setEditForm(f => ({
+          ...f,
+          panNumber: res.data?.panNumber || '',
+          aadhaarNumber: res.data?.aadhaarNumber || '',
+          accountNumber: res.data?.accountNumber || '',
+          ifscCode: res.data?.ifscCode || '',
+        })))
+        .catch(() => {});
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!detail?.userId || newPassword.trim().length < 6) return;
+    setResetting(true);
+    try {
+      await b2cUserService.resetPassword(detail.userId, newPassword.trim());
+      setNewPassword('');
+      toast.success(`Password updated for ${detail.name}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not update the password');
+    } finally { setResetting(false); }
   };
 
   const handleUpdate = async () => {
@@ -99,6 +138,19 @@ export const B2CCounselorsListScreen = () => {
         specializations: editForm.specializations,
         isActive: editForm.isActive,
       });
+
+      // Same action, second record: email and payout live on the B2CUser, so saving only the
+      // counselor would leave those edits silently discarded.
+      if (detail.userId) {
+        await b2cUserService.updateUser(detail.userId, {
+          email: editForm.email.trim(),
+          panNumber: editForm.panNumber.trim(),
+          aadhaarNumber: editForm.aadhaarNumber.trim(),
+          accountNumber: editForm.accountNumber.trim(),
+          ifscCode: editForm.ifscCode.trim().toUpperCase(),
+        });
+      }
+
       setDetail(null); setEditing(false);
       invalidateFieldStaff();
       toast.success('Counsellor updated');
@@ -126,9 +178,11 @@ export const B2CCounselorsListScreen = () => {
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Columns come from the shared responsive rule (1 phone / 2 tablet / 3 wide) rather than a
+  // hard-coded 2, so a wide iPad — especially with the sidebar collapsed to a rail — fills the
+  // row instead of leaving a third of it blank.
+   // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, items.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 
@@ -212,6 +266,26 @@ export const B2CCounselorsListScreen = () => {
           <View style={{ gap: 12 }}>
             <Input label="Name" value={editForm.name} onChangeText={v => setEditForm(f => ({ ...f, name: v }))} placeholder="Counselor name" />
             <Input label="Mobile" value={editForm.mobile} onChangeText={v => setEditForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
+            <Input label="Email" value={editForm.email} onChangeText={v => setEditForm(f => ({ ...f, email: v }))} keyboardType="email-address" autoCapitalize="none" placeholder="counselor@example.com" />
+
+            {/* Payout identity — saved to the underlying user in the same action as the rest. */}
+            <Input label="PAN" value={editForm.panNumber} onChangeText={v => setEditForm(f => ({ ...f, panNumber: v.toUpperCase() }))} autoCapitalize="characters" maxLength={10} placeholder="ABCDE1234F" />
+            <Input label="Aadhaar" value={editForm.aadhaarNumber} onChangeText={v => setEditForm(f => ({ ...f, aadhaarNumber: v.replace(/\D/g, '').slice(0, 12) }))} keyboardType="number-pad" maxLength={12} placeholder="12-digit Aadhaar" />
+            <Input label="Bank Account" value={editForm.accountNumber} onChangeText={v => setEditForm(f => ({ ...f, accountNumber: v.replace(/\D/g, '') }))} keyboardType="number-pad" placeholder="Account number" />
+            <Input label="IFSC" value={editForm.ifscCode} onChangeText={v => setEditForm(f => ({ ...f, ifscCode: v.toUpperCase() }))} autoCapitalize="characters" maxLength={11} placeholder="HDFC0001234" />
+
+            {/* Its own action, not part of Save: a password change is immediate and must not
+                ride along with an unrelated rename the admin may still be editing. */}
+            <Field label="Reset Password">
+              <Input value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (min 6 characters)" />
+              <Btn
+                label={resetting ? 'Resetting…' : 'Reset Password'}
+                variant="secondary" small loading={resetting}
+                disabled={resetting || newPassword.trim().length < 6}
+                onPress={handleResetPassword}
+                style={{ marginTop: 8 }}
+              />
+            </Field>
             <Field label="Specializations">
               {specs.length === 0 ? <Text style={{ color: T.dim, fontSize: r.rf(12) }}>No specializations available</Text> : (
                 <View style={s.chipWrap}>

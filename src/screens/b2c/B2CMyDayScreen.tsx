@@ -15,6 +15,7 @@ import { Btn, StatusBadge, ConfirmModal } from '../../components/crud';
 import { b2cTrackingService } from '../../api/b2c/b2cTrackingService';
 import { sendB2CPing } from '../../services/b2cLocationPingService';
 import { startB2CBackgroundTracking, stopB2CBackgroundTracking } from '../../services/b2cBackgroundTracking';
+import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
@@ -99,6 +100,10 @@ export const B2CMyDayScreen = () => {
    * would kill a running day every time this screen is opened offline.
    */
   const [sessionKnown, setSessionKnown] = useState(false);
+  // Prominent-disclosure hand-off for ACCESS_BACKGROUND_LOCATION, mirroring the B2B day
+  // screen. The promise lets askLocation() await the user's choice before requesting.
+  const [showBgDisclosure, setShowBgDisclosure] = useState(false);
+  const bgPermissionResolve = useRef<((ok: boolean) => void) | null>(null);
 
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchId = useRef<number | null>(null);
@@ -173,10 +178,43 @@ export const B2CMyDayScreen = () => {
         ]);
         return false;
       }
-      return result === PermissionsAndroid.RESULTS.GRANTED;
+      if (result !== PermissionsAndroid.RESULTS.GRANTED) return false;
+
+      // Android 10+ needs a SEPARATE "Allow all the time" grant. Without it the day is tracked
+      // only while the screen is open: the foreground service still runs, but a START_STICKY
+      // restart with the app backgrounded — the exact case this exists for — gets throttled.
+      // B2B has always asked for this; B2C never did, so its background tracking was the
+      // weaker of the two for no reason.
+      //
+      // Google Play REQUIRES a prominent disclosure BEFORE the request, and a plain
+      // Alert.alert() does not comply — hence the shared full-screen component.
+      if (Platform.Version >= 29) {
+        const bgOk = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+        );
+        if (!bgOk) {
+          const accepted = await new Promise<boolean>(resolve => {
+            bgPermissionResolve.current = resolve;
+            setShowBgDisclosure(true);
+          });
+          if (accepted) {
+            await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+            );
+          }
+          // Declining is not fatal: foreground capture still works, so the day is not blocked.
+        }
+      }
+      return true;
     } catch {
       return false;
     }
+  }, []);
+
+  const resolveBgDisclosure = useCallback((accepted: boolean) => {
+    setShowBgDisclosure(false);
+    bgPermissionResolve.current?.(accepted);
+    bgPermissionResolve.current = null;
   }, []);
 
   // Forward the freshest fix (from watchPosition) through the resilient sender: it gates
@@ -435,6 +473,14 @@ export const B2CMyDayScreen = () => {
   );
 
   return (
+    <>
+    {/* Full-screen prominent disclosure, shown before the ACCESS_BACKGROUND_LOCATION request.
+        Rendered outside Screen so it covers the page rather than scrolling with it. */}
+    <BackgroundLocationDisclosure
+      visible={showBgDisclosure}
+      onAccept={() => resolveBgDisclosure(true)}
+      onDecline={() => resolveBgDisclosure(false)}
+    />
     <Screen
       scroll
       refreshing={refreshing}
@@ -513,6 +559,7 @@ export const B2CMyDayScreen = () => {
         onCancel={() => setEndConfirm(false)}
       />
     </Screen>
+    </>
   );
 };
 

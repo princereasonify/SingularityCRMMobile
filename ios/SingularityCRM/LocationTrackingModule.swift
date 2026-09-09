@@ -33,6 +33,7 @@ class LocationTrackingModule: NSObject {
     /// Rolling stationary state — reset on every startTracking.
     private var stationaryStreak = 0
     private var lastSentLocation: CLLocation?
+    private var lastHeartbeatAt: Date?
     private var authToken: String?
     private var apiBaseUrl: String?
 
@@ -49,11 +50,17 @@ class LocationTrackingModule: NSObject {
     private static let urlKey    = "lt_api_url"
     private static let pingPathKey  = "lt_ping_path"
     private static let batchPathKey = "lt_batch_path"
+    private static let seqKey       = "lt_ping_seq"
+    private static let queueKey     = "lt_pending_pings"
 
     // ── On-device cleaning gates (mirrors the Android service exactly) ──────────────
-    /// A fix worse than this can sit on the wrong side of a dual carriageway, and the snapper
-    /// will faithfully snap it there — a confident WRONG road is worse than no fix.
-    private static let maxAccuracyMetres: CLLocationAccuracy = 35
+    /// Accuracy ceiling. LOOSENED from 35 m, deliberately: with per-point snapping a poor fix
+    /// became a confident wrong road, so a tight gate helped. A sequence-aware matcher inverts
+    /// that — it is handed each point's accuracy as a matching radius and resolves an uncertain
+    /// fix from its neighbours and the road network. What it cannot recover from is a STARVED
+    /// trace, and in an urban canyon (accuracy 20–50 m) a 35 m gate discarded most of the day
+    /// exactly where the route was hardest to infer.
+    private static let maxAccuracyMetres: CLLocationAccuracy = 50
     /// A cached fix stamped "now" drags the route back to where the agent used to be.
     private static let maxFixAgeSeconds: TimeInterval = 30
     private static let stationarySpeedKmh: Double = 1.5
@@ -61,6 +68,16 @@ class LocationTrackingModule: NSObject {
     /// Three, not one: a slow fix at a traffic light is not a parked phone.
     private static let stationaryStreakLimit = 3
     private static let maxRegions = 20   // iOS hard limit for monitored regions
+
+    /// How often a fix is sent while moving. 10 s, not 30 s: a matcher deduces the road path
+    /// from the sequence of observations, and at 30 s / 40 km/h consecutive fixes are ~330 m
+    /// apart — far enough that a turn or a choice between parallel roads is genuinely ambiguous.
+    private static let movingIntervalSeconds: TimeInterval = 10
+    /// While parked, a fix still goes out this often. It adds no distance (the server flags it
+    /// stationary) but it keeps "agent is in a meeting" distinguishable from "phone died".
+    private static let stationaryHeartbeatSeconds: TimeInterval = 300
+    /// Cap the offline queue so a device left offline for days can't grow it without bound.
+    private static let maxQueuedPings = 500
 
     // MARK: – Permission check (no dialog — just reads current status)
 
@@ -195,17 +212,20 @@ class LocationTrackingModule: NSObject {
                                       forKey: LocationTrackingModule.batchPathKey)
 
             // A fresh start is a fresh day: never inherit the previous shift's motion state.
+            // The sequence counter is NOT reset — see nextSeq().
             self.stationaryStreak = 0
             self.lastSentLocation = nil
+            self.lastHeartbeatAt  = nil
             // Needed for the battery reading attached to each fix; harmless if already on.
             UIDevice.current.isBatteryMonitoringEnabled = true
 
             self.setupLocationManager()
             self.requestNotificationPermission()
 
-            // 30 s ping timer (.common mode keeps it alive during scroll)
+            // Ping timer (.common mode keeps it alive during scroll)
             self.pingTimer?.invalidate()
-            let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: LocationTrackingModule.movingIntervalSeconds,
+                              repeats: true) { [weak self] _ in
                 self?.sendPing()
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -334,9 +354,10 @@ class LocationTrackingModule: NSObject {
     private func setupLocationManager() {
         let mgr = CLLocationManager()
         mgr.delegate = self
-        // Field-grade accuracy: BestForNavigation drives the GPS chip hardest
-        // (was HundredMeters → fixes up to 100 m off). Paired with the JS-side
-        // 75 m accuracy gate, this is what gets us to ~99% route fidelity.
+        // Field-grade accuracy: BestForNavigation drives the GPS chip hardest (was
+        // HundredMeters → fixes up to 100 m off). Every fix's own horizontalAccuracy travels
+        // with it to the server and becomes the map matcher's search radius, so the gate below
+        // only has to exclude the unusable — the algorithm weighs the rest.
         mgr.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         mgr.distanceFilter  = kCLDistanceFilterNone
         mgr.activityType    = .automotiveNavigation
@@ -514,16 +535,28 @@ extension LocationTrackingModule {
 
         // 3) Stationary — a parked phone still wanders metres a minute; over a shift that is
         //    kilometres nobody walked. Only after three consecutive stationary checks, so a
-        //    slow crawl in traffic still counts as travel.
+        //    slow crawl in traffic still counts as travel. Past the streak the cadence drops to
+        //    a heartbeat rather than stopping: silence is ambiguous, and "in a meeting" and
+        //    "phone died" must not look identical in the data.
         let speedKmh = location.speed >= 0 ? location.speed * 3.6 : 0
         let movedM = lastSentLocation.map { location.distance(from: $0) } ?? .greatestFiniteMagnitude
+        let now = Date()
         if speedKmh < Self.stationarySpeedKmh && movedM < Self.stationaryDisplacementM {
             stationaryStreak += 1
             if stationaryStreak >= Self.stationaryStreakLimit {
-                NSLog("[LocationTracking] Stationary (%dx) — suppressing ping", stationaryStreak); return
+                let due = lastHeartbeatAt.map { now.timeIntervalSince($0) >= Self.stationaryHeartbeatSeconds } ?? true
+                if !due {
+                    // Still parked. Drain anything queued so a recovered network is not left
+                    // waiting for the agent to start moving again.
+                    flushQueue(token: token, baseUrl: baseUrl)
+                    NSLog("[LocationTracking] Stationary (%dx) — suppressing ping", stationaryStreak); return
+                }
+                lastHeartbeatAt = now
+                NSLog("[LocationTracking] Stationary heartbeat")
             }
         } else {
             stationaryStreak = 0
+            lastHeartbeatAt = now
         }
         lastSentLocation = location
 
@@ -542,6 +575,10 @@ extension LocationTrackingModule {
         }
 
         var body: [String: Any] = [
+            // Allocated once, before the first send attempt, and carried through every retry —
+            // that is the whole point. Re-allocating on retry would make the retry look like a
+            // new fix and defeat the deduplication it exists to enable.
+            "seq":        nextSeq(),
             "latitude":   location.coordinate.latitude,
             "longitude":  location.coordinate.longitude,
             "recordedAt": fmt.string(from: location.timestamp),
@@ -568,9 +605,26 @@ extension LocationTrackingModule {
             body["batteryPercent"] = Int((battery * 100).rounded())   // B2C, 0–100
         }
 
-        postJSON(to: url, body: body, token: token) { statusCode, error in
-            if let err = error {
-                NSLog("[LocationTracking] Ping error: %@", err.localizedDescription)
+        // Anything undelivered goes first, so the route reaches the server in order.
+        flushQueue(token: token, baseUrl: baseUrl)
+
+        postJSON(to: url, body: body, token: token) { [weak self] statusCode, error in
+            guard let self else { return }
+            if error != nil || statusCode == 0 || statusCode == 401 || (500...599).contains(statusCode) {
+                // Network failure, an expired token, or a server error. The fix is KEPT.
+                //
+                // This module previously logged the failure and dropped the fix. Android had an
+                // offline queue and iOS did not, so the same drive through a dead zone measured
+                // shorter on an iPhone than on an Android — a platform-shaped hole in the data
+                // that no amount of algorithm work downstream could recover.
+                //
+                // Retrying is safe because the fix carries a sequence: if the server did commit
+                // it and only the reply was lost, the retry is recognised as a duplicate rather
+                // than counted as a second helping of distance.
+                self.enqueue(body)
+                NSLog("[LocationTracking] Ping failed (%d) — queued for retry", statusCode)
+            } else if statusCode == 403 {
+                NSLog("[LocationTracking] Ping → 403 (no active session) — dropping")
             } else {
                 NSLog("[LocationTracking] Ping → %d | %.5f, %.5f",
                       statusCode,
@@ -578,6 +632,105 @@ extension LocationTrackingModule {
                       location.coordinate.longitude)
             }
         }
+    }
+
+    // MARK: – Sequence numbers
+
+    /// The next sequence number for this device.
+    ///
+    /// Monotonic and never reset, not even across days — a counter that restarts can collide
+    /// with one the server already holds for the same session, and a collision is silently
+    /// dropped as a duplicate, which loses a real fix. Uniqueness only has to hold within a
+    /// session, so a forever-increasing counter is trivially safe.
+    private func nextSeq() -> Int64 {
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+        let next = Int64(UserDefaults.standard.integer(forKey: Self.seqKey)) + 1
+        UserDefaults.standard.set(Int(next), forKey: Self.seqKey)
+        return next
+    }
+
+    // MARK: – Offline queue
+
+    private func readQueue() -> [[String: Any]] {
+        guard let data = UserDefaults.standard.data(forKey: Self.queueKey),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return [] }
+        return arr
+    }
+
+    private func writeQueue(_ queue: [[String: Any]]) {
+        // Oldest-first eviction: a stale position matters less than a recent one.
+        let trimmed = queue.count > Self.maxQueuedPings ? Array(queue.suffix(Self.maxQueuedPings)) : queue
+        if let data = try? JSONSerialization.data(withJSONObject: trimmed) {
+            UserDefaults.standard.set(data, forKey: Self.queueKey)
+        }
+    }
+
+    private func enqueue(_ ping: [String: Any]) {
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+        var queue = readQueue()
+        queue.append(ping)
+        writeQueue(queue)
+        NSLog("[LocationTracking] Queued ping. Pending=%d", queue.count)
+    }
+
+    /// Delivers queued fixes via the batch endpoint.
+    ///
+    /// Trimming is driven by the server's `acceptedThroughSeq`, not by the response code alone.
+    /// A 200 says the request was handled; it does not say every fix in it was stored, and
+    /// clearing the whole queue on a 200 is how a partially-processed batch silently loses its
+    /// tail. Anything at or below the acknowledged sequence is durable and safe to drop;
+    /// anything above stays for the next cycle, where deduplication makes the re-send free.
+    private func flushQueue(token: String, baseUrl: String) {
+        objc_sync_enter(self)
+        let queue = readQueue()
+        objc_sync_exit(self)
+        guard !queue.isEmpty else { return }
+
+        let path = UserDefaults.standard.string(forKey: Self.batchPathKey) ?? "/tracking/ping/batch"
+        guard let url = URL(string: "\(baseUrl)\(path)") else { return }
+
+        postJSONReturningBody(to: url, body: ["pings": queue], token: token) { [weak self] status, data in
+            guard let self else { return }
+            objc_sync_enter(self)
+            defer { objc_sync_exit(self) }
+
+            if (200...299).contains(status) {
+                if let through = Self.acceptedThroughSeq(data) {
+                    // Re-read rather than filtering the snapshot: fixes captured while the flush
+                    // was in flight are already in the queue and must not be discarded with it.
+                    // A row whose sequence cannot be read is KEPT — losing a fix is worse than
+                    // re-sending one the server will recognise and drop.
+                    let remaining = self.readQueue().filter {
+                        guard let seq = ($0["seq"] as? NSNumber)?.int64Value else { return true }
+                        return seq > through
+                    }
+                    self.writeQueue(remaining)
+                    NSLog("[LocationTracking] Flushed through seq %lld; %d pending", through, remaining.count)
+                } else {
+                    self.writeQueue([])
+                    NSLog("[LocationTracking] Flushed %d queued pings", queue.count)
+                }
+            } else if status == 403 {
+                // Session is over — these will never be accepted, so stop carrying them.
+                self.writeQueue([])
+                NSLog("[LocationTracking] Batch → 403 — discarded %d queued pings", queue.count)
+            } else {
+                NSLog("[LocationTracking] Batch → %d — keeping %d pings queued", status, queue.count)
+            }
+        }
+    }
+
+    /// Pulls acceptedThroughSeq out of either tier's response envelope.
+    private static func acceptedThroughSeq(_ data: Data?) -> Int64? {
+        guard let data,
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = root["data"] as? [String: Any],
+              let value = payload["acceptedThroughSeq"] as? NSNumber
+        else { return nil }
+        return value.int64Value
     }
 }
 
@@ -677,6 +830,27 @@ extension LocationTrackingModule {
         URLSession.shared.dataTask(with: req) { _, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             completion(status, error)
+        }.resume()
+    }
+
+    /// Same request, but hands back the response body — the batch flush needs to read
+    /// `acceptedThroughSeq` out of it to know what it may safely stop carrying.
+    private func postJSONReturningBody(to url: URL,
+                                       body: [String: Any],
+                                       token: String,
+                                       completion: @escaping (Int, Data?) -> Void) {
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(0, nil); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)",  forHTTPHeaderField: "Authorization")
+        req.httpBody        = bodyData
+        req.timeoutInterval = 30
+
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            completion((response as? HTTPURLResponse)?.statusCode ?? 0, data)
         }.resume()
     }
 

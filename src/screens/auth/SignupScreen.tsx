@@ -11,22 +11,39 @@ import {
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Eye, EyeOff, ArrowLeft, CheckCircle, Check } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowLeft, CheckCircle, Check, Info } from 'lucide-react-native';
 import { authApi } from '../../api/auth';
 import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
 import { GradientButton } from '../../components/common/GradientButton';
 import { ThemeToggle } from '../../components/common/ThemeToggle';
+import { Checkbox } from '../../components/crud';
 import { SelectPicker } from '../../components/common/SelectPicker';
 import { getAuthTheme } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { applyLoginOrientation } from '../../utils/orientation';
 
-const ROLE_OPTIONS = [
+// The two products have separate user tables and separate role sets, so the family is asked
+// first and the role list follows from it.
+const FAMILY_OPTIONS = [
+  { label: 'B2B — Schools CRM', value: 'B2B' },
+  { label: 'B2C — Student CRM', value: 'B2C' },
+];
+
+const B2B_ROLE_OPTIONS = [
   { label: 'Field Officer', value: 'FO' },
   { label: 'Zonal Head', value: 'ZH' },
   { label: 'Regional Head', value: 'RH' },
   { label: 'Sales Head', value: 'SH' },
+];
+
+// Manager is deliberately NOT here. It is a property of an Agent (IsManager), which is how the
+// admin create form models it — a checkbox under the role, not a fifth entry in this list.
+// Offering it both ways invites two spellings of the same thing.
+const B2C_ROLE_OPTIONS = [
+  { label: 'Agent', value: 'Agent' },
+  { label: 'Counselor', value: 'Counselor' },
+  { label: 'B2C Admin', value: 'B2CAdmin' },
 ];
 
 const isPasswordValid = (pwd: string) =>
@@ -53,6 +70,17 @@ export const SignupScreen = ({ navigation }: any) => {
     password: '',
     phoneNumber: '',
     role: '',
+    family: 'B2B',
+    // B2C profile — the same fields the admin create form captures, so an account is complete
+    // however it was made. All optional.
+    address: '',
+    bio: '',
+    panNumber: '',
+    aadhaarNumber: '',
+    accountNumber: '',
+    ifscCode: '',
+    // Agent-only. The server ignores it for any other role.
+    isManager: false,
   });
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -97,6 +125,14 @@ export const SignupScreen = ({ navigation }: any) => {
         password: form.password,
         phoneNumber: form.phoneNumber.trim(),
         role: form.role,
+        family: form.family,
+        isManager: form.isManager,
+        address: form.address.trim() || undefined,
+        bio: form.bio.trim() || undefined,
+        panNumber: form.panNumber.trim() || undefined,
+        aadhaarNumber: form.aadhaarNumber.replace(/\D/g, '') || undefined,
+        accountNumber: form.accountNumber.replace(/\D/g, '') || undefined,
+        ifscCode: form.ifscCode.trim() || undefined,
       });
       setSuccess(true);
     } catch (err: any) {
@@ -224,18 +260,63 @@ export const SignupScreen = ({ navigation }: any) => {
         onChangeText: (t) => set('phoneNumber')(t.replace(/[^0-9]/g, '').slice(0, 10)),
       })}
 
+      {/* Product first — changing it clears the role, or a B2B role could be submitted
+          against B2C and be rejected by the server. */}
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: T.sub }]}>Account for</Text>
+        <SelectPicker
+          placeholder="Select a product"
+          options={FAMILY_OPTIONS}
+          value={form.family}
+          onChange={(v) => setForm(f => ({ ...f, family: String(v), role: '' }))}
+          accentColor={T.accentText}
+        />
+      </View>
+
       {/* Role */}
       <View style={styles.field}>
         <Text style={[styles.label, { color: T.sub }]}>Role</Text>
         <SelectPicker
           placeholder="Select your role"
-          options={ROLE_OPTIONS}
+          options={form.family === 'B2C' ? B2C_ROLE_OPTIONS : B2B_ROLE_OPTIONS}
           value={form.role}
-          onChange={(v) => set('role')(v)}
+          // Clearing isManager on a role change: the server ignores it for anything but an
+          // Agent, but a form that silently carries a hidden true is one edit away from
+          // sending it somewhere it does matter.
+          onChange={(v) => setForm(f => ({
+            ...f,
+            role: String(v),
+            isManager: String(v) === 'Agent' ? f.isManager : false,
+          }))}
           accentColor={T.accentText}
           error={errors.role}
         />
       </View>
+
+      {/* B2C profile. Only for B2C — a B2B account carries none of these and the server
+          discards them, so asking would be a lie about what is collected. */}
+      {form.family === 'B2C' && (
+        <>
+          {form.role === 'Agent' && (
+            <View style={styles.field}>
+              <Checkbox
+                on={form.isManager}
+                onToggle={() => setForm(f => ({ ...f, isManager: !f.isManager }))}
+                label="Also a Manager (oversees a team)"
+              />
+            </View>
+          )}
+          {renderField('address', 'Address', { placeholder: 'Residential / base address' })}
+          {form.role === 'Counselor'
+            && renderField('bio', 'Bio', { placeholder: 'Short professional bio' })}
+          {/* Optional here exactly as on the admin form, but the server still validates the
+              FORMAT of anything entered — a malformed IFSC is a failed payout later. */}
+          {renderField('panNumber', 'PAN (optional)', { placeholder: 'ABCDE1234F', autoCapitalize: 'characters', maxLength: 10 })}
+          {renderField('aadhaarNumber', 'Aadhaar (optional)', { placeholder: '12 digits', keyboardType: 'number-pad', maxLength: 12 })}
+          {renderField('accountNumber', 'Bank account (optional)', { placeholder: 'Account number', keyboardType: 'number-pad' })}
+          {renderField('ifscCode', 'IFSC (optional)', { placeholder: 'HDFC0001234', autoCapitalize: 'characters', maxLength: 11 })}
+        </>
+      )}
 
       {/* spec status pattern: colour @ 15% background, solid colour text */}
       {!!error && (
@@ -261,6 +342,25 @@ export const SignupScreen = ({ navigation }: any) => {
     </View>
   );
 
+  // ─── About Us ────────────────────────────────────────────────────────────────
+  // Always visible under the panel (form and success state alike) so anyone signing
+  // up can read who builds this product before handing over their details.
+  const aboutLink = (
+    <TouchableOpacity
+      style={styles.aboutRow}
+      onPress={() => navigation.navigate('AboutUs')}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel="About Reasonify Technology Pvt. Ltd. and SingularityCRM"
+    >
+      <Info size={14} color={T.dim} strokeWidth={2.2} />
+      <Text style={[styles.aboutText, { color: T.sub }]}>
+        <Text style={[styles.aboutLink, { color: T.accentText }]}>About Us</Text> · Reasonify
+        Technology Pvt. Ltd.
+      </Text>
+    </TouchableOpacity>
+  );
+
   const body = success ? renderSuccess() : renderForm();
 
   return (
@@ -278,6 +378,7 @@ export const SignupScreen = ({ navigation }: any) => {
               bottomOffset={24}
             >
               {body}
+              {aboutLink}
             </KeyboardAwareScrollView>
           </View>
         </View>
@@ -292,6 +393,7 @@ export const SignupScreen = ({ navigation }: any) => {
           <AuthHero compact />
           <View style={[styles.stackForm, { backgroundColor: T.panelBg, paddingBottom: insets.bottom + 24 }]}>
             {body}
+            {aboutLink}
           </View>
         </KeyboardAwareScrollView>
       )}
@@ -353,4 +455,15 @@ const styles = StyleSheet.create({
   signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },
   signupText: { fontWeight: '400', fontSize: rf(14) },
   signupLink: { fontWeight: '700', fontSize: rf(14) },
+
+  aboutRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 22,
+    paddingBottom: 4,
+  },
+  aboutText: { fontWeight: '400', fontSize: rf(12), textAlign: 'center' },
+  aboutLink: { fontWeight: '700' },
 });

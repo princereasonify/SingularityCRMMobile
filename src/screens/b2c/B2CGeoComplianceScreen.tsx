@@ -18,7 +18,7 @@ import { b2cActivityService } from '../../api/b2c/b2cActivityService';
 import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection } from '../../components/b2c/useFieldStaff';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
 /** Web parity: B2CGeoCompliance.jsx pages 20 at a time. Admin-only route. */
 const PAGE_SIZE = 20;
@@ -198,9 +198,8 @@ export const B2CGeoComplianceScreen = ({ navigation }: any) => {
 
   // Two cards per row on a tablet, one on a phone. Computed rather than a percentage:
   // two 49% cards plus the gap overflow the row and collapse the grid to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, visibleRows.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 

@@ -10,11 +10,10 @@ import {
   useWindowDimensions,
   StatusBar,
   Platform,
-  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Eye, EyeOff, ArrowRight, ChevronLeft, Check } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowRight, ChevronLeft, Check, Info } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
@@ -69,6 +68,43 @@ export const LoginScreen = ({ navigation, route }: any) => {
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
+  type Caret = { start: number; end: number };
+  const emailCaret = useRef<Caret>({ start: 0, end: 0 });
+  const passwordCaret = useRef<Caret>({ start: 0, end: 0 });
+  // Mirrors of the field values, written synchronously by every edit so a 40ms repeat tick
+  // sees the result of the previous tick even before React has committed it.
+  const emailValue = useRef(email);
+  const passwordValue = useRef(password);
+  // The one-shot forced caret. `undefined` for all but the render right after our own edit.
+  const [emailSel, setEmailSel] = useState<Caret | undefined>(undefined);
+  const [passwordSel, setPasswordSel] = useState<Caret | undefined>(undefined);
+
+  // Release the forced caret the render after it is applied, so the field goes back to
+  // being uncontrolled and the user can drag freely. Clearing it does not move the caret —
+  // an absent `selection` prop simply stops overriding wherever the platform has it.
+  useEffect(() => { if (emailSel) setEmailSel(undefined); }, [emailSel]);
+  useEffect(() => { if (passwordSel) setPasswordSel(undefined); }, [passwordSel]);
+
+  /** A caret that is always inside the text, however it was last reported. */
+  const clampCaret = (c: Caret, len: number): Caret => {
+    const start = Math.max(0, Math.min(c.start, len));
+    const end = Math.max(0, Math.min(c.end, len));
+    return start <= end ? { start, end } : { start: end, end: start };
+  };
+
+  /** Keep the value + caret mirrors true when the text changes from outside our keyboard
+   *  (password autofill, a paste, a hardware keyboard on a tablet). */
+  const syncEmail = (v: string) => {
+    emailValue.current = v;
+    emailCaret.current = clampCaret(emailCaret.current, v.length);
+    setEmail(v);
+  };
+  const syncPassword = (v: string) => {
+    passwordValue.current = v;
+    passwordCaret.current = clampCaret(passwordCaret.current, v.length);
+    setPassword(v);
+  };
+
   useFocusEffect(
     useCallback(() => {
       applyLoginOrientation();
@@ -81,40 +117,98 @@ export const LoginScreen = ({ navigation, route }: any) => {
     let alive = true;
     loadRememberedEmail().then(saved => {
       if (alive && saved) {
-        setEmail(saved);
+        // Through syncEmail, not setEmail: it also seeds the value mirror the in-app
+        // keyboard edits against. Setting state alone would leave that mirror empty, and
+        // the first key pressed would replace the whole remembered address with one letter.
+        syncEmail(saved);
+        emailCaret.current = { start: saved.length, end: saved.length };
         setRememberMe(true);
       }
     });
     return () => { alive = false; };
+    // Deliberately once, on mount. syncEmail is re-created every render, so listing it would
+    // re-run this on every render and re-read the stored address each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Lift the form so the active field clears the in-app keyboard.
+  //
+  // This used to call Keyboard.dismiss() here and again in each field's onFocus, to stop the
+  // OS keyboard's mic + suggestion strip appearing over our own. It worked, and it cost both
+  // of the things a text field must do: Keyboard.dismiss() is
+  // `blurTextInput(currentlyFocusedInput())`, so focusing a field immediately BLURRED it.
+  // An unfocused TextInput draws no caret and ignores tap/drag, which is exactly the two
+  // symptoms — no blinking cursor, and no way to move from position 6 back to 3.
+  //
+  // showSoftInputOnFocus={false} is the supported way to keep focus while suppressing the OS
+  // keyboard, and it is honoured on both platforms in RN 0.84. Nothing needs dismissing.
   useEffect(() => {
     if (activeField) {
-      // Force-dismiss the OS keyboard so its voice-dictation mic + suggestion strip
-      // never show over our in-app keyboard (showSoftInputOnFocus isn't always honoured
-      // on Android). Dismiss immediately and once more after focus settles.
-      Keyboard.dismiss();
-      const t = setTimeout(() => { Keyboard.dismiss(); scrollRef.current?.scrollToEnd({ animated: true }); }, 60);
+      const t = setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, 60);
       return () => clearTimeout(t);
     }
   }, [activeField]);
 
   // ─── In-app keyboard handlers ────────────────────────────────────────────────
-  // In-app keyboard edits happen at the END of the active field, and the caret is
-  // pinned there. A controlled mid-text `selection` is unreliable with a custom
-  // keyboard on RN — the tracked caret was stuck at {0,0}, so inserts landed at the
-  // start and backspace did nothing. Editing at the end is predictable and correct.
-  // Functional updaters so the hold-to-repeat backspace (whose interval closure is
-  // captured at press-in) always mutates the LATEST value — otherwise it kept
-  // deleting from the same stale string and only ever removed one char.
-  const editActive = (mutate: (value: string) => string) => {
-    if (activeField === 'email') setEmail(prev => mutate(prev));
-    else if (activeField === 'password') setPassword(prev => mutate(prev));
+  // Edits land AT THE CARET, so tapping or dragging into the middle of an address and
+  // typing there works the way any text field should.
+  //
+  // Getting this right on RN needs three pieces, and it fails if any one is missing —
+  // an earlier attempt pinned `selection` to the end precisely because of that:
+  //
+  //  1. `selection` must NOT be permanently controlled. A `selection` prop supplied on
+  //     every render re-asserts itself immediately after the user drags the caret, which
+  //     snaps it straight back — that was the bug: you could not move off the end.
+  //  2. But after WE change the text, Android puts the caret at the end on its own. So we
+  //     force `selection` for exactly one render after our own edit, then release it (see
+  //     the effect below) and let the platform own it again.
+  //  3. The live caret and the live value are held in REFS, not read from state. The
+  //     hold-to-repeat backspace captures its interval closure once, at press-in, so a
+  //     state read there is stale by the second tick — the original symptom of that was a
+  //     hold that deleted one character and then stopped.
+
+  /**
+   * Apply an edit to whichever field is active. `mutate` receives the current text and the
+   * clamped caret, and returns the new text plus where the caret should end up.
+   */
+  const editActive = (
+    mutate: (value: string, caret: Caret) => { value: string; caret: number },
+  ) => {
+    if (activeField === 'email') {
+      const current = emailValue.current;
+      const { value, caret } = mutate(current, clampCaret(emailCaret.current, current.length));
+      emailValue.current = value;
+      emailCaret.current = { start: caret, end: caret };
+      setEmail(value);
+      setEmailSel({ start: caret, end: caret });
+    } else if (activeField === 'password') {
+      const current = passwordValue.current;
+      const { value, caret } = mutate(current, clampCaret(passwordCaret.current, current.length));
+      passwordValue.current = value;
+      passwordCaret.current = { start: caret, end: caret };
+      setPassword(value);
+      setPasswordSel({ start: caret, end: caret });
+    }
   };
 
-  const handleKey = (ch: string) => editActive(v => v + ch);
-  const handleBackspace = () => editActive(v => v.slice(0, -1));
+  // Insert replaces the selection when there is one, so typing over highlighted text
+  // behaves like every other text field rather than appending next to it.
+  const handleKey = (ch: string) =>
+    editActive((v, c) => ({
+      value: v.slice(0, c.start) + ch + v.slice(c.end),
+      caret: c.start + ch.length,
+    }));
+
+  // Backspace deletes the SELECTION when there is one, otherwise the single character
+  // before the caret. At position 0 with nothing selected there is nothing to delete —
+  // returning the value unchanged keeps a held backspace from looping on an empty field.
+  const handleBackspace = () =>
+    editActive((v, c) => {
+      if (c.start !== c.end) return { value: v.slice(0, c.start) + v.slice(c.end), caret: c.start };
+      if (c.start === 0) return { value: v, caret: 0 };
+      return { value: v.slice(0, c.start - 1) + v.slice(c.start), caret: c.start - 1 };
+    });
+
   const hideKeyboard = () => {
     setActiveField(null);
     emailRef.current?.blur();
@@ -244,9 +338,12 @@ export const LoginScreen = ({ navigation, route }: any) => {
           <TextInput
             ref={emailRef}
             value={email}
-            onChangeText={setEmail}
-            selection={{ start: email.length, end: email.length }}
-            onFocus={() => { setActiveField('email'); Keyboard.dismiss(); }}
+            onChangeText={syncEmail}
+            // Uncontrolled except for the single render after one of our own edits, which is
+            // what lets the caret be tapped or dragged anywhere in the text. See handleKey.
+            selection={emailSel}
+            onSelectionChange={e => { emailCaret.current = e.nativeEvent.selection; }}
+            onFocus={() => setActiveField('email')}
             showSoftInputOnFocus={false}
             caretHidden={false}
             placeholder="Enter your email"
@@ -274,9 +371,10 @@ export const LoginScreen = ({ navigation, route }: any) => {
           <TextInput
             ref={passwordRef}
             value={password}
-            onChangeText={setPassword}
-            selection={{ start: password.length, end: password.length }}
-            onFocus={() => { setActiveField('password'); Keyboard.dismiss(); }}
+            onChangeText={syncPassword}
+            selection={passwordSel}
+            onSelectionChange={e => { passwordCaret.current = e.nativeEvent.selection; }}
+            onFocus={() => setActiveField('password')}
             showSoftInputOnFocus={false}
             caretHidden={false}
             placeholder="Enter password"
@@ -358,8 +456,22 @@ export const LoginScreen = ({ navigation, route }: any) => {
         </TouchableOpacity>
       </View>
 
+      {/* About Us — who builds this product, and the Reasonify link */}
+      <TouchableOpacity
+        style={styles.aboutRow}
+        onPress={() => navigation.navigate('AboutUs')}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="About Reasonify Technology Pvt. Ltd. and SingularityCRM"
+      >
+        <Info size={14} color={T.dim} strokeWidth={2.2} />
+        <Text style={[styles.aboutText, { color: T.sub }]}>
+          <Text style={[styles.aboutLink, { color: T.accentText }]}>About Us</Text> · Reasonify Technology Pvt. Ltd.
+        </Text>
+      </TouchableOpacity>
+
       <Text style={[styles.footer, { color: T.dim }]}>
-        SingularityCRM • Field Sales Platform{'\n'}© 2026 All rights reserved
+        SingularityCRM™ • Field Sales Platform{'\n'}© {new Date().getFullYear()} Reasonify Technology Pvt. Ltd. · All rights reserved
       </Text>
     </View>
   );
@@ -540,5 +652,15 @@ const styles = StyleSheet.create({
   deleteText: { fontWeight: '400', fontSize: rf(12) },
   deleteLink: { fontWeight: '600', fontSize: rf(12) }, // colour comes from T.danger
 
-  footer: { fontWeight: '400', fontSize: rf(11), textAlign: 'center', marginTop: 18, lineHeight: 17 },
+  aboutRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 18,
+  },
+  aboutText: { fontWeight: '400', fontSize: rf(12) },
+  aboutLink: { fontWeight: '700' },
+
+  footer: { fontWeight: '400', fontSize: rf(11), textAlign: 'center', marginTop: 16, lineHeight: 17 },
 });

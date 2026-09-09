@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Linking, TextInput, Platform,
-} from 'react-native';
+  View, Text, StyleSheet, TouchableOpacity, Linking, TextInput, Platform, Alert} from 'react-native';
 import {
   ArrowLeft, Phone, Mail, MapPin, User, Calendar, CalendarClock, Edit2, CheckCircle2,
   UserCheck, UserPlus, Clock, Trash2, AlertTriangle, GraduationCap, School, Users,
-  Sparkles, GitBranch, History, Eye, RefreshCw, Globe,
-} from 'lucide-react-native';
+  Sparkles, GitBranch, History, Eye, RefreshCw, Globe, Camera} from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, Field, Input, Trigger, Dropdown, StatusBadge, FormModal, ConfirmModal,
 } from '../../components/crud';
 import { Screen, Card, SectionLabel } from '../../components/ui';
+import { launchCamera, Asset } from 'react-native-image-picker';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { b2cActivityService } from '../../api/b2c/b2cActivityService';
@@ -34,7 +33,7 @@ import { appointmentLabel, splitLocal, joinLocal } from '../../utils/dates';
 import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
 
 const DASH = '—';
-type ModalKind = 'stage' | 'agent' | 'counselor' | 'activity' | 'edit' | 'appointment' | null;
+type ModalKind = 'stage' | 'agent' | 'counselor' | 'activity' | 'edit' | 'appointment' | 'convert' | null;
 
 /**
  * What a user may LOG here. 'Note' is deliberately absent (web parity): every type already
@@ -182,6 +181,41 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const [agentForm, setAgentForm] = useState({ agentId: '', reason: '' });
   const [counselorId, setCounselorId] = useState('');
   const [actForm, setActForm] = useState({ type: 'Call' as B2CActivityTypeName, notes: '', nextFollowUpDate: '' });
+  // Optional proof attached to a Visit or Session, matching the web dialog. Both uploads are
+  // best-effort AFTER the activity is created: the activity is the record that matters, and a
+  // failed photo must not lose the note that was typed with it.
+  type Attachment = { uri: string; name: string; type: string };
+  const [actSelfie, setActSelfie] = useState<Attachment | null>(null);
+  const [actStudentId, setActStudentId] = useState<Attachment | null>(null);
+
+  // Quick convert — the same POST /leads/{id}/convert the web lead page uses. The app had only
+  // the enrollment wizard, so an agent closing a straightforward deal from a phone had to walk
+  // the full registration flow to record something web does in three fields.
+  const PAYMENT_MODES = ['Monthly', 'Quarterly', 'HalfYearly', 'Annually', 'OneTime'] as const;
+  const [convertForm, setConvertForm] = useState({ confirmedAmount: '', paymentMode: 'OneTime', firstPaymentDate: '' });
+  const [modeOpen, setModeOpen] = useState(false);
+
+  /** Opens the camera and hands the picked photo to `onPick`. Mirrors B2CActivityLogScreen. */
+  const capture = (
+    onPick: (a: Attachment) => void,
+    cameraType: 'front' | 'back',
+    fallbackName: string,
+  ) => {
+    launchCamera(
+      { mediaType: 'photo', quality: 0.7, cameraType, saveToPhotos: false, includeBase64: false },
+      (res) => {
+        if (res.didCancel) return;
+        if (res.errorCode) { Alert.alert('Camera', res.errorMessage ?? 'Could not open the camera.'); return; }
+        const asset: Asset | undefined = res.assets?.[0];
+        if (!asset?.uri) return;
+        onPick({
+          uri: asset.uri,
+          name: asset.fileName || `${fallbackName}-${Date.now()}.jpg`,
+          type: asset.type || 'image/jpeg',
+        });
+      },
+    );
+  };
   const [editForm, setEditForm] = useState({ ...emptyEdit });
   // Validation the dialog itself decides (a shared email, a name/mobile that now collides with
   // another lead) — shown inside the modal rather than as a toast, because the field it is
@@ -468,18 +502,48 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     } finally { setSaving(false); }
   };
 
+  const handleConvert = async () => {
+    if (!Number(convertForm.confirmedAmount)) return;
+    setSaving(true);
+    try {
+      await b2cLeadService.convertLead(Number(leadId), {
+        ...convertForm,
+        // From a numeric text field, so it arrives as a string; the backend decimal rejects one.
+        confirmedAmount: Number(convertForm.confirmedAmount) || 0,
+      } as any);
+      toast.success('Lead converted');
+      setModal(null);
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not convert this lead');
+    } finally { setSaving(false); }
+  };
+
   const handleLogActivity = async () => {
     if (!actForm.notes.trim()) return;
     setSaving(true);
     try {
-      await b2cActivityService.createActivity({
+      const created = await b2cActivityService.createActivity({
         leadId: Number(leadId),
         type: actForm.type,
         notes: actForm.notes.trim(),
         // Send a full UTC ISO string — the backend timestamptz rejects a bare "yyyy-MM-dd".
         nextFollowUpDate: actForm.nextFollowUpDate ? new Date(`${actForm.nextFollowUpDate}T00:00:00.000Z`).toISOString() : undefined,
       });
+
+      // Attach the photos to the activity that was just created. Swallowed individually so a
+      // rejected image leaves the logged activity intact rather than surfacing as a failure.
+      const createdId = (created as any)?.data?.id;
+      if (createdId && actSelfie) {
+        try { await b2cActivityService.uploadSelfie(createdId, actSelfie); } catch { /* optional */ }
+      }
+      if (createdId && actStudentId) {
+        try { await b2cActivityService.uploadStudentId(createdId, actStudentId); } catch { /* optional */ }
+      }
+
       toast.success('Activity logged');
+      setActSelfie(null);
+      setActStudentId(null);
       setModal(null);
       setActForm({ type: 'Call', notes: '', nextFollowUpDate: '' });
       await load();
@@ -832,7 +896,12 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
               <Btn label="Log Activity" variant="soft" small onPress={openActivity} icon={<Clock size={13} color={T.accent} strokeWidth={ICON_STROKE} />} style={s.tap} />
             )}
             {isOwnLead && !isConverted && (
-              <Btn label="Convert" variant="success" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} style={s.tap} />
+              <Btn label="Convert" variant="success" small onPress={() => { setConvertForm({ confirmedAmount: '', paymentMode: 'OneTime', firstPaymentDate: '' }); setModal('convert'); }} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} style={s.tap} />
+            )}
+            {/* The full registration wizard keeps its own entry — it is a richer flow than
+                web's quick convert, not a replacement for it. */}
+            {isOwnLead && !isConverted && (
+              <Btn label="Enrollment" variant="secondary" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<GraduationCap size={13} color={T.text} strokeWidth={ICON_STROKE} />} style={s.tap} />
             )}
             {(isAdmin || (isAgent && lead.assignedAgentId === user?.id)) && (
               <Btn label="Delete" variant="dangerGhost" small onPress={() => setShowDelete(true)} icon={<Trash2 size={13} color={T.danger} strokeWidth={ICON_STROKE} />} style={s.tap} />
@@ -1366,6 +1435,77 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
             </View>
           </Field>
           <DateInput label="Schedule Follow-up (optional)" value={actForm.nextFollowUpDate} onChange={v => setActForm(f => ({ ...f, nextFollowUpDate: v }))} accentColor={T.accent} />
+
+          {/* Proof, offered only for the types web offers it for — a selfie prompt on a phone
+              call would be noise. Both are optional; the activity saves without them. */}
+          {(actForm.type === 'Visit' || actForm.type === 'Session') && (
+            <View style={{ gap: 8, marginTop: 12 }}>
+              <Btn
+                label={actSelfie ? 'Selfie attached — retake' : 'Attach selfie'}
+                variant={actSelfie ? 'soft' : 'secondary'}
+                small
+                icon={<Camera size={14} color={actSelfie ? T.accent : T.text} strokeWidth={ICON_STROKE} />}
+                onPress={() => capture(setActSelfie, 'front', 'activity-selfie')}
+              />
+              <Btn
+                label={actStudentId ? 'ID card attached — retake' : 'Attach student ID card'}
+                variant={actStudentId ? 'soft' : 'secondary'}
+                small
+                icon={<Camera size={14} color={actStudentId ? T.accent : T.text} strokeWidth={ICON_STROKE} />}
+                onPress={() => capture(setActStudentId, 'back', 'student-id')}
+              />
+            </View>
+          )}
+        </View>
+      </FormModal>
+
+      {/* Quick convert — web parity. Three fields, one POST; the enrollment wizard remains a
+          separate action for the full registration. */}
+      <FormModal
+        visible={modal === 'convert'}
+        title="Convert Lead"
+        onClose={() => setModal(null)}
+        footer={<>
+          <Btn label="Cancel" variant="secondary" onPress={() => setModal(null)} style={{ flex: 1 }} />
+          <Btn
+            label={saving ? 'Converting…' : 'Convert'}
+            variant="success"
+            onPress={handleConvert}
+            loading={saving}
+            disabled={saving || !Number(convertForm.confirmedAmount)}
+            style={{ flex: 1 }}
+          />
+        </>}
+      >
+        <View style={{ gap: 12 }}>
+          <Input
+            label="Confirmed Amount"
+            value={convertForm.confirmedAmount}
+            onChangeText={v => setConvertForm(f => ({ ...f, confirmedAmount: v.replace(/[^0-9.]/g, '') }))}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 25000"
+          />
+          <Field label="Payment Mode">
+            <Trigger
+              label={spaced(convertForm.paymentMode)}
+              open={modeOpen}
+              onPress={() => setModeOpen(o => !o)}
+            />
+            {modeOpen && (
+              <Dropdown
+                style={{ width: '100%', marginTop: 6 }}
+                value={convertForm.paymentMode}
+                options={PAYMENT_MODES.map(m => ({ label: spaced(m), value: m }))}
+                onSelect={(v) => { setConvertForm(f => ({ ...f, paymentMode: v })); setModeOpen(false); }}
+              />
+            )}
+          </Field>
+          <DateInput
+            label="First Payment Date"
+            value={convertForm.firstPaymentDate}
+            onChange={v => setConvertForm(f => ({ ...f, firstPaymentDate: v }))}
+            accentColor={T.accent}
+          />
         </View>
       </FormModal>
 

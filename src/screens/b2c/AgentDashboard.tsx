@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Users, Phone, CalendarClock, TrendingUp, ChevronRight } from 'lucide-react-native';
-import { Screen, Card, StatTile, SectionLabel, Badge } from '../../components/ui';
+import { Screen, Card, StatTile, Badge } from '../../components/ui';
 import { ListCard, Avatar } from '../../components/crud';
 import { b2cDashboardService } from '../../api/b2c/b2cDashboardService';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
@@ -12,6 +12,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useResponsive, Responsive } from '../../hooks/useResponsive';
 import { label } from '../../utils/labels';
+import { PREVIEW_ROWS, SectionHeader, sectionGrid } from '../../components/b2c/DashboardSection';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -59,6 +60,11 @@ export const AgentDashboard = () => {
   // paddingHorizontal/Top rather than the `padding` shorthand: Screen's own contentContainerStyle
   // sets paddingBottom from the bottom safe-area inset, and the shorthand would overwrite it and
   // push the last card under the home indicator.
+  const grid = sectionGrid(r);
+  // Follow-ups always render; the other two are conditional, so both the count and each
+  // section's position must be derived from what is actually on screen.
+  const hasPipeline = (data?.myPipeline || []).length > 0;
+  const sectionCount = 1 + (hasPipeline ? 1 : 0) + (isManager ? 1 : 0);
   const content = { paddingHorizontal: r.gutter, paddingTop: r.gutter, maxWidth: r.maxContentWidth, width: '100%', alignSelf: 'center' } as const;
 
   const st = useMemo(() => makeStyles(r), [r]);
@@ -98,12 +104,16 @@ export const AgentDashboard = () => {
             </View>
           </Card>
 
+          {/* Sections sit side by side on a tablet: stacked full-width they made a long
+              scroll down one narrow column with the rest of the iPad empty beside it. */}
+          <View style={grid.style}>
           {/* My Pipeline */}
           {(data.myPipeline || []).length > 0 && (
-            <View style={{ marginTop: 18 }}>
-              <SectionLabel>My Pipeline</SectionLabel>
+            <View style={{ marginTop: 18, width: grid.widthAt(0, sectionCount) }}>
+              <SectionHeader title="My Pipeline" total={data.myPipeline.length}
+                onViewAll={() => nav.navigate('Pipeline')} />
               <Card>
-                {data.myPipeline.map((p, i) => (
+                {data.myPipeline.slice(0, PREVIEW_ROWS).map((p, i) => (
                   <View key={p.stage} style={[st.pipeRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
                     <Text style={[st.pipeLbl, { color: T.sub }]} numberOfLines={1}>{label(p.stage)}</Text>
                     <View style={[st.pipeTrack, { backgroundColor: T.line }]}>
@@ -117,12 +127,13 @@ export const AgentDashboard = () => {
           )}
 
           {/* Today's follow-ups */}
-          <View style={{ marginTop: 18 }}>
-            <SectionLabel>Today's Follow-ups</SectionLabel>
+          <View style={{ marginTop: 18, width: grid.widthAt(hasPipeline ? 1 : 0, sectionCount) }}>
+            <SectionHeader title="Today's Follow-ups" total={(data.todayTasks || []).length}
+              onViewAll={() => nav.navigate('My Leads')} />
             {(data.todayTasks || []).length === 0 ? (
               <Card><Text style={[st.empty, { color: T.dim }]}>Nothing scheduled for today.</Text></Card>
             ) : (
-              data.todayTasks.slice(0, 8).map(a => (
+              data.todayTasks.slice(0, PREVIEW_ROWS).map(a => (
                 <ListCard key={a.id} onPress={() => nav.navigate('B2CLeadDetail', { leadId: a.id })} style={{ marginBottom: 8 }}>
                   <View style={st.taskRow}>
                     <View style={{ flex: 1 }}>
@@ -139,12 +150,13 @@ export const AgentDashboard = () => {
 
           {/* Manager: team at a glance */}
           {isManager && (
-            <View style={{ marginTop: 18 }}>
-              <SectionLabel>My Team</SectionLabel>
+            <View style={{ marginTop: 18, width: grid.widthAt((hasPipeline ? 1 : 0) + 1, sectionCount) }}>
+              <SectionHeader title="My Team" total={team.length}
+                onViewAll={() => nav.navigate('My Team')} />
               {team.length === 0 ? (
                 <Card><Text style={[st.empty, { color: T.dim }]}>No agents assigned to you yet.</Text></Card>
               ) : (
-                team.map(m => (
+                team.slice(0, PREVIEW_ROWS).map(m => (
                   <ListCard key={m.id} onPress={() => nav.navigate('Team Leads')} style={{ marginBottom: 8 }}>
                     <View style={st.taskRow}>
                       <Avatar initials={(m.name || '?').split(' ').map((x: string) => x[0]).slice(0, 2).join('')} />
@@ -157,6 +169,7 @@ export const AgentDashboard = () => {
               )}
             </View>
           )}
+          </View>
         </>
       )}
     </Screen>

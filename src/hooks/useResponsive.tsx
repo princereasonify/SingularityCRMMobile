@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useWindowDimensions, PixelRatio } from 'react-native';
 
 /**
@@ -18,6 +18,26 @@ import { useWindowDimensions, PixelRatio } from 'react-native';
  *   const r = useResponsive();
  *   const s = useMemo(() => StyleSheet.create({ ... }), [r.width]);
  */
+
+/**
+ * How much horizontal space a PERMANENT drawer is occupying, published by the navigator.
+ *
+ * This exists because `useWindowDimensions()` reports the whole window, and on a tablet the
+ * drawer is permanent — it sits inside that window and is never available to a screen. Every
+ * screen sizing a grid from the window width therefore over-measured by the sidebar, asked for
+ * more columns than could fit, and the last card wrapped: the "dead space on the right" that
+ * showed up on every list page at once. The width is published rather than assumed because it
+ * changes when the user collapses the sidebar to a rail.
+ *
+ * 0 on a phone, where the drawer overlays the content instead of displacing it.
+ */
+const SidebarWidthContext = createContext(0);
+
+export const SidebarWidthProvider = ({ width, children }: {
+  width: number; children: React.ReactNode;
+}) => (
+  <SidebarWidthContext.Provider value={width}>{children}</SidebarWidthContext.Provider>
+);
 
 const BASE_WIDTH = 393;          // iPhone 14 Pro portrait — the design baseline
 export const TABLET_MIN = 768;   // iPad portrait and up
@@ -49,7 +69,12 @@ export interface Responsive {
 }
 
 export function useResponsive(): Responsive {
-  const { width, height } = useWindowDimensions();
+  const { width: windowWidth, height } = useWindowDimensions();
+  const sidebarWidth = useContext(SidebarWidthContext);
+
+  // What a screen can actually paint into. Everything below is derived from this, not from
+  // the window, so column counts and card widths describe the space that really exists.
+  const width = Math.max(320, windowWidth - sidebarWidth);
 
   return useMemo(() => {
     const shortest = Math.min(width, height);
@@ -84,3 +109,24 @@ export function useResponsive(): Responsive {
     };
   }, [width, height]);
 }
+
+/**
+ * Card width for a wrapping list grid.
+ *
+ * Two rules, both learned the hard way:
+ *
+ *  - EXACT POINTS, never percentages. In a wrapping row with a `gap`, N x (100/N)% overflows
+ *    by the gaps and the last card silently drops onto a line of its own — which reads as a
+ *    broken grid with a column of dead space beside it.
+ *  - COLUMNS NEVER EXCEED ITEMS. A single counselor in a three-column grid sat at a third of
+ *    the width with two thirds of blank page next to it; the grid was sized for a list that
+ *    wasn't there. Capping at the item count makes one card fill the row and two split it.
+ *
+ * @param itemCount how many cards will actually render
+ */
+export const gridCardWidth = (r: Responsive, itemCount: number): number | '100%' => {
+  const cols = Math.max(1, Math.min(r.columns, itemCount || 1));
+  if (cols === 1) return '100%';
+  const innerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
+  return Math.floor((innerW - r.gap * (cols - 1)) / cols);
+};

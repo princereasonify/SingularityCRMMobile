@@ -14,7 +14,6 @@ import {
   ActivityIndicator,
   StyleProp,
   ViewStyle,
-  TextStyle,
   TextInputProps,
 } from 'react-native';
 import { Check, ChevronLeft, ChevronRight, ChevronDown, X, Search as SearchIcon } from 'lucide-react-native';
@@ -208,23 +207,41 @@ export const Input = ({ label, error, right, left, containerStyle, ...p }: Input
   );
 };
 
-/** .search — 46 · radius 13 · 1.5px */
+/**
+ * SearchBar — 46 · radius 13 · 1.5px, and it opens the app's OWN keyboard.
+ *
+ * It used to hold a raw <TextInput>, so tapping a search box summoned the SYSTEM keyboard
+ * while every other field in the app brought up the in-app one. Search is usually the first
+ * thing anyone taps on a list screen, so that inconsistency was the most visible one there is.
+ *
+ * KeyField's face is byte-identical to the old `s.input` (same height, radius, border, gap and
+ * padding), so this is a behaviour change, not a visual one.
+ *
+ * The clear button sits OUTSIDE KeyField, positioned over it. KeyField's face is a single
+ * touchable, and this codebase has already been bitten by nesting an interactive control
+ * inside one (see NumField's reveal button) — a child touchable there fights the field for
+ * the press. Overlaying it keeps the two touch targets separate.
+ */
 export const SearchBar = ({ value, onChangeText, placeholder = 'Search…', style }: {
   value: string; onChangeText: (t: string) => void; placeholder?: string; style?: StyleProp<ViewStyle>;
 }) => {
   const T = useAppTheme();
   return (
-    <View style={[s.input, { backgroundColor: T.card, borderColor: T.line }, style]}>
-      <SearchIcon size={16} color={T.dim} strokeWidth={1.9} />
-      <TextInput
+    <View style={style}>
+      <KeyField
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={T.dim}
-        style={[s.inputTxt, { color: T.text }]}
+        left={<SearchIcon size={16} color={T.dim} strokeWidth={1.9} />}
       />
       {!!value && (
-        <TouchableOpacity onPress={() => onChangeText('')} hitSlop={10}>
+        <TouchableOpacity
+          onPress={() => onChangeText('')}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+          style={s.searchClear}
+        >
           <X size={15} color={T.dim} />
         </TouchableOpacity>
       )}
@@ -557,6 +574,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14,
   },
   inputTxt: { flex: 1, fontSize: rf(14), fontWeight: '500', padding: 0 },
+  searchClear: { position: 'absolute', right: 14, top: 0, height: 46, justifyContent: 'center' },
   err: { fontSize: rf(11.5), fontWeight: '400' },
 
   // check / toggle / segmented

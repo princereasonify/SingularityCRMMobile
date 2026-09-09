@@ -794,3 +794,155 @@ export interface SaveRoutePlanRequest {
     longitude: number;
   }[];
 }
+
+// ─── Usage Report ────────────────────────────────────────────────────────────
+// Reasonify learning-app usage for the students behind our B2C leads. Scoped
+// server-side to the caller's role — an agent's own students, a manager's team's,
+// everything for a counselor or admin — so there is no "whose data" parameter.
+// Mirrors SalesCRM.Core/DTOs/B2C/B2CUsageReportDtos.cs.
+
+export interface B2CUsageSummaryDto {
+  totalUsers: number;
+  /** Students who actually opened the app in the period. The gap between this and
+   *  totalUsers is the single most useful number here for a sales team. */
+  activeUsers: number;
+  totalSessions: number;
+  totalDurationSecs: number;
+  totalInteractions: number;
+  totalMedia: number;
+  totalTools: number;
+  totalHomework: number;
+  totalStudyDownloads: number;
+  totalTtsPlays: number;
+}
+
+export interface B2CUsageUserDto {
+  studentId: string;
+  studentName: string;
+  email: string;
+  totalSessions: number;
+  totalDurationSecs: number;
+  longestSessionSecs: number;
+  interactionCount: number;
+  topicsAttempted: number;
+  topicsCompleted: number;
+  completionPct: number;
+  mediaCount: number;
+  toolCount: number;
+  homeworkGenerated: number;
+  homeworkDownloaded: number;
+  studyDownloads: number;
+  ttsPlays: number;
+  firstSession?: string | null;
+  lastSession?: string | null;
+  /** False when the student exists but never opened the app — there is nothing to expand. */
+  hasActivity: boolean;
+  leadId?: number | null;
+  leadStudentName?: string | null;
+  assignedAgentName?: string | null;
+}
+
+export interface B2CUsageReportDto {
+  summary: B2CUsageSummaryDto;
+  users: B2CUsageUserDto[];
+  startDate: string;
+  endDate: string;
+  /** Whose data this is, phrased by the server ("Your students", "Your team", …). */
+  scopeLabel: string;
+  /** False when Reasonify answered but had nothing to give. Distinct from an empty
+   *  report, and it must be said out loud: a zeroed table reads as "nobody used the
+   *  product", which is worse than useless to someone deciding who to call. */
+  dataAvailable: boolean;
+  unavailableReason?: string | null;
+}
+
+export interface B2CUsageDayDto {
+  date: string;
+  sessions: number;
+  durationSecs: number;
+  completedTopicsCount: number;
+  firstSession?: string | null;
+  lastSession?: string | null;
+}
+
+export interface B2CUsageBreakdownDto {
+  days: B2CUsageDayDto[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
+export interface B2CUsageCountDto {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface B2CUsageFeatureDto {
+  inputSources: B2CUsageCountDto[];
+  totalUserMessages: number;
+  features: B2CUsageCountDto[];
+  topModel?: string | null;
+}
+
+export interface B2CUsageTopicDto {
+  seq?: number | null;
+  topicName: string;
+  unitNumber?: number | null;
+  chapterName: string;
+  subject: string;
+  gradeName?: string | null;
+  boardName?: string | null;
+  mediumName?: string | null;
+  displayId?: string | null;
+  isCompleted: boolean;
+  userMessages: number;
+  apiCalls: number;
+  ttsPlays: number;
+  model?: string | null;
+  promptVersion?: string | null;
+  durationSecs: number;
+  lastMessageAt?: string | null;
+}
+
+export interface B2CUsageSessionDto {
+  displayId?: string | null;
+  chapterNames: string[];
+  subjects: string[];
+  topicsCount: number;
+  gradeName?: string | null;
+  boardName?: string | null;
+  mediumName?: string | null;
+  userMessages: number;
+  apiCalls: number;
+  mediaCount: number;
+  toolCount: number;
+  homeworkGenerated: number;
+  studyDownloads: number;
+  ttsPlays: number;
+  model?: string | null;
+  promptVersion?: string | null;
+  durationSecs: number;
+  lastMessageAt?: string | null;
+}
+
+export interface B2CUsageDetailDto {
+  studentId: string;
+  studentName: string;
+  startDate: string;
+  endDate: string;
+  topics: B2CUsageTopicDto[];
+  sessions: B2CUsageSessionDto[];
+  inputMix: B2CUsageCountDto[];
+}
+
+/**
+ * Bank/UPI identity used to pay a user's allowances and expenses. Mirrors the web
+ * PayoutDetailsFields contract (panNumber / aadhaarNumber / accountNumber / ifscCode).
+ */
+export interface B2CPayoutDetailsDto {
+  panNumber?: string | null;
+  aadhaarNumber?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+}

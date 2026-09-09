@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, StyleProp, ViewStyle,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Pressable, StyleProp, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Delete, ArrowBigUp, Check } from 'lucide-react-native';
@@ -12,14 +12,26 @@ import { rf } from '../../utils/responsive';
  * the OS one, so text entry looks and feels the same everywhere (matching the login screen's
  * keyboard and the numeric NumField). Self-contained like NumField: renders its own themed
  * bottom-sheet keyboard in a transparent Modal, so it drops into any screen with no global
- * provider and no per-input focus wiring — no real <TextInput> is ever mounted, so there's
- * none of Android's "showSoftInputOnFocus isn't always honoured" fight the login screen's
- * inline version has to work around.
+ * provider and no per-input focus wiring. The sheet does mount a real <TextInput> (see the
+ * caret note below), but it is inside the sheet the component owns — callers still wire
+ * nothing, and the field face itself is never focusable.
  *
- * Editing is append/backspace-at-the-end only, same deliberate simplification the login
- * screen's keyboard already uses — a mid-text caret was unreliable to track against a custom
- * keyboard on RN. Long text (multiline notes/address/bio) should stay on the OS keyboard;
- * this is for short, single-line fields (names, emails, mobiles, search terms, etc.).
+ * Editing is CARET-AWARE. The sheet holds a real, focused <TextInput> (with the OS keyboard
+ * suppressed via showSoftInputOnFocus), so it blinks a cursor and accepts tap/drag to move
+ * that cursor — the two things a text field must do, and the two things this component used
+ * to lack: it rendered the value as a <Text>, which can neither show a caret nor be tapped
+ * into, so an edit could only ever append or delete at the end.
+ *
+ * Keeping the caret honest on RN needs three pieces, and it fails if any one is missing:
+ *   1. `selection` must NOT be permanently controlled — a selection prop supplied on every
+ *      render re-asserts itself the instant the user drags, snapping the caret back.
+ *   2. But after WE change the text, the platform puts the caret at the end on its own, so
+ *      it is forced for exactly one render after our own edit and then released.
+ *   3. The live value and caret are read from REFS, so a burst of key presses can't act on
+ *      a value that a pending parent re-render has not delivered yet.
+ *
+ * Long text (multiline notes/address/bio) should stay on the OS keyboard; this is for short,
+ * single-line fields (names, emails, mobiles, search terms, etc.).
  *
  * Drop-in for a single-line `<Input>`: same value/onChangeText/label/error/left contract.
  *   <KeyField value={form.name} onChangeText={v => set('name', v)} placeholder="Full name" />
@@ -35,6 +47,8 @@ const SYMBOLS = [
   ['@', '#', '₹', '&', '_', '-', '+', '(', ')', '/'],
   ['%', '*', '"', "'", ':', ';', '!', '?'],
 ];
+
+type Caret = { start: number; end: number };
 
 interface KeyFieldProps {
   value: string;
@@ -72,17 +86,58 @@ export const KeyField = ({
   const [mode, setMode] = useState<'letters' | 'symbols'>(numericFirst ? 'symbols' : 'letters');
   const [shift, setShift] = useState(false);
 
+  const inputRef = useRef<TextInput>(null);
+  // The value as the PARENT last gave it. `value` is a prop, so a burst of key presses can
+  // outrun the re-render that delivers the previous one; reading this instead means each
+  // press builds on the last, not on whatever React has committed so far.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const caret = useRef<Caret>({ start: value.length, end: value.length });
+  // Forced for exactly one render after our own edit, then released — see the header note.
+  const [sel, setSel] = useState<Caret | undefined>(undefined);
+  useEffect(() => { if (sel) setSel(undefined); }, [sel]);
+
   useEffect(() => {
     if (autoFocus && !disabled) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** A caret that is always inside the text, however it was last reported. */
+  const clampCaret = (c: Caret, len: number): Caret => {
+    const start = Math.max(0, Math.min(c.start, len));
+    const end = Math.max(0, Math.min(c.end, len));
+    return start <= end ? { start, end } : { start: end, end: start };
+  };
+
+  /** Applies an edit at the caret and puts the caret where the edit left it. */
+  const edit = (mutate: (v: string, c: Caret) => { value: string; caret: number }) => {
+    const current = valueRef.current;
+    const { value: next, caret: pos } = mutate(current, clampCaret(caret.current, current.length));
+    if (typeof maxLength === 'number' && next.length > maxLength) return;
+    valueRef.current = next;
+    caret.current = { start: pos, end: pos };
+    setSel({ start: pos, end: pos });
+    onChangeText(next);
+  };
+
+  // Insert replaces the selection when there is one, so typing over highlighted text behaves
+  // like any other field rather than appending beside it.
   const push = (ch: string) => {
-    if (typeof maxLength === 'number' && value.length >= maxLength) return;
-    onChangeText(value + (shift && mode === 'letters' ? ch.toUpperCase() : ch));
+    const c = shift && mode === 'letters' ? ch.toUpperCase() : ch;
+    edit((v, at) => ({
+      value: v.slice(0, at.start) + c + v.slice(at.end),
+      caret: at.start + c.length,
+    }));
     if (shift) setShift(false);
   };
-  const backspace = () => onChangeText(value.slice(0, -1));
+
+  // Backspace deletes the SELECTION when there is one, otherwise the character before the
+  // caret. At position 0 with nothing selected there is nothing to delete.
+  const backspace = () => edit((v, at) => {
+    if (at.start !== at.end) return { value: v.slice(0, at.start) + v.slice(at.end), caret: at.start };
+    if (at.start === 0) return { value: v, caret: 0 };
+    return { value: v.slice(0, at.start - 1) + v.slice(at.start), caret: at.start - 1 };
+  });
 
   const rows = mode === 'letters' ? LETTERS : SYMBOLS;
   const shown = secureTextEntry ? '•'.repeat(value.length) : value;
@@ -93,7 +148,11 @@ export const KeyField = ({
       <TouchableOpacity
         activeOpacity={0.8}
         disabled={disabled}
-        onPress={() => setOpen(true)}
+        onPress={() => {
+          caret.current = { start: value.length, end: value.length };
+          setSel({ start: value.length, end: value.length });
+          setOpen(true);
+        }}
         style={[
           s.face,
           { backgroundColor: T.fieldBg, borderColor: error ? T.danger : open ? T.accent : T.line },
@@ -116,9 +175,32 @@ export const KeyField = ({
           >
             <View style={s.display}>
               {!!label && <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label}</Text>}
-              <Text numberOfLines={1} style={[s.dispValue, { color: value ? T.text : T.dim }]}>
-                {shown || placeholder || ''}
-              </Text>
+              {/* A REAL TextInput, focused, with the OS keyboard suppressed rather than the
+                  field blurred. Blurring is what costs a field its caret and its tap/drag —
+                  an unfocused input draws no cursor and ignores touches on the text. */}
+              <TextInput
+                ref={inputRef}
+                value={value}
+                // Keeps the mirrors true when text arrives from outside our keyboard —
+                // an autofill, a paste, or a hardware keyboard on an iPad.
+                onChangeText={v => {
+                  valueRef.current = v;
+                  caret.current = clampCaret(caret.current, v.length);
+                  onChangeText(v);
+                }}
+                selection={sel}
+                onSelectionChange={e => { caret.current = e.nativeEvent.selection; }}
+                showSoftInputOnFocus={false}
+                caretHidden={false}
+                autoFocus
+                secureTextEntry={secureTextEntry}
+                placeholder={placeholder}
+                placeholderTextColor={T.dim}
+                autoCapitalize="none"
+                autoCorrect={false}
+                numberOfLines={1}
+                style={[s.dispValue, { color: T.text }]}
+              />
             </View>
 
             {!!belowValue && <View style={s.below}>{belowValue}</View>}

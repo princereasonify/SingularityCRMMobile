@@ -202,6 +202,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+/**
+ * The auth context, or null when there is no provider above.
+ *
+ * Exists so a consumer that may render OUTSIDE AuthProvider can read auth without wrapping
+ * `useAuth()` in a try/catch — a hook inside a try block is a conditional hook call, and React
+ * only guarantees hook identity when every render calls the same hooks in the same order.
+ * This one is always called, and simply returns null when there is nothing to read.
+ */
+export const useAuthOptional = () => useContext(AuthContext);
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

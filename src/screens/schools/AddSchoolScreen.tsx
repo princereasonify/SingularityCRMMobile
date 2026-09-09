@@ -171,7 +171,6 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   // ── Duplicate detection ─────────────────────────────────────────────────
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
   const [showDupModal, setShowDupModal] = useState(false);
-  const dupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
 

@@ -586,6 +586,15 @@ export interface TrackingSessionDto {
   rawDistanceKm?: number;
   filteredDistanceKm?: number;
   reconstructedDistanceKm?: number;
+  /** Road distance from the map matcher, kept alongside the settled total for comparison. */
+  matchedDistanceKm?: number;
+  /** How totalDistanceKm was measured: MapMatched | RoadSnapped | RawHaversine | None. */
+  distanceMethod?: string | null;
+  /** 0–1 matcher confidence. Absent on every rung below map matching. */
+  matchConfidence?: number | null;
+  /** NO_DATA | LIVE_PROVISIONAL | SETTLED | FALLBACK — whether the figure is finished, which is
+   *  a different question from how it was measured. See utils/distanceProvenance. */
+  distanceStatus?: string | null;
   fraudScore?: number;
   isSuspicious?: boolean;
   fraudFlags?: string[];
@@ -621,6 +630,11 @@ export interface LiveLocationDto {
   fraudScore?: number;
   isSuspicious?: boolean;
   batteryLevel?: number;
+  /** How totalDistanceKm was measured — the live map labels an estimated total rather than
+   *  showing it as though it were a measured road distance. */
+  distanceMethod?: string | null;
+  /** NO_DATA | LIVE_PROVISIONAL | SETTLED | FALLBACK. */
+  distanceStatus?: string | null;
 }
 
 export interface RoutePointDto {

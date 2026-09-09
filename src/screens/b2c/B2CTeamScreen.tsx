@@ -6,7 +6,7 @@ import { SearchBar, ListCard, Avatar, StatusBadge } from '../../components/crud'
 import { StatTile } from '../../components/ui';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
 /**
  * B2CTeamScreen — manager "My Team" view. Mirrors web B2CTeam.jsx: the agents who
@@ -68,9 +68,8 @@ export const B2CTeamScreen = () => {
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, filtered.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 

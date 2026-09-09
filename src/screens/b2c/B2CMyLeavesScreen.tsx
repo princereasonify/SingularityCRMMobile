@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, ActivityIndicator, TextInput } from 'react-nati
 import { Plus, CalendarDays, Send } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Screen } from '../../components/ui';
-import { Btn, Field, ListCard, StatusBadge, FormModal, Segmented } from '../../components/crud';
+import { Btn, Field, ListCard, StatusBadge, FormModal, Segmented, Pagination} from '../../components/crud';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cLeaveService } from '../../api/b2c/b2cLeaveService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive, Responsive } from '../../hooks/useResponsive';
+import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 import { todayStr } from '../../utils/dates';
 
 /** Web parity: B2CMyLeaves.jsx — request leave + track approval status. */
@@ -36,6 +36,14 @@ const statusColor = (status: string, T: any) =>
 
 const emptyForm = () => ({ leaveType: 'Casual' as LeaveType, fromDate: todayStr(), toDate: todayStr(), reason: '' });
 
+/**
+ * Claims/requests accrue for as long as someone works here, and this list was rendering
+ * every one of them. On a phone that is an unbounded scroll: a year in, reaching the
+ * oldest row means flicking past three hundred cards. Paged client-side because the
+ * endpoint returns the whole set — the cost is a slice, not another request.
+ */
+const PAGE_SIZE = 8;
+
 export const B2CMyLeavesScreen = () => {
   const T = useAppTheme();
   const r = useResponsive();
@@ -43,6 +51,13 @@ export const B2CMyLeavesScreen = () => {
   const isWide = r.width >= 720; // iPad → wider modal + 2-up date fields
 
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(leaves.length / PAGE_SIZE));
+  const pagedLeaves = useMemo(
+    () => leaves.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [leaves, page],
+  );
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -58,6 +73,7 @@ export const B2CMyLeavesScreen = () => {
       const res = await b2cLeaveService.getMine();
       const payload: any = res.data;
       setLeaves(payload?.items ?? payload ?? []);
+      setPage(1);   // a refresh must not strand the viewer on a page that no longer exists
     } catch {
       setLeaves([]);
     } finally {
@@ -103,9 +119,8 @@ export const B2CMyLeavesScreen = () => {
   // Two cards per row on a tablet, one on a phone — these rows carry far too many fields
   // to survive as table columns. Width is computed rather than a percentage: `49%` twice
   // plus the gap overflows the row and silently collapses the grid back to one column.
-  const cardW: number | '100%' = r.isTablet
-    ? (Math.min(r.width, r.maxContentWidth) - r.gutter * 2 - r.gap) / 2
-    : '100%';
+  // Shared rule: exact points, and columns capped at the number of cards.
+  const cardW = gridCardWidth(r, pagedLeaves.length);
 
   const s = useMemo(() => makeStyles(r), [r]);
 
@@ -128,8 +143,9 @@ export const B2CMyLeavesScreen = () => {
           <Text style={[s.emptyTxt, { color: T.dim }]}>Tap Request Leave to apply.</Text>
         </View>
       ) : (
+        <>
         <View style={[s.grid, { marginTop: 16 }]}>
-          {leaves.map(l => {
+          {pagedLeaves.map(l => {
             const d = l.days ?? diffDays(l.fromDate, l.toDate);
             return (
               <ListCard key={l.id} style={{ alignItems: 'flex-start', width: cardW }}>
@@ -150,6 +166,15 @@ export const B2CMyLeavesScreen = () => {
             );
           })}
         </View>
+        {pageCount > 1 && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onChange={p => { if (p >= 1 && p <= pageCount) setPage(p); }}
+            style={{ marginTop: 12 }}
+          />
+        )}
+        </>
       )}
 
       <FormModal

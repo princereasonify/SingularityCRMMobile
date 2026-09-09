@@ -366,11 +366,11 @@ export const B2CAdmin_NAV: NavGroup[] = [
     label: 'Admin',
     items: [
       { route: 'User Management', label: 'User Management', icon: 'Users' },
-      // Web reaches these two only through the "Add" button on the list page. On mobile the
-      // drawer IS the navigation, so they get their own entries as well — the list screens
-      // still push the same routes.
-      { route: 'Add User', label: 'Add User', icon: 'Users' },
-      { route: 'Add Counselor', label: 'Add Counselor', icon: 'Users' },
+      // "Add User" and "Add Counselor" used to sit here as their own drawer entries. They are
+      // reached from the + on User Management instead: that one screen already creates all
+      // three kinds of account — Counselor, Agent, and Agent-who-is-a-Manager — so two extra
+      // sidebar rows were three ways of describing one action, and the web sidebar never had
+      // them either. Both routes stay registered and reachable; only the drawer rows are gone.
       { route: 'Approval Center', label: 'Approval Center', icon: 'Onboarding' },
       { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
     ],
@@ -385,7 +385,10 @@ export const B2CAdmin_NAV: NavGroup[] = [
   },
   {
     label: 'Insights',
-    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+    items: [
+      { route: 'Reports', label: 'Reports', icon: 'Reports' },
+      { route: 'Usage Report', label: 'Usage Report', icon: 'Performance' },
+    ],
   },
   {
     label: 'Support',
@@ -427,6 +430,10 @@ export const Agent_NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Insights',
+    items: [{ route: 'Usage Report', label: 'Usage Report', icon: 'Performance' }],
+  },
+  {
     // Mobile-only native geo-verified visit capture (no web equivalent).
     label: 'Visit',
     items: [{ route: 'Visit', label: 'Visit', icon: 'Activity' }],
@@ -464,6 +471,10 @@ export const Counselor_NAV: NavGroup[] = [
       { route: 'My Expenses', label: 'My Expenses', icon: 'Payment' },
       { route: 'My Performance', label: 'My Performance', icon: 'Performance' },
     ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Usage Report', label: 'Usage Report', icon: 'Performance' }],
   },
   {
     // "AI Coach" keeps the native `Recording` route (the counselor's

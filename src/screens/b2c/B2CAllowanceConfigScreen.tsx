@@ -4,7 +4,6 @@ import { IndianRupee, Save } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { Btn, Input } from '../../components/crud';
 import { Screen, Card } from '../../components/ui';
-import { apiClient } from '../../api/client';
 import { b2cAllowanceService } from '../../api/b2c/b2cAllowanceService';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -73,7 +72,7 @@ export const B2CAllowanceConfigScreen = () => {
       // PUT /b2c/allowances/config. Called directly because b2cAllowanceService exposes only
       // getConfig — src/api is owned elsewhere in this workstream, so the method could not be
       // added there.
-      await apiClient.put('/b2c/allowances/config', {
+      await b2cAllowanceService.updateConfig({
         ratePerVisit: num(cfg.ratePerVisit),
         ratePerKm: num(cfg.ratePerKm),
         fixedDailyAmount: num(cfg.fixedDailyAmount),
