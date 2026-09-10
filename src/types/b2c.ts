@@ -196,7 +196,12 @@ export interface B2CActivityListDto {
 }
 
 export interface B2CLeadDetailDto extends B2CLeadListDto {
-  /** Credited at creation; shown read-only because no edit can move coins already granted. */
+  /**
+   * The agent/counselor code credited for this student. Editable in the edit form: leads
+   * predating the column carry none, and on a lead Reasonify has not accepted yet the retry
+   * reads the new value and grants the signup coins. Once the account exists it is
+   * attribution only — nothing here moves coins after the fact.
+   */
   referralCode?: string | null;
   /** What was agreed for the booked visit. */
   appointmentNotes?: string | null;
@@ -359,6 +364,16 @@ export interface UpdateB2CLeadRequest {
   state?: string;
   pincode?: string | null;
   fullAddress?: string | null;
+  /**
+   * The agent/counselor code credited for this student. Blank or absent means "leave it
+   * alone" — the same convention every other optional field here follows, and the reason an
+   * edit that only touches the city cannot wipe the credit.
+   *
+   * Editable because leads exist with no code at all: the column arrived after the product
+   * did, and rows imported before it carry none. On a lead Reasonify has not accepted yet,
+   * adding one here is what makes the retry grant the student their signup coins.
+   */
+  referralCode?: string | null;
   enrollmentTimeline?: B2CEnrollmentTimeline;
   source?: B2CLeadSource;
   sourceReference?: string | null;

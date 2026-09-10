@@ -22,7 +22,7 @@ import {
   B2C_ENROLLMENT_TIMELINES, B2CActivityTypeName, UpdateB2CLeadRequest, B2CLeadSource, B2CLeadPriority,
   B2CEnrollmentTimeline, B2CLeadCredentialsDto, B2CLeadStageHistoryDto, B2CLookupOption,
   B2CNationality, B2C_NATIONALITIES, B2C_ACTIVITY_TYPES, B2C_TERMINAL_STAGES, B2C_APPOINTMENT_STAGE,
-  DuplicateCheckResult,
+  DuplicateCheckResult, B2CReferralOptionDto,
 } from '../../types/b2c';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -106,6 +106,10 @@ const emptyEdit = {
   reasonifyBoardId: '', reasonifyLanguageId: '', reasonifyGradeId: '',
   source: 'Website' as B2CLeadSource, priority: 'Warm' as B2CLeadPriority,
   enrollmentTimeline: 'Immediate' as B2CEnrollmentTimeline, sourceReference: '', notes: '',
+  // Prefilled from the lead so an untouched save re-sends the code it already has, which the
+  // API reads as "unchanged". Blank is the legacy case this field exists for: the column
+  // arrived after the product did, so rows imported before it carry no code at all.
+  referralCode: '',
   // Never prefilled: a masked value here would be indistinguishable from a real one the user
   // meant to keep. Blank means "leave the Reasonify login alone".
   studentPassword: '', parentPassword: '',
@@ -217,6 +221,10 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     );
   };
   const [editForm, setEditForm] = useState({ ...emptyEdit });
+  // Scoped by the SERVER: an agent or counselor gets exactly their own code, an admin gets
+  // every active one. Same endpoint as the create screen, so the two cannot disagree about
+  // who may credit whom.
+  const [referralOptions, setReferralOptions] = useState<B2CReferralOptionDto[]>([]);
   // Validation the dialog itself decides (a shared email, a name/mobile that now collides with
   // another lead) — shown inside the modal rather than as a toast, because the field it is
   // about is on screen and the user has to go back to it.
@@ -260,6 +268,13 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   // Counselor roster: admins (assignment) + agents (escalation). Agent roster: admins only —
   // the full Agent list via b2cUserService.getUsers (matches the web fix, not the dashboard slice).
   useEffect(() => {
+    // Every role may call this; the list it gets back is what decides the control below.
+    b2cUserService.getReferralOptions()
+      .then(res => setReferralOptions(res.data ?? []))
+      .catch(() => setReferralOptions([]));
+  }, []);
+
+  useEffect(() => {
     if (isCounselor) return;
     b2cCounselorService.getCounselors({ pageSize: 50 })
       .then(res => setCounselors((res.data?.items ?? []).map(c => ({ id: c.id, name: c.name }))))
@@ -291,6 +306,13 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   // lead — so ownership is checked separately from role. Derived once, used by the action row
   // and the Reasonify Login card alike.
   const isOwnLead = isAdmin || isCounselor || (isAgent && lead?.assignedAgentId === user?.id);
+  // May this user point the credit somewhere else? An admin always. An agent or counselor
+  // only while the lead is uncredited or already theirs — ResolveReferralCodeAsync applies
+  // exactly this rule, so offering a picker they cannot use would just produce a rejected
+  // save. One option back from the server means "your own code", many means admin.
+  const ownReferralCode = referralOptions.length === 1 ? referralOptions[0].referralCode : null;
+  const canRetargetReferral = isAdmin
+    || (!!ownReferralCode && (!lead?.referralCode || lead.referralCode === ownReferralCode));
   // Extended lead fields the detail response carries but the shared DTO doesn't declare.
   const lx: any = lead || {};
 
@@ -403,6 +425,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
       source: (lead.source as B2CLeadSource) || 'Website', priority: (lead.priority as B2CLeadPriority) || 'Warm',
       enrollmentTimeline: (lead.enrollmentTimeline as B2CEnrollmentTimeline) || 'Immediate',
       sourceReference: lead.sourceReference || '', notes: lead.notes || '',
+      referralCode: lead.referralCode || '',
       studentPassword: '', parentPassword: '',
     });
     setEditError('');
@@ -669,6 +692,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         source: editForm.source,
         priority: editForm.priority,
         sourceReference: text(editForm.sourceReference),
+        // Unchanged or blank is a no-op server-side; a different value is validated there
+        // against the same "may I credit this person" rule the create screen obeys.
+        referralCode: text(editForm.referralCode),
         notes: editForm.notes ?? '',
         // Only sent when actually typed. An omitted password means "keep the current login" —
         // sending "" would fail the server's length rule and reject the whole save.
@@ -1691,14 +1717,45 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
               </Field>
             </View>
             <View style={{ width: formW as any }}>
-              {/* Read-only on purpose: the code was spent when Reasonify granted (or did not
-                 grant) this student their signup coins. Changing it now cannot move those
-                 coins, so an editable field would only promise something it cannot do. */}
+              {/* Editable, because leads exist with no code at all — the column arrived after
+                 the product did, and rows imported before it carry none. What the edit is
+                 WORTH depends on whether Reasonify has accepted the lead yet: before that,
+                 the retry reads this field and the student gets their signup coins; after,
+                 it is attribution only. The hint below says which, rather than implying more. */}
               <Field label="Referral Code">
-                <View style={[s.readOnly, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
-                  <Text style={[s.readOnlyTxt, { color: T.sub }]} numberOfLines={1}>{lead?.referralCode || DASH}</Text>
-                </View>
-                <Text style={[s.hintSmall, { color: T.dim }]}>Credited at creation — cannot be changed.</Text>
+                {canRetargetReferral ? (
+                  renderSelect(
+                    'editReferral',
+                    [
+                      ...referralOptions.map(o => ({
+                        label: `${o.referralCode} — ${o.name} (${o.role}${o.isManager ? ', Manager' : ''})`,
+                        value: o.referralCode,
+                      })),
+                      // The lead's current code can belong to someone outside this user's
+                      // scope (or to a since-deactivated user). Keep it listed so an
+                      // untouched save re-sends it unchanged instead of losing it — same
+                      // reasoning as the off-grid appointment time above.
+                      ...(editForm.referralCode
+                        && !referralOptions.some(o => o.referralCode === editForm.referralCode)
+                        ? [{ label: editForm.referralCode, value: editForm.referralCode }]
+                        : []),
+                    ],
+                    editForm.referralCode,
+                    v => setEdit('referralCode', v),
+                    referralOptions.length === 0 ? 'No active agents or counselors' : 'Select referral code',
+                  )
+                ) : (
+                  <View style={[s.readOnly, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
+                    <Text style={[s.readOnlyTxt, { color: T.sub }]} numberOfLines={1}>{lead?.referralCode || DASH}</Text>
+                  </View>
+                )}
+                <Text style={[s.hintSmall, { color: T.dim }]}>
+                  {!canRetargetReferral
+                    ? 'Credited to another agent — only an admin can change this.'
+                    : lead?.reasonifySyncStatus === 'Synced'
+                      ? 'Attribution only — the signup coins were settled when the account was created.'
+                      : 'Credited when the Reasonify account is created.'}
+                </Text>
               </Field>
             </View>
             <View style={{ width: formW as any }}>
