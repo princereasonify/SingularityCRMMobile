@@ -47,8 +47,13 @@ const DASH = '—';
  */
 const PAGE_SIZE = 10;
 
+// SCA lists itself: nothing sits above an admin, so an admin row is only ever editable by
+// another admin (or by that admin themselves) — that is what makes an admin's password
+// resettable at all. Mirrors AuthService.IsRoleAllowed / GetManageableRoles.
+// It sits LAST because the create form defaults to [0], and defaulting a blank form to
+// "admin" is not a default anyone wants.
 const CREATABLE_ROLES: Record<string, string[]> = {
-  SCA: ['SH', 'RH', 'ZH', 'FO'],
+  SCA: ['SH', 'RH', 'ZH', 'FO', 'SCA'],
   SH:  ['RH', 'ZH', 'FO'],
   RH:  ['ZH', 'FO'],
   ZH:  ['FO'],
@@ -358,6 +363,10 @@ export const UserManagementScreen = (_props: any) => {
     setShowUserModal(true);
   };
 
+  /** Your own row. The server refuses a self role-change and a self-delete outright, so
+   *  neither control is offered here rather than left to fail on submit. */
+  const isSelf = (u: any) => u?.id === user?.id;
+
   const openEdit = (u: any) => {
     const uName = displayNameOf(u);
     setEditingUser(u);
@@ -509,6 +518,7 @@ export const UserManagementScreen = (_props: any) => {
   const filteredZones = form.regionId ? zones.filter((z) => z.regionId === Number(form.regionId)) : zones;
   const needsZone = ['FO', 'ZH'].includes(form.role);
   const needsRegion = ['ZH', 'RH', 'FO'].includes(form.role);
+  const editingSelf = !!editingUser && isSelf(editingUser);
 
   const roleOptions = (() => {
     const opts = (CREATABLE_ROLES[role] || []).map((r) => ({ label: r, value: r }));
@@ -550,9 +560,11 @@ export const UserManagementScreen = (_props: any) => {
       <IconBtn kind="edit" label="Edit user" onPress={() => openEdit(u)}>
         <Edit2 size={14} color={T.sub} strokeWidth={ICON_STROKE} />
       </IconBtn>
-      <IconBtn kind="del" label="Delete user" onPress={() => handleDelete(u)}>
-        <Trash2 size={14} color={T.danger} strokeWidth={ICON_STROKE} />
-      </IconBtn>
+      {!isSelf(u) && (
+        <IconBtn kind="del" label="Delete user" onPress={() => handleDelete(u)}>
+          <Trash2 size={14} color={T.danger} strokeWidth={ICON_STROKE} />
+        </IconBtn>
+      )}
     </View>
   );
 
@@ -777,9 +789,12 @@ export const UserManagementScreen = (_props: any) => {
             <Trigger
               label={form.role || 'Select a role…'}
               open={openDd === 'role'}
-              onPress={() => setOpenDd(openDd === 'role' ? null : 'role')}
+              onPress={() => {
+                if (editingSelf) return;
+                setOpenDd(openDd === 'role' ? null : 'role');
+              }}
             />
-            {openDd === 'role' && (
+            {openDd === 'role' && !editingSelf && (
               <Dropdown
                 style={s.ddFull}
                 maxHeight={200}
@@ -787,6 +802,11 @@ export const UserManagementScreen = (_props: any) => {
                 onSelect={(v) => { set('role', v); setOpenDd(null); }}
                 options={roleOptions}
               />
+            )}
+            {editingSelf && (
+              <Text style={[s.selfHint, { color: T.dim }]}>
+                You can't change your own role — another admin has to. Everything else here, password included, is yours to edit.
+              </Text>
             )}
           </Field>
 
@@ -974,6 +994,7 @@ const s = StyleSheet.create({
 
   // form modal
   mForm: { gap: 14, paddingBottom: 4 },
+  selfHint: { fontSize: rf(11), fontWeight: '400', marginTop: 6, lineHeight: 15 },
   ddFull: { width: '100%' },
   pwdRules: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4 },
   pwdRuleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

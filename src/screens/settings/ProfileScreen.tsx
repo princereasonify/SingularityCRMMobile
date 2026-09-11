@@ -7,9 +7,10 @@
  * offline, admin config); this screen owns *identity* (account, org placement,
  * base location). No overlap in either direction.
  *
- * Reads `useAuth().user` — the UserDto persisted at login — so it needs no new
- * endpoint. There is no `/auth/me` or `/auth/change-password` on the backend
- * (verified against AuthController), which is why nothing here is editable.
+ * Reads `useAuth().user` — the UserDto persisted at login — so name, email and org
+ * placement are read-only here (there is no `/auth/me`, and those are an admin's to
+ * change). The one thing a user CAN change about their own account is their password,
+ * through `POST /auth/change-password` — self-service, every role, B2B and B2C alike.
  */
 import React, { useState } from 'react';
 import {
@@ -20,11 +21,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
   ArrowLeft, Mail, Phone, MapPin, Building2, Users, ShieldCheck, ChevronRight, Home, Camera, AlertTriangle,
+  KeyRound, Check,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { authApi } from '../../api/auth';
 import { Card } from '../../components/ui';
-import { IconBtn, StatusBadge, ConfirmModal } from '../../components/crud';
+import { IconBtn, StatusBadge, ConfirmModal, FormModal, Input, Btn, Checkbox } from '../../components/crud';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -41,6 +43,15 @@ const ROLE_LABEL: Record<string, string> = {
   Counselor: 'Counselor',
 };
 const B2C_ROLES = ['B2CAdmin', 'Agent', 'Counselor'];
+
+// The server's rules (AuthService.ValidatePassword), mirrored so the user can see which
+// one is still unmet instead of being told them one rejection at a time.
+const PW_RULES: { label: string; ok: (p: string) => boolean }[] = [
+  { label: 'At least 8 characters', ok: p => p.length >= 8 },
+  { label: 'One uppercase letter', ok: p => /[A-Z]/.test(p) },
+  { label: 'One digit', ok: p => /\d/.test(p) },
+  { label: 'One special character', ok: p => /[^A-Za-z0-9]/.test(p) },
+];
 
 export const ProfileScreen = ({ navigation }: any) => {
   const T = useAppTheme();
@@ -100,6 +111,60 @@ export const ProfileScreen = ({ navigation }: any) => {
       Alert.alert('Upload failed', err?.response?.data?.message || 'Could not update your picture.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // ── Change password ────────────────────────────────────────────────────────
+  // Self-service and open to every role in both families: the endpoint resolves B2B vs
+  // B2C from the caller's own token, so — unlike the avatar/home-location rows above —
+  // nothing here is gated on `isB2C`.
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwErr, setPwErr] = useState('');
+  const [pwShow, setPwShow] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+
+  const setPw = (k: 'current' | 'next' | 'confirm') => (v: string) => {
+    setPwForm(f => ({ ...f, [k]: v }));
+    setPwErr('');
+  };
+
+  const pwStrong = PW_RULES.every(r => r.ok(pwForm.next));
+  const pwMatches = !!pwForm.confirm && pwForm.confirm === pwForm.next;
+  const canSavePw = !!pwForm.current && pwStrong && pwMatches && !pwSaving;
+
+  const openPw = () => {
+    setPwForm({ current: '', next: '', confirm: '' });
+    setPwErr('');
+    setPwShow(false);
+    setPwOpen(true);
+  };
+
+  const closePw = () => {
+    setPwOpen(false);
+    setPwForm({ current: '', next: '', confirm: '' });
+    setPwErr('');
+  };
+
+  const submitPw = async () => {
+    if (!canSavePw) return;
+    if (pwForm.current === pwForm.next) {
+      setPwErr('The new password must be different from your current one.');
+      return;
+    }
+    setPwSaving(true);
+    setPwErr('');
+    try {
+      await authApi.changePassword(pwForm.current.trim(), pwForm.next.trim());
+      closePw();
+      Alert.alert(
+        'Password changed',
+        'Your new password is active. Any other device signed in to this account has been signed out.',
+      );
+    } catch (e: any) {
+      setPwErr(e?.response?.data?.message || 'Could not change your password. Please try again.');
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -222,6 +287,22 @@ export const ProfileScreen = ({ navigation }: any) => {
             />
           </Card>
 
+          {/* Security — the one part of their own account a user can actually change. Shown
+              to every role in both families; the endpoint is family-agnostic. */}
+          <Card style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: T.text }]}>Security</Text>
+            <Row
+              icon={<KeyRound size={15} color={T.accent} strokeWidth={ICON_STROKE} />}
+              label="Password"
+              value="Change your login password"
+              onPress={openPw}
+              last
+            />
+            <Text style={[styles.hint, { color: T.dim }]}>
+              You'll be asked for your current password first.
+            </Text>
+          </Card>
+
           {/* Organisation (zones/regions) is a B2B concept — hidden for B2C accounts. */}
           {!isB2C && (
           <Card style={styles.section}>
@@ -257,6 +338,76 @@ export const ProfileScreen = ({ navigation }: any) => {
           </View>
         </View>
       </ScrollView>
+
+      <FormModal
+        visible={pwOpen}
+        title="Change Password"
+        onClose={closePw}
+        footer={
+          <>
+            <Btn label="Cancel" variant="secondary" onPress={closePw} style={{ flex: 1 }} />
+            <Btn
+              label={pwSaving ? 'Updating…' : 'Update Password'}
+              onPress={submitPw}
+              loading={pwSaving}
+              disabled={!canSavePw}
+              style={{ flex: 1 }}
+            />
+          </>
+        }
+      >
+        <View style={{ gap: 12 }}>
+          {!!pwErr && <Text style={[styles.pwErr, { color: T.danger }]}>{pwErr}</Text>}
+
+          <Input
+            label="Current password"
+            value={pwForm.current}
+            onChangeText={setPw('current')}
+            placeholder="Your current password"
+            secureTextEntry={!pwShow}
+          />
+          <Input
+            label="New password"
+            value={pwForm.next}
+            onChangeText={setPw('next')}
+            placeholder="New password"
+            secureTextEntry={!pwShow}
+          />
+
+          {/* Rules tick off as they are met — the server rejects on this same set. */}
+          {!!pwForm.next && (
+            <View style={styles.pwRules}>
+              {PW_RULES.map(r => {
+                const ok = r.ok(pwForm.next);
+                return (
+                  <View key={r.label} style={styles.pwRule}>
+                    <Check size={11} color={ok ? T.success : T.dim} strokeWidth={3} />
+                    <Text style={[styles.pwRuleTxt, { color: ok ? T.success : T.dim }]}>{r.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <Input
+            label="Confirm new password"
+            value={pwForm.confirm}
+            onChangeText={setPw('confirm')}
+            placeholder="Re-enter the new password"
+            secureTextEntry={!pwShow}
+            error={pwForm.confirm && !pwMatches ? 'Both new-password fields must match.' : undefined}
+          />
+
+          {/* One checkbox rather than a per-field eye: Input's single-line face is itself a
+              touchable that opens the in-app keyboard, so a button nested in its `right`
+              slot fights it for the press (same trap noted on NumField's reveal button). */}
+          <Checkbox on={pwShow} onToggle={() => setPwShow(v => !v)} label="Show passwords" />
+
+          <Text style={[styles.pwNote, { color: T.dim }]}>
+            Changing your password signs you out of every other device.
+          </Text>
+        </View>
+      </FormModal>
 
       <ConfirmModal
         visible={showRemoveConfirm}
@@ -308,6 +459,12 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: rf(13.5), fontWeight: '600', marginTop: 1, flexShrink: 1 },
 
   hint: { fontSize: rf(11.5), fontWeight: '400', marginTop: 8, lineHeight: 16 },
+
+  pwErr: { fontSize: rf(12.5), fontWeight: '600' },
+  pwRules: { gap: 4, marginTop: -4 },
+  pwRule: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pwRuleTxt: { fontSize: rf(11.5), fontWeight: '500' },
+  pwNote: { fontSize: rf(11.5), fontWeight: '400', lineHeight: 16 },
   note: { borderRadius: 12, padding: 12, marginTop: 2 },
   noteTxt: { fontSize: rf(12), fontWeight: '500', lineHeight: 17 },
 });

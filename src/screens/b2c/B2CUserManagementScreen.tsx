@@ -12,6 +12,7 @@ import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { invalidateFieldStaff } from '../../components/b2c/useFieldStaff';
 import { B2CUserListDto } from '../../types/b2c';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, Responsive, MIN_TAP, gridCardWidth} from '../../hooks/useResponsive';
 
@@ -20,7 +21,7 @@ const PAGE_SIZE = 20;
 const initialsOf = (name?: string) =>
   (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
-type RoleFilter = '' | 'Agent' | 'Counselor';
+type RoleFilter = '' | 'Agent' | 'Counselor' | 'B2CAdmin';
 type StatusFilter = '' | 'active' | 'inactive';
 
 // Local alias — this screen only ever deals with the roster list shape.
@@ -30,6 +31,9 @@ const toggleId = (arr: number[], id: number) =>
   arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
 
 export const B2CUserManagementScreen = () => {
+  const { user: me } = useAuth();
+  /** Your own row — the server refuses a self-deactivate and a self-delete outright. */
+  const isSelf = (u: { id: number }) => u.id === me?.id;
   const T = useAppTheme();
   const r = useResponsive();
   const toast = useToast();
@@ -256,7 +260,7 @@ export const B2CUserManagementScreen = () => {
             value={role}
             onChange={setRole}
             style={s.filterCell}
-            options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }]}
+            options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }, { label: 'Admins', value: 'B2CAdmin' }]}
           />
           <Segmented<StatusFilter>
             value={status}
@@ -298,16 +302,23 @@ export const B2CUserManagementScreen = () => {
                       </Text>
                     )}
                     {!!u.managerName && <Text style={[s.sub, { color: T.dim }]}>under {u.managerName}</Text>}
+                    {/* Edit stays on your own row — that is how an admin resets their own
+                        password. Deactivate and Delete do not: the server refuses both for
+                        your own account, so offering them only invites a failed tap. */}
                     <View style={s.actions}>
-                      <IconBtn kind="view" label={u.isActive ? 'Deactivate' : 'Activate'} onPress={() => handleToggle(u)}>
-                        <Power size={15} color={u.isActive ? T.success : T.dim} strokeWidth={ICON_STROKE} />
-                      </IconBtn>
+                      {!isSelf(u) && (
+                        <IconBtn kind="view" label={u.isActive ? 'Deactivate' : 'Activate'} onPress={() => handleToggle(u)}>
+                          <Power size={15} color={u.isActive ? T.success : T.dim} strokeWidth={ICON_STROKE} />
+                        </IconBtn>
+                      )}
                       <IconBtn kind="edit" label="Edit" onPress={() => openEdit(u)}>
                         <Edit2 size={15} color={T.text} strokeWidth={ICON_STROKE} />
                       </IconBtn>
-                      <IconBtn kind="del" label="Delete" onPress={() => setDeleteTarget(u)}>
-                        <Trash2 size={15} color={T.danger} strokeWidth={ICON_STROKE} />
-                      </IconBtn>
+                      {!isSelf(u) && (
+                        <IconBtn kind="del" label="Delete" onPress={() => setDeleteTarget(u)}>
+                          <Trash2 size={15} color={T.danger} strokeWidth={ICON_STROKE} />
+                        </IconBtn>
+                      )}
                     </View>
                   </View>
                 </ListCard>

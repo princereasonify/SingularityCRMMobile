@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from './client';
 import { LoginResponse, UserDto, Region, Zone } from '../types';
 import { DeviceInfoPayload } from '../utils/deviceInfo';
@@ -66,6 +67,25 @@ export const authApi = {
   // valid for its full lifetime after the user has "logged out".
   logout: (refreshToken?: string | null) =>
     apiClient.post('/auth/logout', { refreshToken: refreshToken ?? '' }),
+
+  /**
+   * Self-service password change — every signed-in user, B2B and B2C, every role. The
+   * server resolves which table the account lives in from the caller's own role claim,
+   * so nothing role-specific is sent.
+   *
+   * The stored refresh token is passed along so the server can revoke every OTHER
+   * session on the account (that is what a password change is for) while leaving this
+   * device signed in. B2C accounts hold no server-side refresh token; the field is
+   * simply ignored for them.
+   */
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const refreshToken = await AsyncStorage.getItem('refresh_token');
+    return apiClient.post('/auth/change-password', {
+      currentPassword,
+      newPassword,
+      refreshToken: refreshToken ?? '',
+    });
+  },
 
   getPendingUsers: () => apiClient.get<UserDto[]>('/auth/pending-users'),
 
