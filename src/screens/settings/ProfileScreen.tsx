@@ -31,6 +31,7 @@ import { ICON_STROKE } from '../../components/common/Icon';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
+import { isB2CRole } from '../../types';
 
 const ROLE_LABEL: Record<string, string> = {
   FO: 'Field Officer',
@@ -41,8 +42,8 @@ const ROLE_LABEL: Record<string, string> = {
   B2CAdmin: 'B2C Admin',
   Agent: 'Sales Agent',
   Counselor: 'Counselor',
+  CallingAgent: 'Calling Agent',
 };
-const B2C_ROLES = ['B2CAdmin', 'Agent', 'Counselor'];
 
 // The server's rules (AuthService.ValidatePassword), mirrored so the user can see which
 // one is still unmet instead of being told them one rejection at a time.
@@ -59,7 +60,7 @@ export const ProfileScreen = ({ navigation }: any) => {
   const { user, updateUser } = useAuth();
   // B2C accounts live in a separate table with no avatar/home-location/org endpoints,
   // so those B2B-only bits are hidden for them (they'd 401 / dead-navigate otherwise).
-  const isB2C = B2C_ROLES.includes(user?.role || '');
+  const isB2C = isB2CRole(user?.role);
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
 

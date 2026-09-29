@@ -35,6 +35,7 @@ export const FO_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
       { route: 'Activity Log', label: 'Activity Log', icon: 'Activity' },
     ],
   },
@@ -98,6 +99,7 @@ export const ZH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
   {
@@ -163,6 +165,7 @@ export const RH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
   {
@@ -230,6 +233,7 @@ export const SH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
   {
@@ -294,6 +298,7 @@ export const SCA_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
   {
@@ -392,7 +397,15 @@ export const B2CAdmin_NAV: NavGroup[] = [
   },
   {
     label: 'Support',
-    items: [{ route: 'Counseling', label: 'Counseling', icon: 'Users' }],
+    items: [
+      { route: 'Counseling', label: 'Counseling', icon: 'Users' },
+      // Named for WHOSE work it shows, matching "Counselors" above. The call queue itself is
+      // deliberately absent here — an admin does not work it day to day; it stays reachable via
+      // the "Open queue →" link on this screen instead of a permanent nav row (web parity).
+      { route: 'Calling Agents', label: 'Calling Agents', icon: 'Performance' },
+      // Which calling agent owns which family — a caller sees only what is assigned here.
+      { route: 'Caller Assignments', label: 'Caller Assignments', icon: 'Users' },
+    ],
   },
   // Billing is hidden from the B2C admin on both platforms (web's Sidebar.jsx dropped it too).
   // The screen and its route stay registered, so restoring it is a one-line change.
@@ -485,6 +498,34 @@ export const Counselor_NAV: NavGroup[] = [
 ];
 
 /**
+ * CallingAgent — desk-based call-centre role. Deliberately short: a caller works the phone, so
+ * no route planner, no tracking, no allowances. Mirrors web's Sidebar.jsx CallingAgent array
+ * exactly (Dashboard, Call Queue, Parent Requests, My Leads, My Calls, Usage Report).
+ */
+export const CallingAgent_NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ route: 'Dashboard', label: 'Dashboard', icon: 'Dashboard' }],
+  },
+  {
+    label: 'Calling',
+    items: [
+      { route: 'Call Queue', label: 'Call Queue', icon: 'Activity' },
+      // Things the PARENT started, kept separate from the sales queue on purpose: a callback
+      // means "we promised to ring back", a parent request means "they are waiting on us".
+      { route: 'Parent Requests', label: 'Parent Requests', icon: 'Bell' },
+      // Only the families an admin assigned to this caller (Caller Assignments).
+      { route: 'My Leads', label: 'My Leads', icon: 'Leads' },
+      { route: 'My Calls', label: 'My Calls', icon: 'Record' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [{ route: 'Usage Report', label: 'Usage Report', icon: 'Performance' }],
+  },
+];
+
+/**
  * MANAGER_NAV — extra Team section an Agent who is also a Manager gets
  * (mirrors web's `MANAGER_NAV`, appended when `role === 'Agent' && isManager`).
  */
@@ -510,6 +551,7 @@ export const NAV_BY_ROLE: Record<string, NavGroup[]> = {
   B2CAdmin: B2CAdmin_NAV,
   Agent: Agent_NAV,
   Counselor: Counselor_NAV,
+  CallingAgent: CallingAgent_NAV,
 };
 
 /** The group a route belongs to — used by the topbar breadcrumb ("Role · Group"). */

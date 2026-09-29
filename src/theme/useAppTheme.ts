@@ -1,9 +1,7 @@
 import { useTheme } from '../context/ThemeContext';
 import { useAuthOptional } from '../context/AuthContext';
 import { getAppThemeFor, AppTheme, ThemeFamily } from './appTheme';
-import { UserRole } from '../types';
-
-const B2C_ROLES: readonly UserRole[] = ['B2CAdmin', 'Agent', 'Counselor'];
+import { isB2CRole } from '../types';
 
 /**
  * The signed-in user's product family. B2C roles get the green palette; every
@@ -19,7 +17,7 @@ const B2C_ROLES: readonly UserRole[] = ['B2CAdmin', 'Agent', 'Counselor'];
 const useThemeFamily = (): ThemeFamily => {
   const auth = useAuthOptional();
   const user = auth?.user;
-  return user && B2C_ROLES.includes(user.role) ? 'b2c' : 'b2b';
+  return isB2CRole(user?.role) ? 'b2c' : 'b2b';
 };
 
 /** The app content theme for the current user-chosen light/dark mode + product family. */

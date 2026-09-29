@@ -45,6 +45,8 @@ import { LeadDetailScreen } from '../screens/leads/LeadDetailScreen';
 import { AddLeadScreen } from '../screens/leads/AddLeadScreen';
 import { ActivityLogScreen } from '../screens/activities/ActivityLogScreen';
 import { CreateDealScreen } from '../screens/deals/CreateDealScreen';
+import { SalesDocumentsListScreen } from '../screens/salesDocs/SalesDocumentsListScreen';
+import { SalesDocumentEditorScreen } from '../screens/salesDocs/SalesDocumentEditorScreen';
 import { DealEstimateScreen } from '../screens/deals/DealEstimateScreen';
 import { PipelineScreen } from '../screens/pipeline/PipelineScreen';
 import { TargetsScreen } from '../screens/targets/TargetsScreen';
@@ -143,6 +145,12 @@ import { B2CMyDayScreen } from '../screens/b2c/B2CMyDayScreen';
 import { B2CRoutePlannerScreen } from '../screens/b2c/B2CRoutePlannerScreen';
 import { B2CActivityLogScreen } from '../screens/b2c/B2CActivityLogScreen';
 import { B2CUsageReportScreen } from '../screens/b2c/B2CUsageReportScreen';
+import { B2CCallingDashboardScreen } from '../screens/b2c/B2CCallingDashboardScreen';
+import { B2CCallQueueScreen } from '../screens/b2c/B2CCallQueueScreen';
+import { B2CMyCallsScreen } from '../screens/b2c/B2CMyCallsScreen';
+import { B2CParentRequestsScreen } from '../screens/b2c/B2CParentRequestsScreen';
+import { B2CCallerAssignmentsScreen } from '../screens/b2c/B2CCallerAssignmentsScreen';
+import { B2CCallCenterScreen } from '../screens/b2c/B2CCallCenterScreen';
 import { B2CMyLeavesScreen } from '../screens/b2c/B2CMyLeavesScreen';
 import { B2CMyAllowancesScreen } from '../screens/b2c/B2CMyAllowancesScreen';
 import { B2CMyExpensesScreen } from '../screens/b2c/B2CMyExpensesScreen';
@@ -208,6 +216,8 @@ function FODrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Activity Log" component={ActivityLogScreen} />
       <Drawer.Screen name="Demos" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
@@ -278,6 +288,8 @@ function ZHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
       <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
@@ -346,6 +358,8 @@ function RHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
       <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
@@ -414,6 +428,8 @@ function SHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
       <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
@@ -484,6 +500,8 @@ function SCADrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
       <Drawer.Screen name="Onboarding" component={OnboardListScreen} />
@@ -566,6 +584,13 @@ function B2CAdminDrawer() {
       <Drawer.Screen name="Reports" component={B2CReportsScreen} />
       <Drawer.Screen name="Usage Report" component={B2CUsageReportScreen} />
       <Drawer.Screen name="Counseling" component={B2CCounselingScreen} />
+      {/* Named for whose work it shows, matching "Counselors" above. */}
+      <Drawer.Screen name="Calling Agents" component={B2CCallCenterScreen} />
+      {/* Which calling agent owns which family — a caller sees only what is assigned here. */}
+      <Drawer.Screen name="Caller Assignments" component={B2CCallerAssignmentsScreen} />
+      {/* The queue itself is deliberately absent from the sidebar (an admin does not work it
+          day to day) but stays reachable — the "Open queue →" link on Calling Agents uses it. */}
+      <Drawer.Screen name="Call Queue" component={B2CCallQueueScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       {/* Deliberately off the B2C admin sidebar (web dropped it too), but kept registered
           and reachable. Marked hidden to match every other reachable-but-unlisted route. */}
       <Drawer.Screen name="Billing" component={B2CBillingScreen} options={{ drawerItemStyle: { display: 'none' } }} />
@@ -664,6 +689,37 @@ function CounselorDrawer() {
   );
 }
 
+// ─── Calling Agent Drawer ───────────────────────────────────────────────────
+// Desk-based call-centre role: no GPS, no field screens — just the phone. Deliberately short,
+// matching web's own comment on the sidebar array ("a caller works the phone").
+function CallingAgentDrawer() {
+  const T = useAppTheme();
+  const [collapsed, setCollapsed] = useState(false);
+  const permanent = isTabletDevice;
+  return (
+    <SidebarWidthProvider width={permanent ? (collapsed ? SIDEBAR_RAIL_W : SIDEBAR_W) : 0}>
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      drawerContent={(p) => <AppSidebar {...p} collapsed={collapsed} onToggleCollapse={() => setCollapsed(c => !c)} />}
+      screenOptions={b2cScreenOptions(T, permanent, collapsed)}
+    >
+      {/* Names MUST equal navConfig CallingAgent_NAV routes. Order mirrors web. */}
+      <Drawer.Screen name="Dashboard" component={B2CCallingDashboardScreen} />
+      <Drawer.Screen name="Call Queue" component={B2CCallQueueScreen} />
+      {/* Things the PARENT started, kept separate from the sales queue on purpose. */}
+      <Drawer.Screen name="Parent Requests" component={B2CParentRequestsScreen} />
+      {/* Only the families an admin assigned to this caller (Caller Assignments). */}
+      <Drawer.Screen name="My Leads" component={B2CLeadsListScreen} />
+      <Drawer.Screen name="My Calls" component={B2CMyCallsScreen} />
+      <Drawer.Screen name="Usage Report" component={B2CUsageReportScreen} />
+
+      <Drawer.Screen name="Profile" component={ProfileScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+    </Drawer.Navigator>
+    </SidebarWidthProvider>
+  );
+}
+
 const getRoleNavigator = (role: string) => {
   switch (role) {
     case 'ZH':  return ZHDrawer;
@@ -673,6 +729,7 @@ const getRoleNavigator = (role: string) => {
     case 'B2CAdmin':  return B2CAdminDrawer;
     case 'Agent':     return AgentDrawer;
     case 'Counselor': return CounselorDrawer;
+    case 'CallingAgent': return CallingAgentDrawer;
     default:    return FODrawer;
   }
 };

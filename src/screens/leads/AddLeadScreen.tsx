@@ -58,6 +58,9 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
     source: 'Field Visit', value: '', closeDate: '',
     notes: '',
     foId: '' as string | number,
+    // Edit only — carried through to submitLead's expectedUpdatedAt so a concurrent
+    // edit elsewhere gets caught as a 409 instead of silently overwritten.
+    updatedAt: '' as string | undefined,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -82,6 +85,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
           closeDate: (l.closeDate ?? '').toString().split('T')[0],
           notes: l.notes ?? '',
           foId: l.foId ?? '',
+          updatedAt: l.updatedAt,
         });
       })
       .catch(() => Alert.alert('Error', 'Could not load this lead.'));
@@ -184,6 +188,9 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
         closeDate: (form.closeDate || null) as any,
         notes: form.notes.trim(),
         foId: (role !== 'FO' && form.foId ? Number(form.foId) : null) as any,
+        // The version this form was opened on — the server refuses (409) if someone
+        // saved since (matches web's LeadDetail.jsx). Absent on create.
+        ...(isEdit && form.updatedAt ? { expectedUpdatedAt: form.updatedAt } : {}),
       };
       if (isEdit) await leadsApi.updateLead(editLeadId!, payload as any);
       else await leadsApi.createLead(payload as any);

@@ -23,6 +23,7 @@ const ROLE_NAME: Record<string, string> = {
   B2CAdmin: 'B2C Admin',
   Agent: 'B2C Agent',
   Counselor: 'Counselor',
+  CallingAgent: 'Calling Agent',
 };
 
 /**

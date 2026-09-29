@@ -9,6 +9,7 @@ import {
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { B2CLeadListDto, B2C_LEAD_STAGES } from '../../types/b2c';
+import { CoinBalance } from '../../components/b2c/CoinBalance';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { AppTheme } from '../../theme';
@@ -225,6 +226,9 @@ export const B2CTeamLeadsScreen = ({ navigation }: any) => {
                         {[lead.grade, lead.board].filter(Boolean).join(' · ')}
                       </Text>
                     )}
+                    <View style={s.subRow}>
+                      <CoinBalance value={lead.coinBalance} />
+                    </View>
                   </View>
                 </ListCard>
               ))}

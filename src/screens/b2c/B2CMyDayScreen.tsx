@@ -22,6 +22,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
 import { isoDate, todayStr, timeOnly } from '../../utils/dates';
+import { distanceHint, confidenceLabel } from '../../utils/distanceProvenance';
 
 // Continuous high-accuracy capture: watchPosition streams fixes as the device moves; we
 // forward the freshest fix on a throttled cadence so the server gets dense-but-bounded data.
@@ -353,6 +354,9 @@ export const B2CMyDayScreen = () => {
         pings: me?.todayPingCount ?? 0,
         startedAt: session?.startedAt || me?.firstPingAt,
         endedAt: null as string | null,
+        distanceMethod: me?.distanceMethod ?? null,
+        distanceStatus: me?.distanceStatus ?? null,
+        matchConfidence: me?.matchConfidence ?? null,
       }
     : {
         route: history?.route || [],
@@ -361,6 +365,9 @@ export const B2CMyDayScreen = () => {
         pings: history?.pingCount ?? 0,
         startedAt: history?.startedAt,
         endedAt: (history?.endedAt ?? null) as string | null,
+        distanceMethod: history?.distanceMethod ?? null,
+        distanceStatus: history?.distanceStatus ?? null,
+        matchConfidence: history?.matchConfidence ?? null,
       };
 
   const points = useMemo(
@@ -427,7 +434,14 @@ export const B2CMyDayScreen = () => {
 
   const stats = (
     <View style={s.grid}>
-      <StatTile style={{ width: kpiWidth }} label="Distance" value={`${Number(view.distance).toFixed(1)} km`} icon={<RouteIcon size={15} color={T.accent} />} />
+      <StatTile
+        style={{ width: kpiWidth }}
+        label="Distance"
+        value={`${Number(view.distance).toFixed(1)} km`}
+        icon={<RouteIcon size={15} color={T.accent} />}
+        sub={[distanceHint(view.distanceMethod, view.distanceStatus), confidenceLabel(view.matchConfidence)]
+          .filter(Boolean).join(' · ') || undefined}
+      />
       <StatTile style={{ width: kpiWidth }} label="Duration" value={fmtDuration(view.duration)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
       <StatTile style={{ width: kpiWidth }} label="Start" value={fmtTime(view.startedAt)} tint={T.success} icon={<Play size={15} color={T.success} />} />
       <StatTile style={{ width: kpiWidth }} label="Location pings" value={view.pings} tint={T.warning} icon={<Gauge size={15} color={T.warning} />} />

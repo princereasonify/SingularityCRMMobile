@@ -141,7 +141,11 @@ export const PayoutFields = ({ values, onChange, colW }: {
 // A B2CAdmin can create another B2CAdmin. Mobile stays required for every role: it is the
 // number the lead-creation WhatsApp goes to, so an account without one silently stops
 // receiving the details of every lead that user enters.
-type Role = 'Agent' | 'Counselor' | 'B2CAdmin';
+type Role = 'Agent' | 'Counselor' | 'CallingAgent' | 'B2CAdmin';
+
+// Roles paid a commission, and so the only ones a payout/KYC block belongs on. A Calling
+// Agent is salaried call-centre staff — mirrors web's B2CCreateUser.jsx COMMISSIONED_ROLES.
+const COMMISSIONED_ROLES: Role[] = ['Agent', 'Counselor', 'B2CAdmin'];
 
 const emptyForm = {
   name: '', email: '', mobile: '', address: '', password: '',
@@ -184,13 +188,15 @@ export const B2CCreateUserScreen = () => {
   const mobileValid = /^\d{10}$/.test(form.mobile);
   const mobileError = form.mobile.length > 0 && !mobileValid ? 'Enter a valid 10-digit mobile number' : '';
   const passwordError = form.password.length > 0 && form.password.length < 6 ? 'At least 6 characters' : '';
+  const collectsPayout = COMMISSIONED_ROLES.includes(form.role);
   const kyc = payoutState(form);
 
   const canSubmit = !!form.name.trim() && !!form.email.trim() && mobileValid
     // KYC is optional: block on a malformed entry, never on an empty one. An admin creating
     // an account rarely has the joiner's PAN and bank details to hand, and requiring them
-    // blocked the account itself. They stay editable afterwards.
-    && form.password.length >= 6 && !kyc.hasErrors;
+    // blocked the account itself. They stay editable afterwards. Not applicable at all to a
+    // Calling Agent, who never sees the payout fields in the first place.
+    && form.password.length >= 6 && (!collectsPayout || !kyc.hasErrors);
 
   const submit = async () => {
     if (!canSubmit || saving) return;
@@ -206,7 +212,7 @@ export const B2CCreateUserScreen = () => {
         bio: form.role === 'Counselor' ? form.bio.trim() || undefined : undefined,
         isManager: form.role === 'Agent' ? form.isManager : false,
         agentIds: form.role === 'Agent' && form.isManager ? form.agentIds : undefined,
-        ...payoutPayload(form),
+        ...(collectsPayout ? payoutPayload(form) : {}),
       };
       const res = await b2cUserService.createUser(body);
       const referralCode = res.data?.referralCode;
@@ -255,7 +261,7 @@ export const B2CCreateUserScreen = () => {
           <Segmented<Role>
             value={form.role}
             onChange={v => set('role', v)}
-            options={[{ label: 'Agent', value: 'Agent' }, { label: 'Counselor', value: 'Counselor' }, { label: 'Admin', value: 'B2CAdmin' }]}
+            options={[{ label: 'Agent', value: 'Agent' }, { label: 'Counselor', value: 'Counselor' }, { label: 'Caller', value: 'CallingAgent' }, { label: 'Admin', value: 'B2CAdmin' }]}
           />
         </Field>
         <View style={s.grid}>
@@ -296,16 +302,19 @@ export const B2CCreateUserScreen = () => {
         )}
       </Card>
 
-      {/* Payout / KYC */}
-      <Card style={s.card}>
-        <Text style={[s.sectionTitle, { color: T.accent }]}>Payout Details</Text>
-        <Text style={[s.sectionHint, { color: T.dim }]}>
-          All four are needed before commission can be paid.
-        </Text>
-        <View style={s.grid}>
-          <PayoutFields values={form} onChange={(k, v) => set(k, v)} colW={colW} />
-        </View>
-      </Card>
+      {/* Payout / KYC — commissioned roles only. A Calling Agent is salaried, not paid a
+          commission, so these fields would just be personal data the business never uses. */}
+      {collectsPayout && (
+        <Card style={s.card}>
+          <Text style={[s.sectionTitle, { color: T.accent }]}>Payout Details</Text>
+          <Text style={[s.sectionHint, { color: T.dim }]}>
+            All four are needed before commission can be paid.
+          </Text>
+          <View style={s.grid}>
+            <PayoutFields values={form} onChange={(k, v) => set(k, v)} colW={colW} />
+          </View>
+        </Card>
+      )}
 
       {/* Manager — agents only */}
       {form.role === 'Agent' && (

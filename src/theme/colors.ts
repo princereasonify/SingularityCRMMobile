@@ -96,9 +96,11 @@ export const Colors = {
     SCA: { primary: Palette.rose600,   light: Palette.rose50,   dark: Palette.rose900   },
 
     // B2C accents — teal (admin) / purple (counselor) per spec, agent gets a teal-leaning cyan.
-    B2CAdmin:  { primary: Palette.teal500,   light: Palette.teal50,   dark: Palette.teal700   },
-    Agent:     { primary: Palette.cyan500,   light: Palette.teal50,   dark: Palette.teal700   },
-    Counselor: { primary: Palette.purple600, light: Palette.purple50, dark: Palette.purple900 },
+    B2CAdmin:     { primary: Palette.teal500,   light: Palette.teal50,   dark: Palette.teal700   },
+    Agent:        { primary: Palette.cyan500,   light: Palette.teal50,   dark: Palette.teal700   },
+    Counselor:    { primary: Palette.purple600, light: Palette.purple50, dark: Palette.purple900 },
+    // Amber — matches web's Tag color="warn" for this role (B2CUserManagement.jsx).
+    CallingAgent: { primary: Palette.yellow500, light: Palette.orange50, dark: Palette.orange800 },
   } as Record<UserRole, { primary: string; light: string; dark: string }>,
 
   // ─── Stage Colors ────────────────────────────────────────────────────────────

@@ -1,8 +1,19 @@
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-// B2B roles: FO/ZH/RH/SH/SCA. B2C roles: B2CAdmin/Agent/Counselor — separate product,
-// separate drawers/dashboards, gated by the same login → role plumbing.
-export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH' | 'SCA' | 'B2CAdmin' | 'Agent' | 'Counselor';
+// B2B roles: FO/ZH/RH/SH/SCA. B2C roles: B2CAdmin/Agent/Counselor/CallingAgent — separate
+// product, separate drawers/dashboards, gated by the same login → role plumbing.
+// CallingAgent is desk-based call-centre staff (no GPS, no field screens); the mobile app
+// doesn't have a drawer built for it yet — see RoleUnsupportedScreen.
+export type UserRole = 'FO' | 'ZH' | 'RH' | 'SH' | 'SCA' | 'B2CAdmin' | 'Agent' | 'Counselor' | 'CallingAgent';
+
+// Single source of truth for "is this a B2C role" — mirrors the backend's
+// UserRole.IsB2CRole(). A hardcoded copy of this list going stale (missing a newly
+// added role) has already caused a real bug once (see NotificationsController fix,
+// commit 455b173) — every place that needs this check should import it from here
+// instead of re-listing the roles.
+export const B2C_ROLES: readonly UserRole[] = ['B2CAdmin', 'Agent', 'Counselor', 'CallingAgent'];
+export const isB2CRole = (role?: string | null): boolean =>
+  !!role && (B2C_ROLES as readonly string[]).includes(role);
 
 export type LeadStage =
   | 'NewLead'
@@ -131,6 +142,9 @@ export interface LeadDto extends LeadListDto {
   closeDate?: string;
   notes?: string;
   lossReason?: string;
+  /** Last saved — send back as CreateLeadRequest.expectedUpdatedAt on edit, or the
+   *  server refuses (409) if someone else saved since this was loaded. */
+  updatedAt?: string;
   contact?: {
     name: string;
     designation: string;
@@ -506,6 +520,9 @@ export interface CreateLeadRequest {
   contactPhone: string;
   contactEmail?: string;
   foId?: number;
+  /** Edit only — the lead's `updatedAt` when the editor opened it. The server 409s
+   *  ("changed by someone else") if it was saved again since. Omit on create. */
+  expectedUpdatedAt?: string;
 }
 
 /**
@@ -736,6 +753,9 @@ export interface School {
   lastVisitDate?: string;
   assignedToId?: number;       // SchoolListDto.AssignedToId
   assignedToName?: string;     // SchoolListDto.AssignedToName
+  /** Only present on the full detail fetch (SchoolDto), not the list row
+   *  (SchoolListDto) — see CreateSchoolRequest.expectedUpdatedAt. */
+  updatedAt?: string;
 }
 
 // ── Bulk school upload ──
@@ -788,6 +808,9 @@ export interface CreateSchoolRequest {
   studentCount?: number;
   principalName?: string;
   principalPhone?: string;
+  /** Edit only — the school's `updatedAt` when the editor opened it. The server 409s
+   *  ("changed by someone else") if it was saved again since. Omit on create. */
+  expectedUpdatedAt?: string;
 }
 
 // ─── Contact ──────────────────────────────────────────────────────────────────

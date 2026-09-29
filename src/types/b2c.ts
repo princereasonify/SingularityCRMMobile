@@ -123,6 +123,13 @@ export interface B2CLeadListDto {
   nationality?: string | null;
   reasonifySyncStatus?: string | null;
   reasonifyStudentId?: number | null;
+  /**
+   * The student's LIVE Reasonify coin balance, read from Reasonify at request time. NULL
+   * means "unknown" (no Reasonify account yet, no wallet, or Reasonify didn't answer) —
+   * a real 0 is a student who has spent everything. Never collapse null into 0; render it
+   * as a dash instead (see components/b2c/CoinBalance).
+   */
+  coinBalance?: number | null;
   stage: string;
   priority: string;
   leadScore: number;

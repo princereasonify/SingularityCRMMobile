@@ -14,14 +14,15 @@ export interface CreateB2CUserBody {
   address?: string; bio?: string; isManager?: boolean; agentIds?: number[];
 
   /**
-   * Payout / KYC. All four are [Required] on the server's create DTO — a staff member who
-   * cannot be paid is not a usable record, so they are collected up front rather than chased
-   * later. Validated against the same rules as PayoutValidation server-side.
+   * Payout / KYC. All four are OPTIONAL on the server's create DTO (CreateB2CUserRequest) —
+   * format is still validated server-side when a value IS supplied. The Create User screen
+   * omits them entirely for CallingAgent (salaried, not commissioned), so these must stay
+   * optional here too.
    */
-  panNumber: string;
-  aadhaarNumber: string;
-  accountNumber: string;
-  ifscCode: string;
+  panNumber?: string;
+  aadhaarNumber?: string;
+  accountNumber?: string;
+  ifscCode?: string;
 }
 export interface UpdateB2CUserBody {
   name?: string; mobile?: string; address?: string; bio?: string;

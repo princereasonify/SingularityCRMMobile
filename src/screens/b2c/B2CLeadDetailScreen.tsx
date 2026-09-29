@@ -4,12 +4,13 @@ import {
 import {
   ArrowLeft, Phone, Mail, MapPin, User, Calendar, CalendarClock, Edit2, CheckCircle2,
   UserCheck, UserPlus, Clock, Trash2, AlertTriangle, GraduationCap, School, Users,
-  Sparkles, GitBranch, History, Eye, RefreshCw, Globe, Camera} from 'lucide-react-native';
+  Sparkles, GitBranch, History, Eye, RefreshCw, Globe, Camera, Coins} from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, Field, Input, Trigger, Dropdown, StatusBadge, FormModal, ConfirmModal,
 } from '../../components/crud';
 import { Screen, Card, SectionLabel } from '../../components/ui';
+import { coinIconTone, coinValueTone, coinBalanceText } from '../../components/b2c/CoinBalance';
 import { launchCamera, Asset } from 'react-native-image-picker';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
@@ -790,7 +791,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   );
 
   // ── Student info field list (web parity) ──
-  const infoFields = lead ? [
+  const infoFields: {
+    icon: React.ReactNode; label: string; value: string; onPress?: () => void; color?: string;
+  }[] = lead ? [
     { icon: <Phone size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Mobile', value: lead.mobileNumber, onPress: () => Linking.openURL(`tel:${lead.mobileNumber}`) },
     { icon: <Mail size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Email', value: lead.email || DASH, onPress: lead.email ? () => Linking.openURL(`mailto:${lead.email}`) : undefined },
     { icon: <Users size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Parent', value: lx.parentName || DASH },
@@ -804,6 +807,12 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     { icon: <Calendar size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'DOB', value: lead.dateOfBirth ? formatDate(lead.dateOfBirth) : DASH },
     { icon: <Clock size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Timeline', value: spaced(lead.enrollmentTimeline) || DASH },
     { icon: <User size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Priority', value: lead.priority || 'Normal' },
+    // The live Reasonify wallet, same figure and same null-vs-zero rule as the leads-list
+    // column — a lead and the row it was opened from must never disagree.
+    {
+      icon: <Coins size={15} color={coinIconTone(T, lead.coinBalance)} strokeWidth={ICON_STROKE} />,
+      label: 'Coins', value: coinBalanceText(lead.coinBalance), color: coinValueTone(T, lead.coinBalance),
+    },
   ] : [];
 
   const stageBooking = stageForm.stage === 'CounselingBooked';
@@ -946,7 +955,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                   <View style={[s.infoIcon, { backgroundColor: T.cardAlt }]}>{f.icon}</View>
                   <TouchableOpacity disabled={!f.onPress} activeOpacity={0.7} onPress={f.onPress} style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[s.infoLabel, { color: T.dim }]}>{f.label}</Text>
-                    <Text style={[s.infoValue, { color: f.onPress ? T.accent : T.text }]} numberOfLines={2}>{f.value}</Text>
+                    <Text style={[s.infoValue, { color: f.color ?? (f.onPress ? T.accent : T.text) }]} numberOfLines={2}>{f.value}</Text>
                   </TouchableOpacity>
                 </View>
               ))}

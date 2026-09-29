@@ -21,7 +21,7 @@ const PAGE_SIZE = 20;
 const initialsOf = (name?: string) =>
   (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
-type RoleFilter = '' | 'Agent' | 'Counselor' | 'B2CAdmin';
+type RoleFilter = '' | 'Agent' | 'Counselor' | 'B2CAdmin' | 'CallingAgent';
 type StatusFilter = '' | 'active' | 'inactive';
 
 // Local alias — this screen only ever deals with the roster list shape.
@@ -106,7 +106,7 @@ export const B2CUserManagementScreen = () => {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const roleColor = (r: string) => (r === 'Counselor' ? T.info : T.accent);
+  const roleColor = (r: string) => (r === 'Counselor' ? T.info : r === 'CallingAgent' ? T.warning : T.accent);
 
   // ── Edit ────────────────────────────────────────────────────────────────
   const openEdit = (u: B2CUser) => {
@@ -260,7 +260,7 @@ export const B2CUserManagementScreen = () => {
             value={role}
             onChange={setRole}
             style={s.filterCell}
-            options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }, { label: 'Admins', value: 'B2CAdmin' }]}
+            options={[{ label: 'All', value: '' }, { label: 'Agents', value: 'Agent' }, { label: 'Counselors', value: 'Counselor' }, { label: 'Callers', value: 'CallingAgent' }, { label: 'Admins', value: 'B2CAdmin' }]}
           />
           <Segmented<StatusFilter>
             value={status}

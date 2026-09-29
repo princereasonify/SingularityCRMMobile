@@ -39,6 +39,8 @@ export const ICON_PATHS = {
   Bell: 'M6 8.5a4 4 0 0 1 8 0c0 3.4 1.5 4.5 1.5 4.5H4.5S6 11.9 6 8.5ZM8.4 15.5a1.8 1.8 0 0 0 3.2 0',
   Sun: 'M12 3v1.8M12 19.2V21M3 12h1.8M19.2 12H21M5.6 5.6l1.3 1.3M17.1 17.1l1.3 1.3M5.6 18.4l1.3-1.3M17.1 6.9l1.3-1.3M12 8a4 4 0 100 8 4 4 0 000-8z',
   Moon: 'M19 13.5A8 8 0 0 1 10.5 5a8 8 0 1 0 8.5 8.5Z',
+  // Torn-edge receipt slip with three itemised lines — Purchase Order & Invoice nav entry.
+  Receipt: 'M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 21z M9 8h6M9 12h6M9 16h4',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

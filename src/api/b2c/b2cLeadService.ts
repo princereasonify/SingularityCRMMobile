@@ -56,9 +56,12 @@ export const b2cLeadService = {
 
   deleteLead: (id: number) => apiClient.delete(`${BASE}/${id}`),
 
-  // B2CAdmin only — first assignment of an unassigned lead to an agent.
-  assignLead: (id: number, agentId: number) =>
-    apiClient.post(`${BASE}/${id}/assign`, { agentId }),
+  // B2CAdmin only — first assignment of an unassigned lead to an agent. appointmentAt/Notes
+  // optionally book the family's visit in the same call (AssignLeadRequest) — used by the
+  // Calling Agent's Call Queue hand-off, which agrees a slot with the parent and hands the
+  // agent over together rather than as two requests that could leave one half done.
+  assignLead: (id: number, agentId: number, appointmentAt?: string, appointmentNotes?: string) =>
+    apiClient.post(`${BASE}/${id}/assign`, { agentId, appointmentAt, appointmentNotes }),
 
   // B2CAdmin only — move an already-assigned lead to a different agent (reason required).
   reassignLead: (id: number, agentId: number, reason: string) =>

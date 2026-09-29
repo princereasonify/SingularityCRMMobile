@@ -375,6 +375,11 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         longitude: longitude ?? 0,
         geofenceRadiusMetres: 100, // DTO spells it Metres; Meters never bound
       };
+      // The version this form was opened on — the server refuses (409) if someone saved
+      // since (matches web's SchoolDetail.jsx). Only present when `existing` came from the
+      // full detail fetch (SchoolDetailScreen); a list-row edit has no updatedAt to send,
+      // same as before this existed.
+      if (isEdit && existing?.updatedAt) data.expectedUpdatedAt = existing.updatedAt;
       let schoolId: number | undefined;
       if (isEdit) {
         await schoolsApi.update(existing!.id, data);

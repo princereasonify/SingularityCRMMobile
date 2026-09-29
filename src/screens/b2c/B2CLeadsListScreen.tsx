@@ -12,6 +12,7 @@ import {
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
 import { B2CLeadListDto, B2C_LEAD_STAGES, B2C_LEAD_SOURCES } from '../../types/b2c';
 import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
+import { CoinBalance } from '../../components/b2c/CoinBalance';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme';
@@ -344,6 +345,9 @@ export const B2CLeadsListScreen = () => {
                         </Text>
                       </View>
                     )}
+                    <View style={s.subRow}>
+                      <CoinBalance value={lead.coinBalance} />
+                    </View>
                     <View style={s.rowFooter}>
                       <View style={s.agentWrap}>
                         <User size={10} color={lead.assignedAgentName ? T.sub : T.dim} strokeWidth={ICON_STROKE} />

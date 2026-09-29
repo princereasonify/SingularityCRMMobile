@@ -66,10 +66,17 @@ export const ROLE_SPLASH: Record<UserRole, RoleSplashTheme> = {
     dark: '#12300f', base: '#7bb63a', bright: '#e0f2c6', ink: '#0b1f08',
     quote: 'Guide the choice. Change the future.',
   },
+  // Added after CallingAgent shipped on web (no source HTML entry yet) — warm amber,
+  // distinct from the other three B2C greens, echoing the role's "warn" tag on web.
+  CallingAgent: {
+    key: 'CallingAgent', short: 'CA', name: 'Calling Agent',
+    dark: '#2a1f08', base: '#c9932e', bright: '#f5dfa0', ink: '#1c1404',
+    quote: 'Every call is a door. Open it with warmth.',
+  },
 };
 
 /** Ring order around the lockup — matches the source's ROLES array order. */
-export const RING_ORDER: UserRole[] = ['FO', 'ZH', 'RH', 'SH', 'SCA', 'B2CAdmin', 'Agent', 'Counselor'];
+export const RING_ORDER: UserRole[] = ['FO', 'ZH', 'RH', 'SH', 'SCA', 'B2CAdmin', 'Agent', 'Counselor', 'CallingAgent'];
 
 /**
  * Scene boundaries in ms, verbatim from the source timeline:

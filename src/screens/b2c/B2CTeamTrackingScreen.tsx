@@ -13,6 +13,7 @@ import { b2cUserService } from '../../api/b2c/b2cUserService';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
 import { isoDate, todayStr, timeOnly } from '../../utils/dates';
+import { distanceHint, confidenceLabel } from '../../utils/distanceProvenance';
 
 const REFRESH_MS = 15000;
 const INDIA_REGION: MapRegion = { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 10, longitudeDelta: 10 };
@@ -53,6 +54,10 @@ interface RouteData {
   totalDistanceKm?: number;
   durationMinutes?: number;
   startedAt?: string;
+  /** How/whether the distance is finished — see utils/distanceProvenance. */
+  distanceMethod?: string;
+  distanceStatus?: string;
+  matchConfidence?: number;
 }
 
 // Normalize the /team-live payload (nested latestPing) into a flat shape for the UI.
@@ -151,7 +156,14 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
 
       {/* Stats */}
       <View style={s.statsRow}>
-        <StatTile style={{ width: statW }} label="Distance" value={`${Number(data?.totalDistanceKm ?? 0).toFixed(1)} km`} icon={<RouteIcon size={15} color={T.accent} />} />
+        <StatTile
+          style={{ width: statW }}
+          label="Distance"
+          value={`${Number(data?.totalDistanceKm ?? 0).toFixed(1)} km`}
+          icon={<RouteIcon size={15} color={T.accent} />}
+          sub={[distanceHint(data?.distanceMethod, data?.distanceStatus), confidenceLabel(data?.matchConfidence)]
+            .filter(Boolean).join(' · ') || undefined}
+        />
         <StatTile style={{ width: statW }} label="Duration" value={fmtDuration(data?.durationMinutes)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
         <StatTile style={{ width: statW }} label="Started" value={fmtTime(data?.startedAt) || '—'} tint={T.success} icon={<MapPin size={15} color={T.success} />} />
       </View>
