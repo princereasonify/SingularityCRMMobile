@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl,
   useWindowDimensions, TouchableOpacity, Alert,
@@ -13,6 +13,7 @@ import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { dashboardApi } from '../../api/dashboard';
 import { dealsApi } from '../../api/deals';
+import { TeamPlansPanel, useTeamActivities, hasTeamActivities } from './TeamPlansPanel';
 import { ZoneDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatRelativeDate } from '../../utils/formatting';
@@ -103,21 +104,31 @@ export const ZHDashboard = ({ navigation }: any) => {
   const [rejectNote, setRejectNote] = useState('');
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [loadFailed, setLoadFailed] = useState(false);
+  // Web parity (zh/ZoneDashboard.jsx): the team's approved activities for today/tomorrow.
+  const { teamActivities, reloadTeamActivities } = useTeamActivities();
+
+  // Latest request wins — an earlier period chip's response must not land over a later one.
+  const loadTokenRef = useRef(0);
 
   const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await dashboardApi.getZoneDashboard(p);
+      if (loadTokenRef.current !== token) return;
       setData(res.data);
       setLoadFailed(false);
     } catch {
+      if (loadTokenRef.current !== token) return;
       // Was `setData(DEMO_DATA)` — a fabricated zone dashboard renders identically
       // to a real one, so a ZH could read invented revenue and act on it. Mirrors
       // FODashboard: record the failure and show a real error state instead.
       setData(null);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [period]);
 
@@ -129,7 +140,7 @@ export const ZHDashboard = ({ navigation }: any) => {
     setApproveId(null);
     setApproving(dealId);
     try {
-      await dealsApi.approveDeal(dealId, true, 'Approved');
+      await dealsApi.approveDeal(dealId, true, null);
       fetch();
     } catch { Alert.alert('Error', 'Failed to approve deal'); }
     setApproving(null);
@@ -150,11 +161,13 @@ export const ZHDashboard = ({ navigation }: any) => {
 
   const submitReject = async () => {
     if (rejectId == null) return;
+    // Same rule as web Deals: a rejection must say why — the FO sees this note.
+    if (!rejectNote.trim()) { Alert.alert('Note required', 'Add a note saying why the deal is rejected.'); return; }
     const dealId = rejectId;
     setRejectId(null);
     setApproving(dealId);
     try {
-      await dealsApi.approveDeal(dealId, false, rejectNote.trim() || 'Rejected');
+      await dealsApi.approveDeal(dealId, false, rejectNote.trim());
       fetch();
     } catch { Alert.alert('Error', 'Failed to reject deal'); }
     setApproving(null);
@@ -163,12 +176,14 @@ export const ZHDashboard = ({ navigation }: any) => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetch(period);
-  }, [fetch, period]);
+    reloadTeamActivities();
+  }, [fetch, period, reloadTeamActivities]);
 
   const reload = useCallback(() => {
     setLoading(true);
     fetch(period);
-  }, [fetch, period]);
+    reloadTeamActivities();
+  }, [fetch, period, reloadTeamActivities]);
 
   const zoneName = data?.zoneName || user?.zone || 'Zone';
 
@@ -507,7 +522,7 @@ export const ZHDashboard = ({ navigation }: any) => {
               <Text numberOfLines={1} style={[s.foRank, { color: T.sub }]}>
                 {idx <= 2 ? ['🥇', '🥈', '🥉'][idx] : `${idx + 1}`}
               </Text>
-              <Avatar initials={fo.avatar} color={T.accent} />
+              <Avatar initials={fo.avatar || (fo.name || '?').trim().charAt(0).toUpperCase()} color={T.accent} />
               <View style={s.flexMin}>
                 <Text numberOfLines={1} style={[s.rowTitle, { color: T.text }]}>{fo.name}</Text>
                 <View style={s.foStats}>
@@ -610,6 +625,18 @@ export const ZHDashboard = ({ navigation }: any) => {
   const rowB: { key: string; node: React.ReactNode }[] = [];
   if (revenueChart.length > 0) rowB.push({ key: 'revenue', node: revenuePanel });
   if (agingDeals.length > 0) rowB.push({ key: 'aging', node: agingPanel });
+  if (hasTeamActivities(teamActivities)) {
+    rowB.push({
+      key: 'teamPlans',
+      node: (
+        <TeamPlansPanel
+          activities={teamActivities}
+          wide={wide}
+          onViewAll={() => navigation.navigate('WeeklyPlanScreen', { pushed: true })}
+        />
+      ),
+    });
+  }
 
   const panelRow = (cells: { key: string; node: React.ReactNode }[]) => {
     const w = wide ? `${100 / cells.length}%` : '100%';

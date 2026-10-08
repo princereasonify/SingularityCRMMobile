@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -136,19 +136,28 @@ export const FODashboard = ({ navigation }: any) => {
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [weekDays, setWeekDays] = useState<DayPlan[]>([]);
 
+  // Latest request wins: a fast tap through Today → Week → Month fires one request per
+  // chip, and an earlier period's response landing last must not overwrite the later one.
+  const loadTokenRef = useRef(0);
+
   const fetch = useCallback(async (p: 'today' | 'week' | 'month') => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await dashboardApi.getFODashboard(p);
+      if (loadTokenRef.current !== token) return;
       setData(res.data);
       setLoadFailed(false);
     } catch {
+      if (loadTokenRef.current !== token) return;
       // A zeroed dashboard is indistinguishable from "you did nothing today",
       // so record the failure and render a real error state instead.
       setData(null);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 

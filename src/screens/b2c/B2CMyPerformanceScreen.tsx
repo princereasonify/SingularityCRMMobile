@@ -14,7 +14,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme';
-import { useResponsive } from '../../hooks/useResponsive';
+import { useResponsive, tileFill } from '../../hooks/useResponsive';
 import { todayStr, shortDate } from '../../utils/dates';
 import { label } from '../../utils/labels';
 
@@ -49,7 +49,8 @@ export const B2CMyPerformanceScreen = () => {
   const r = useResponsive();
   const isCounselor = user?.role === 'Counselor';
 
-  const kpiWidth = r.isWide ? '23.5%' : r.isTablet ? '23.5%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiWidth = tileFill(r.isTablet ? 4 : 2);
   const twoCol = r.isTablet;   // pipeline + this-month side by side once there is room
 
   const [agent, setAgent] = useState<B2CAgentDashboardDto | null>(null);
@@ -125,10 +126,10 @@ export const B2CMyPerformanceScreen = () => {
       ) : isCounselor && counselor ? (
         <>
           <View style={[s.grid, { marginTop: 16 }]}>
-            <StatTile style={{ width: kpiWidth }} label="Active assignments" value={counselor.totalActiveAssignments ?? 0} icon={<Target size={16} color={T.accent} />} />
-            <StatTile style={{ width: kpiWidth }} label="Sessions this week" value={counselor.sessionsThisWeek ?? 0} tint={T.info} icon={<TrendingUp size={16} color={T.info} />} />
-            <StatTile style={{ width: kpiWidth }} label="Sessions today" value={counselor.sessionsToday ?? 0} tint={T.warning} icon={<Clock size={16} color={T.warning} />} />
-            <StatTile style={{ width: kpiWidth }} label="Avg AI score" value={counselor.avgAiScore != null ? Math.round(counselor.avgAiScore) : '—'} tint={T.success} icon={<Award size={16} color={T.success} />} />
+            <StatTile style={kpiWidth} label="Active assignments" value={counselor.totalActiveAssignments ?? 0} icon={<Target size={16} color={T.accent} />} />
+            <StatTile style={kpiWidth} label="Sessions this week" value={counselor.sessionsThisWeek ?? 0} tint={T.info} icon={<TrendingUp size={16} color={T.info} />} />
+            <StatTile style={kpiWidth} label="Sessions today" value={counselor.sessionsToday ?? 0} tint={T.warning} icon={<Clock size={16} color={T.warning} />} />
+            <StatTile style={kpiWidth} label="Avg AI score" value={counselor.avgAiScore != null ? Math.round(counselor.avgAiScore) : '—'} tint={T.success} icon={<Award size={16} color={T.success} />} />
           </View>
 
           {counselor.scoreTrend?.length > 0 && (
@@ -153,10 +154,10 @@ export const B2CMyPerformanceScreen = () => {
       ) : agent ? (
         <>
           <View style={[s.grid, { marginTop: 16 }]}>
-            <StatTile style={{ width: kpiWidth }} label="Active leads" value={`${agent.activeLeads ?? 0} / ${agent.leadCap ?? 50}`} icon={<Target size={16} color={T.accent} />} />
-            <StatTile style={{ width: kpiWidth }} label="Contacted today" value={agent.contactedToday ?? 0} tint={T.info} icon={<TrendingUp size={16} color={T.info} />} />
-            <StatTile style={{ width: kpiWidth }} label="Follow-ups due" value={agent.followUpsDueToday ?? 0} tint={T.warning} icon={<Clock size={16} color={T.warning} />} />
-            <StatTile style={{ width: kpiWidth }} label="Conversions (mo)" value={agent.conversionsThisMonth ?? 0} tint={T.success} icon={<CheckCircle size={16} color={T.success} />} />
+            <StatTile style={kpiWidth} label="Active leads" value={`${agent.activeLeads ?? 0} / ${agent.leadCap ?? 50}`} icon={<Target size={16} color={T.accent} />} />
+            <StatTile style={kpiWidth} label="Contacted today" value={agent.contactedToday ?? 0} tint={T.info} icon={<TrendingUp size={16} color={T.info} />} />
+            <StatTile style={kpiWidth} label="Follow-ups due" value={agent.followUpsDueToday ?? 0} tint={T.warning} icon={<Clock size={16} color={T.warning} />} />
+            <StatTile style={kpiWidth} label="Conversions (mo)" value={agent.conversionsThisMonth ?? 0} tint={T.success} icon={<CheckCircle size={16} color={T.success} />} />
           </View>
 
           <View style={s.colsRow}>

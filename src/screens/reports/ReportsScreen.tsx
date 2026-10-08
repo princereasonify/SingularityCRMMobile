@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
   Modal, ActivityIndicator, RefreshControl, useWindowDimensions,
@@ -21,6 +21,7 @@ import {
 } from '../../components/crud';
 import { formatDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { isoDate, todayStr } from '../../utils/dates';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { getAppTheme, AppTheme } from '../../theme/appTheme';
@@ -68,11 +69,16 @@ const GENERATE_LABEL: Record<ReportKey, string> = {
   'ai-fo-monthly': 'FO Monthly Report',
   'ai-management': 'Management Weekly Report',
 };
-/** Only FO keys carry a reportType filter — web sends none for ai-management. */
-const FILTER_TYPE: Partial<Record<ReportKey, string>> = {
+/**
+ * Server-side reportType filter per key. Management is a comma list the server splits
+ * (AiReportService filter: ReportType.Split(',')) — filtering 500 mixed reports on the
+ * client could miss management reports that fell outside those 500 (web Reports.jsx:554).
+ */
+const FILTER_TYPE: Record<ReportKey, string> = {
   'ai-fo-daily': 'FoDaily',
   'ai-fo-weekly': 'FoWeekly',
   'ai-fo-monthly': 'FoMonthly',
+  'ai-management': 'ZhWeekly,RhWeekly,ShWeekly,ScaWeekly',
 };
 const MGMT_TYPE_FOR_ROLE: Record<string, AiReportType> = {
   ZH: 'ZhWeekly', RH: 'RhWeekly', SH: 'ShWeekly', SCA: 'ScaWeekly',
@@ -86,14 +92,14 @@ const PAGE_SIZE = 10;
 const DASH = '—';
 const GUTTER = 12;
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+// Local calendar days (utils/dates) — toISOString shifted "today" to yesterday before 05:30 IST.
 const thirtyDaysAgo = () => {
   const d = new Date(); d.setDate(d.getDate() - 30);
-  return d.toISOString().split('T')[0];
+  return isoDate(d);
 };
 const sixDaysAgo = () => {
   const d = new Date(); d.setDate(d.getDate() - 6);
-  return d.toISOString().split('T')[0];
+  return isoDate(d);
 };
 
 const fmtCurrency = (v: any) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -347,6 +353,8 @@ function GenerateModal({ reportType, role, isManager, teamFos, onGenerate, onClo
   const handleSubmit = () => {
     const params: any = { type: getApiType() };
     if (isFoReport && isManager && genFoId) params.foId = Number(genFoId);
+    // "All (batch)" used to send no FO at all, which generated the manager's OWN report.
+    if (isFoReport && isManager && !genFoId) params.team = true;
     if (isDaily) params.date = genDate;
     else { params.dateFrom = genFrom; params.dateTo = genTo; }
     onGenerate(params);
@@ -418,7 +426,7 @@ function GenerateModal({ reportType, role, isManager, teamFos, onGenerate, onClo
 }
 
 // ─── Main Screen ────────────────────────────────────────────────────────────
-export const ReportsScreen = (_: any) => {
+export const ReportsScreen = ({ navigation }: any) => {
   const { user } = useAuth();
   const T = useAppTheme();
   const { width, height } = useWindowDimensions();
@@ -465,7 +473,11 @@ export const ReportsScreen = (_: any) => {
   }, [isManager]);
 
   // ─── Fetch AI reports ──────────────────────────────────────────────────────
+  // Switching type or nudging a date fires one request per change; without a token an
+  // earlier (type, from, to) response could land after a later one (web Reports.jsx:542).
+  const fetchTokenRef = useRef(0);
   const fetchAiReports = useCallback(async (type: ReportKey, from: string, to: string) => {
+    const token = ++fetchTokenRef.current;
     setLoadFailed(false);
     try {
       // AiReportFilterDto binds DateFrom / DateTo / ReportType / PageSize (whole DTO).
@@ -473,19 +485,19 @@ export const ReportsScreen = (_: any) => {
       // (client paginates the returned set at 10). Request the full window; the client
       // then pages over all of it.
       const filters: any = { dateFrom: from, dateTo: to, pageSize: 500 };
-      const ft = FILTER_TYPE[type];
-      if (ft) filters.reportType = ft;
+      filters.reportType = FILTER_TYPE[type];
       const res = await aiReportsApi.getReports(filters);
-      let list: any[] = Array.isArray(res.data) ? res.data : [];
-      // Web filters management reports client-side — it sends no reportType for them.
-      if (type === 'ai-management') list = list.filter(r => !String(r.reportType || '').startsWith('Fo'));
-      setAiReports(list);
+      if (fetchTokenRef.current !== token) return;
+      setAiReports(Array.isArray(res.data) ? res.data : []);
     } catch {
+      if (fetchTokenRef.current !== token) return;
       setAiReports([]);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (fetchTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -499,9 +511,20 @@ export const ReportsScreen = (_: any) => {
     setShowGenerate(false);
     setGenerating(true);
     try {
-      // POST /ai-reports/generate — every field is [FromQuery] on the controller.
-      await aiReportsApi.generate(params);
-      Alert.alert('Report generated', 'Your report has been generated successfully.');
+      if (params.team) {
+        // "All (batch)" — POST /ai-reports/generate-team queues every FO the caller manages
+        // and answers 202 with the status message as the envelope's data (unwrapped here).
+        const { team, ...rest } = params; // eslint-disable-line @typescript-eslint/no-unused-vars
+        const res = await aiReportsApi.generateTeam(rest);
+        Alert.alert('Generating reports', (typeof res.data === 'string' && res.data) || 'Team reports are being generated');
+      } else {
+        // POST /ai-reports/generate — every field is [FromQuery] on the controller.
+        const res = await aiReportsApi.generate(params);
+        const status = res.data?.status;
+        if (status === 'Failed') Alert.alert('Error', 'The report could not be generated. Please try again.');
+        else if (status === 'Generating') Alert.alert('Generating report', 'The report is being generated');
+        else Alert.alert('Report generated', 'Your report has been generated successfully.');
+      }
       setLoading(true);
       fetchAiReports(reportType, dateFrom, dateTo);
     } catch (err: any) {
@@ -1317,6 +1340,38 @@ ${actionItemsHtml}
       >
         <Text style={[s.subtitle, { color: T.sub }]}>Analytics and AI-powered performance insights</Text>
 
+        {/* AI Tools — AiDailyPlanScreen/AiDailyReportScreen/AiInsightsScreen are fully built
+            (GET /ai/daily-plan, /ai/daily-report, /ai/insights — all self-scoped to the
+            signed-in user, no role branching) and were already registered as Stack screens,
+            but had NO navigation path anywhere in the app — not a menu item, not a dashboard
+            button, nothing. This row is their one entry point for every role. */}
+        <View style={s.aiToolsRow}>
+          <TouchableOpacity
+            style={[s.aiToolBtn, { backgroundColor: T.card, borderColor: T.line }]}
+            activeOpacity={0.75}
+            onPress={() => navigation?.navigate?.('AiDailyPlan')}
+          >
+            <Target size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+            <Text style={[s.aiToolTxt, { color: T.text }]}>Daily Plan</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.aiToolBtn, { backgroundColor: T.card, borderColor: T.line }]}
+            activeOpacity={0.75}
+            onPress={() => navigation?.navigate?.('AiDailyReport')}
+          >
+            <CheckCircle size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+            <Text style={[s.aiToolTxt, { color: T.text }]}>Daily Report</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.aiToolBtn, { backgroundColor: T.card, borderColor: T.line }]}
+            activeOpacity={0.75}
+            onPress={() => navigation?.navigate?.('AiInsights')}
+          >
+            <Sparkles size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+            <Text style={[s.aiToolTxt, { color: T.text }]}>Insights</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Filter bar */}
         <View style={[s.filterCard, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={wide ? s.filterRowWide : undefined}>
@@ -1412,6 +1467,13 @@ const s = StyleSheet.create({
   scroll: { padding: 14, gap: 12 },
   scrollWide: { paddingHorizontal: 22 },
   subtitle: { fontSize: rf(12.5), fontWeight: '500' },
+
+  aiToolsRow: { flexDirection: 'row', gap: 10 },
+  aiToolBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    borderWidth: 1, borderRadius: 13, paddingVertical: 11,
+  },
+  aiToolTxt: { fontSize: rf(12), fontWeight: '700' },
 
   filterCard: { borderRadius: 16, borderWidth: 1, padding: 12, gap: 12 },
   filterRowWide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },

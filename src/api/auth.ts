@@ -37,6 +37,40 @@ export interface SubordinateDto {
   regionId?: number | null;
 }
 
+/**
+ * A person inside a region/zone — the projection AuthController selects for the delete
+ * probe and for GET regions|zones/{id}/users: { Id, Name, Email, Role, ZoneId, RegionId }.
+ */
+export interface PlacementUserDto {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  zoneId?: number | null;
+  regionId?: number | null;
+}
+
+/** AuthController.UserTransferItem { UserId, TargetId } — target is a region or a zone id. */
+export interface PlacementTransfer {
+  userId: number;
+  targetId: number;
+}
+
+/** RegionDeleteRequest / ZoneDeleteRequest { UserTransfers } — also the transfer-users body. */
+export interface PlacementTransferBody {
+  userTransfers: PlacementTransfer[];
+}
+
+/**
+ * The 400 payload from DeleteRegion / DeleteZone when called with no body and the target
+ * still has people (or, for a region, zones). Arrives as `err.response.data.data` — the
+ * response interceptor only unwraps the envelope on success. `zones` is region-only.
+ */
+export interface PlacementDeleteBlocked {
+  users?: PlacementUserDto[];
+  zones?: { id: number; name: string }[];
+}
+
 export const authApi = {
   login: (email: string, password: string, deviceInfo?: DeviceInfoPayload) =>
     apiClient.post<LoginResponse>('/auth/login', { email, password, deviceInfo }),
@@ -89,7 +123,14 @@ export const authApi = {
 
   getPendingUsers: () => apiClient.get<UserDto[]>('/auth/pending-users'),
 
-  approveUser: (id: number) => apiClient.post(`/auth/approve-user/${id}`),
+  /**
+   * AuthController.ApproveUser — `[FromBody] ApproveUserRequest? { ZoneId, RegionId }`.
+   * A signup arrives with no placement, and AuthService now refuses to approve one
+   * without it: FO/ZH need `{ zoneId }` (the zone decides the region), RH needs
+   * `{ regionId }` ("Choose a zone/region for this user before approving."). SH/SCA: `{}`.
+   */
+  approveUser: (id: number, placement: { zoneId?: number; regionId?: number } = {}) =>
+    apiClient.post(`/auth/approve-user/${id}`, placement),
 
   rejectUser: (id: number) => apiClient.post(`/auth/reject-user/${id}`),
 
@@ -129,7 +170,29 @@ export const authApi = {
   updateRegion: (id: number, name: string) =>
     apiClient.put<Region>(`/auth/regions/${id}`, { name }),
 
-  deleteRegion: (id: number) => apiClient.delete(`/auth/regions/${id}`),
+  /**
+   * `[HttpDelete("regions/{id}")] DeleteRegion(int id, [FromBody] RegionDeleteRequest? request = null)`.
+   * No body = probe: a region with users or zones answers 400 with `{ users, zones }`.
+   * With `{ userTransfers }` every affected user moves to its target region, then the region
+   * and its zones are deleted (fail-closed: every user must have a valid target).
+   * DELETE bodies go through axios' `data` config key.
+   */
+  deleteRegion: (id: number, body?: PlacementTransferBody | null) =>
+    apiClient.delete(`/auth/regions/${id}`, body ? { data: body } : undefined),
+
+  /** SH/SCA — the region's zoneless users (RH + direct FOs), for the edit-modal transfer. */
+  getRegionUsers: (id: number) => apiClient.get<PlacementUserDto[]>(`/auth/regions/${id}/users`),
+
+  /** SH/SCA/RH (own region only) — everyone in the zone. */
+  getZoneUsers: (id: number) => apiClient.get<PlacementUserDto[]>(`/auth/zones/${id}/users`),
+
+  /** Move some of a region's zoneless users to other regions without deleting it. */
+  transferRegionUsers: (id: number, body: PlacementTransferBody) =>
+    apiClient.post(`/auth/regions/${id}/transfer-users`, body),
+
+  /** Move some of a zone's users to other zones (an RH: only zones of its own region). */
+  transferZoneUsers: (id: number, body: PlacementTransferBody) =>
+    apiClient.post(`/auth/zones/${id}/transfer-users`, body),
 
   createZone: (name: string, regionId: number) =>
     apiClient.post<Zone>('/auth/zones', { name, regionId }),
@@ -137,7 +200,13 @@ export const authApi = {
   updateZone: (id: number, name: string, regionId: number) =>
     apiClient.put<Zone>(`/auth/zones/${id}`, { name, regionId }),
 
-  deleteZone: (id: number) => apiClient.delete(`/auth/zones/${id}`),
+  /**
+   * `[HttpDelete("zones/{id}")] DeleteZone(int id, [FromBody] ZoneDeleteRequest? request = null)`.
+   * No body = probe: a zone with users answers 400 with `{ users }`; with `{ userTransfers }`
+   * they move first. An RH may only target zones inside its own region.
+   */
+  deleteZone: (id: number, body?: PlacementTransferBody | null) =>
+    apiClient.delete(`/auth/zones/${id}`, body ? { data: body } : undefined),
 
   // Delete account request (unauthenticated)
   deleteAccountRequest: (email: string, password: string) =>

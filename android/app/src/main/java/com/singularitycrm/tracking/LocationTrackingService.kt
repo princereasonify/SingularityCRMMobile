@@ -112,6 +112,142 @@ class LocationTrackingService : Service() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        // ─── Offline queue (shared by the service and LocationTrackingModule.flushQueue) ───
+
+        private fun queuePrefs(context: Context) =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        /** Tier batch path, defaulting to B2B so an old caller behaves exactly as before. */
+        private fun batchPath(context: Context): String =
+            queuePrefs(context).getString(EXTRA_BATCH_PATH, null)?.takeIf { it.isNotEmpty() } ?: "/tracking/ping/batch"
+
+        private fun postJsonWithBody(urlString: String, token: String, body: String): Pair<Int, String?> =
+            try {
+                val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Authorization", "Bearer $token")
+                    doOutput = true
+                    connectTimeout = 15_000
+                    readTimeout = 15_000
+                }
+                OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(body) }
+                val code = conn.responseCode
+                val text = try {
+                    (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }
+                } catch (_: Exception) { null }
+                conn.disconnect()
+                code to text
+            } catch (e: Exception) {
+                Log.e(TAG, "POST $urlString failed: ${e.message}")
+                -1 to null
+            }
+
+        private fun readQueue(context: Context): JSONArray =
+            try { JSONArray(queuePrefs(context).getString(PENDING_PINGS_KEY, "[]")) } catch (_: Exception) { JSONArray() }
+
+        private fun writeQueue(context: Context, queue: JSONArray) {
+            queuePrefs(context).edit().putString(PENDING_PINGS_KEY, queue.toString()).apply()
+        }
+
+        @Synchronized
+        private fun enqueuePing(context: Context, ping: JSONObject) {
+            val queue = readQueue(context)
+            queue.put(ping)
+
+            // Oldest-first eviction: a stale position matters less than a recent one.
+            val trimmed = if (queue.length() > MAX_QUEUED_PINGS) {
+                JSONArray().also { out ->
+                    for (i in (queue.length() - MAX_QUEUED_PINGS) until queue.length()) out.put(queue.get(i))
+                }
+            } else queue
+
+            writeQueue(context, trimmed)
+            Log.d(TAG, "Queued ping. Pending=${trimmed.length()}")
+        }
+
+        /**
+         * Delivers queued pings via the batch endpoint.
+         *
+         * Trimming is driven by the server's `acceptedThroughSeq` rather than by the response code
+         * alone. A 200 says the request was handled; it does not say every fix in it was stored, and
+         * clearing the whole queue on a 200 is how a partially-processed batch silently loses its
+         * tail. Anything at or below the acknowledged sequence is durable and safe to drop; anything
+         * above it stays for the next cycle, where the server's deduplication makes the re-send free.
+         *
+         * Returns true when nothing is left queued afterwards (including an already-empty queue).
+         */
+        @Synchronized
+        private fun flushQueue(context: Context, baseUrl: String, token: String): Boolean {
+            val queue = readQueue(context)
+            if (queue.length() == 0) return true
+
+            val body = JSONObject().put("pings", queue).toString()
+            val (code, response) = postJsonWithBody("$baseUrl${batchPath(context)}", token, body)
+            return when {
+                code in 200..299 -> {
+                    val through = acceptedThroughSeq(response)
+                    if (through == null) {
+                        Log.d(TAG, "Flushed ${queue.length()} queued pings")
+                        writeQueue(context, JSONArray())
+                        true
+                    } else {
+                        val remaining = JSONArray()
+                        for (i in 0 until queue.length()) {
+                            val item = queue.optJSONObject(i) ?: continue
+                            if (item.optLong("seq", Long.MAX_VALUE) > through) remaining.put(item)
+                        }
+                        Log.d(TAG, "Flushed through seq $through; ${remaining.length()} still pending")
+                        writeQueue(context, remaining)
+                        remaining.length() == 0
+                    }
+                }
+                // Session is over — these will never be accepted, so stop carrying them.
+                code == 403 -> {
+                    Log.w(TAG, "Batch → 403 (no active session) — discarding ${queue.length()} queued pings")
+                    writeQueue(context, JSONArray())
+                    true
+                }
+                // 401 / 5xx / network: leave the queue intact and try again next cycle.
+                else -> {
+                    Log.w(TAG, "Batch → $code — keeping ${queue.length()} pings queued")
+                    false
+                }
+            }
+        }
+
+        /**
+         * One-shot drain for End Day, called by LocationTrackingModule.flushQueue on a worker
+         * thread. Uses the stored credentials and tier path — the same ones every ping uses — and
+         * the same [flushQueue] as the ping loop, so trimming behaves identically. Blocking; never
+         * throws. Returns true when nothing is left queued.
+         */
+        fun flushStoredQueue(context: Context): Boolean = try {
+            val prefs = queuePrefs(context)
+            val baseUrl = prefs.getString(EXTRA_API_URL, null)?.takeIf { it.isNotEmpty() }
+            val token = prefs.getString(EXTRA_TOKEN, null)?.takeIf { it.isNotEmpty() }
+            if (baseUrl == null || token == null) {
+                val pending = readQueue(context).length()
+                Log.w(TAG, "End-day flush: no token/url — $pending pings left queued")
+                pending == 0
+            } else {
+                flushQueue(context, baseUrl, token)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "End-day flush failed: ${e.message}")
+            false
+        }
+
+        /** Pulls acceptedThroughSeq out of either tier's response envelope. */
+        private fun acceptedThroughSeq(body: String?): Long? = try {
+            val data = body?.let { JSONObject(it) }?.optJSONObject("data")
+            data?.takeIf { it.has("acceptedThroughSeq") && !it.isNull("acceptedThroughSeq") }
+                ?.optLong("acceptedThroughSeq")
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -246,7 +382,6 @@ class LocationTrackingService : Service() {
 
     /** Tier paths, defaulting to B2B so an old caller behaves exactly as before. */
     private fun pingPath(): String = prefs().getString(EXTRA_PING_PATH, null)?.takeIf { it.isNotEmpty() } ?: "/tracking/ping"
-    private fun batchPath(): String = prefs().getString(EXTRA_BATCH_PATH, null)?.takeIf { it.isNotEmpty() } ?: "/tracking/ping/batch"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -469,103 +604,19 @@ class LocationTrackingService : Service() {
     /** Returns the HTTP status and body, or status -1 when the request never completed. */
     private fun postJson(urlString: String, token: String, body: String): Int = postJsonWithBody(urlString, token, body).first
 
-    private fun postJsonWithBody(urlString: String, token: String, body: String): Pair<Int, String?> =
-        try {
-            val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Authorization", "Bearer $token")
-                doOutput = true
-                connectTimeout = 15_000
-                readTimeout = 15_000
-            }
-            OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(body) }
-            val code = conn.responseCode
-            val text = try {
-                (if (code in 200..299) conn.inputStream else conn.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }
-            } catch (_: Exception) { null }
-            conn.disconnect()
-            code to text
-        } catch (e: Exception) {
-            Log.e(TAG, "POST $urlString failed: ${e.message}")
-            -1 to null
-        }
-
     // ─── Offline queue ────────────────────────────────────────────────────────────
+    //
+    // The queue itself (read/write/enqueue/flush) lives in the companion object so that the
+    // React module can drain it on End Day without a reference to a running service instance.
+    // Both the service and the module therefore go through the SAME function and the SAME lock
+    // (the companion's monitor), so an enqueue can never interleave with a flush.
 
-    private fun readQueue(): JSONArray =
-        try { JSONArray(prefs().getString(PENDING_PINGS_KEY, "[]")) } catch (_: Exception) { JSONArray() }
-
-    private fun writeQueue(queue: JSONArray) {
-        prefs().edit().putString(PENDING_PINGS_KEY, queue.toString()).apply()
-    }
-
-    @Synchronized
     private fun enqueuePing(ping: JSONObject) {
-        val queue = readQueue()
-        queue.put(ping)
-
-        // Oldest-first eviction: a stale position matters less than a recent one.
-        val trimmed = if (queue.length() > MAX_QUEUED_PINGS) {
-            JSONArray().also { out ->
-                for (i in (queue.length() - MAX_QUEUED_PINGS) until queue.length()) out.put(queue.get(i))
-            }
-        } else queue
-
-        writeQueue(trimmed)
-        Log.d(TAG, "Queued ping. Pending=${trimmed.length()}")
+        enqueuePing(this, ping)
     }
 
-    /**
-     * Delivers queued pings via the batch endpoint.
-     *
-     * Trimming is driven by the server's `acceptedThroughSeq` rather than by the response code
-     * alone. A 200 says the request was handled; it does not say every fix in it was stored, and
-     * clearing the whole queue on a 200 is how a partially-processed batch silently loses its
-     * tail. Anything at or below the acknowledged sequence is durable and safe to drop; anything
-     * above it stays for the next cycle, where the server's deduplication makes the re-send free.
-     */
-    @Synchronized
     private fun flushQueue(baseUrl: String, token: String) {
-        val queue = readQueue()
-        if (queue.length() == 0) return
-
-        val body = JSONObject().put("pings", queue).toString()
-        val (code, response) = postJsonWithBody("$baseUrl${batchPath()}", token, body)
-        when {
-            code in 200..299 -> {
-                val through = acceptedThroughSeq(response)
-                if (through == null) {
-                    Log.d(TAG, "Flushed ${queue.length()} queued pings")
-                    writeQueue(JSONArray())
-                } else {
-                    val remaining = JSONArray()
-                    for (i in 0 until queue.length()) {
-                        val item = queue.optJSONObject(i) ?: continue
-                        if (item.optLong("seq", Long.MAX_VALUE) > through) remaining.put(item)
-                    }
-                    Log.d(TAG, "Flushed through seq $through; ${remaining.length()} still pending")
-                    writeQueue(remaining)
-                }
-            }
-            // Session is over — these will never be accepted, so stop carrying them.
-            code == 403 -> {
-                Log.w(TAG, "Batch → 403 (no active session) — discarding ${queue.length()} queued pings")
-                writeQueue(JSONArray())
-            }
-            // 401 / 5xx / network: leave the queue intact and try again next cycle.
-            else -> Log.w(TAG, "Batch → $code — keeping ${queue.length()} pings queued")
-        }
-    }
-
-    /** Pulls acceptedThroughSeq out of either tier's response envelope. */
-    private fun acceptedThroughSeq(body: String?): Long? = try {
-        val data = body?.let { JSONObject(it) }?.optJSONObject("data")
-        data?.takeIf { it.has("acceptedThroughSeq") && !it.isNull("acceptedThroughSeq") }
-            ?.optLong("acceptedThroughSeq")
-    } catch (_: Exception) {
-        null
+        flushQueue(this, baseUrl, token)
     }
 
     // ─── Notification ─────────────────────────────────────────────────────────────

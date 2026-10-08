@@ -1,27 +1,114 @@
 /**
  * Purchase Order & Invoice — mobile twin of web's SalesDocuments.jsx list (the Generate/Edit
  * form lives in SalesDocumentEditorScreen). Every B2B role generates documents; SH/SCA also see
- * everyone's. The admin-only Register/Excel tab from web is not built here yet — the per-type
- * list below is the core gap this closes (a field officer had no mobile path to issue a PO at
- * all before this).
+ * everyone's, with web's person/role/zone/region/date filters. The SH/SCA Register lives in
+ * SalesRegisterScreen, which reuses the filters exported from here.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, Linking, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import RNShare from 'react-native-share';
-import { FileText, Plus, Eye, Share2, Trash2 } from 'lucide-react-native';
+import { FileText, Plus, Eye, Share2, Trash2, SlidersHorizontal, X } from 'lucide-react-native';
 import { Btn, SearchBar, ListCard, IconBtn, Segmented, ConfirmModal } from '../../components/crud';
 import { Screen } from '../../components/ui';
 import { ICON_STROKE } from '../../components/common/Icon';
+import { SelectPicker } from '../../components/common/SelectPicker';
+import { DateInput } from '../../components/common/DateInput';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
-import { salesDocumentService, SalesDocumentSummary } from '../../api/salesDocumentService';
-import { DOC_TYPES, DOC_META, DocType, displayDate, money } from '../../utils/salesDocUtils';
+import { salesDocumentService, SalesDocumentSummary, fileShareOptions } from '../../api/salesDocumentService';
+import { DOC_TYPES, DOC_META, DocType, displayDate, money, pdfFileName } from '../../utils/salesDocUtils';
+import { formatDateTime } from '../../utils/formatting';
 
 const ADMIN_ROLES = ['SH', 'SCA'];
+
+// ── SH/SCA filters (web SalesDocuments.jsx applyFilters / AdminFilters) ──────────────────────
+// Client-side over rows already in scope, exactly like web: the people/zone/region options are
+// derived from the loaded rows (no users/zones endpoint), so they only ever list values that
+// can match something.
+
+export const ROLE_LABEL: Record<string, string> = { FO: 'Field Officer', ZH: 'Zonal Head', RH: 'Regional Head', SH: 'Sales Head', SCA: 'Admin' };
+
+export interface DocFilters { person: string; role: string; zone: string; region: string; from: string; to: string; }
+export const EMPTY_FILTERS: DocFilters = { person: '', role: '', zone: '', region: '', from: '', to: '' };
+
+type FilterableRow = SalesDocumentSummary & { invoiceNumbers?: string[] };
+
+export function applyFilters<R extends FilterableRow>(rows: R[], f: DocFilters, search: string): R[] {
+  const q = search.trim().toLowerCase();
+  return rows.filter((r_) => {
+    if (f.person && String(r_.createdById) !== f.person) return false;
+    if (f.role && r_.createdByRole !== f.role) return false;
+    if (f.zone && r_.zone !== f.zone) return false;
+    if (f.region && r_.region !== f.region) return false;
+    if (f.from && (r_.documentDate || '') < f.from) return false;
+    if (f.to && (r_.documentDate || '') > f.to) return false;
+    if (q && ![r_.documentNumber, r_.schoolName, r_.createdByName, r_.refOrderNumber, ...(r_.invoiceNumbers || [])]
+      .some((x) => (x || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+/** "Name · Role · Zone" — web's creatorLine. */
+export const creatorLine = (r_: SalesDocumentSummary) =>
+  [r_.createdByName, ROLE_LABEL[r_.createdByRole || ''] || r_.createdByRole, r_.zone].filter(Boolean).join(' · ');
+
+/** Collapsible person / role / zone / region / date filters for SH and SCA. */
+export const AdminFilters = ({ rows, filters, setFilters }: {
+  rows: SalesDocumentSummary[]; filters: DocFilters; setFilters: (f: DocFilters) => void;
+}) => {
+  const T = useAppTheme();
+  const [open, setOpen] = useState(false);
+  const people = useMemo(() => {
+    const m = new Map<string, string>();
+    rows.forEach((x) => { if (x.createdById != null) m.set(String(x.createdById), x.createdByName || `User ${x.createdById}`); });
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+  const uniq = (key: 'zone' | 'region') => [...new Set(rows.map((x) => x[key]).filter(Boolean) as string[])].sort();
+  const set = (k: keyof DocFilters) => (v: string | number) => setFilters({ ...filters, [k]: String(v) });
+  const activeCount = Object.values(filters).filter(Boolean).length;
+
+  return (
+    <View style={{ marginTop: 10 }}>
+      <View style={styles.filterBar}>
+        <TouchableOpacity onPress={() => setOpen((o) => !o)} activeOpacity={0.8}
+          style={[styles.filterToggle, { backgroundColor: activeCount ? T.accentSoft : T.card, borderColor: activeCount ? T.accent : T.line }]}>
+          <SlidersHorizontal size={14} color={activeCount ? T.accent : T.sub} strokeWidth={ICON_STROKE} />
+          <Text style={[styles.filterToggleTxt, { color: activeCount ? T.accent : T.sub }]}>
+            Filters{activeCount ? ` (${activeCount})` : ''}
+          </Text>
+        </TouchableOpacity>
+        {activeCount > 0 && (
+          <TouchableOpacity onPress={() => setFilters(EMPTY_FILTERS)} hitSlop={8} style={styles.filterClear}>
+            <X size={13} color={T.sub} strokeWidth={ICON_STROKE} />
+            <Text style={[styles.filterToggleTxt, { color: T.sub }]}>Clear filters</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      {open && (
+        <View style={styles.filterGrid}>
+          <SelectPicker label="Created by" value={filters.person} onChange={set('person')} containerStyle={styles.filterCell}
+            options={[{ label: 'Everyone', value: '' }, ...people.map(([id, name]) => ({ label: name, value: id }))]} />
+          <SelectPicker label="Role" value={filters.role} onChange={set('role')} containerStyle={styles.filterCell}
+            options={[{ label: 'All roles', value: '' }, ...Object.entries(ROLE_LABEL).map(([k, v]) => ({ label: v, value: k }))]} />
+          <SelectPicker label="Zone" value={filters.zone} onChange={set('zone')} containerStyle={styles.filterCell}
+            options={[{ label: 'All zones', value: '' }, ...uniq('zone').map((z) => ({ label: z, value: z }))]} />
+          <SelectPicker label="Region" value={filters.region} onChange={set('region')} containerStyle={styles.filterCell}
+            options={[{ label: 'All regions', value: '' }, ...uniq('region').map((z) => ({ label: z, value: z }))]} />
+          <View style={styles.filterCell}>
+            <DateInput label="From" value={filters.from} onChange={set('from')} placeholder="Any date" maxDate={filters.to || undefined} />
+          </View>
+          <View style={styles.filterCell}>
+            <DateInput label="To" value={filters.to} onChange={set('to')} placeholder="Any date" minDate={filters.from || undefined} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+};
 const DOC_TABS: { label: string; value: DocType }[] = [
   { label: 'Purchase Order', value: DOC_TYPES.PURCHASE_ORDER },
   { label: 'Tax Invoice', value: DOC_TYPES.TAX_INVOICE },
@@ -42,6 +129,7 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<DocFilters>(EMPTY_FILTERS);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<SalesDocumentSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -67,12 +155,10 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
   // web's editor calling back into the list on save.
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r_) => [r_.documentNumber, r_.schoolName, r_.createdByName, r_.refOrderNumber]
-      .some((x) => (x || '').toLowerCase().includes(q)));
-  }, [rows, search]);
+  const filtered = useMemo(
+    () => applyFilters(rows, isAdmin ? filters : EMPTY_FILTERS, search),
+    [rows, filters, search, isAdmin],
+  );
 
   const canDelete = (row: SalesDocumentSummary) => isAdmin || String(row.createdById) === myId;
 
@@ -89,17 +175,43 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
     }
   };
 
-  const share = async (row: SalesDocumentSummary) => {
+  const subjectOf = (row: SalesDocumentSummary) =>
+    `${meta.label} ${row.documentNumber}${row.schoolName ? ` – ${row.schoolName}` : ''}`;
+
+  // Web's ShareModal offers both: a 7-day signed link, or the PDF file itself.
+  const share = (row: SalesDocumentSummary) => {
     if (!row.hasPdf) return;
+    Alert.alert(`Share ${meta.label}`, row.documentNumber, [
+      { text: 'Share link', onPress: () => shareLink(row) },
+      { text: 'Share PDF file', onPress: () => shareFile(row) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const shareLink = async (row: SalesDocumentSummary) => {
     setBusyId(row.id);
     try {
       const res = await salesDocumentService.shareLink(type, row.id);
       const link = res.data;
       if (!link) return;
-      const subject = `${meta.label} ${row.documentNumber}${row.schoolName ? ` – ${row.schoolName}` : ''}`;
+      const subject = subjectOf(row);
+      toast.info(`Anyone with this link can open the PDF until ${formatDateTime(link.expiresAt)} (7 days).`);
       await RNShare.open({ url: link.url, title: subject, message: subject, failOnCancel: false });
     } catch (err: any) {
       if (err?.message !== 'User did not share') toast.error(err?.response?.data?.message || 'Could not create a share link.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const shareFile = async (row: SalesDocumentSummary) => {
+    setBusyId(row.id);
+    try {
+      const file = await salesDocumentService.downloadPdf(type, row.id, pdfFileName(type, row.documentNumber));
+      const subject = subjectOf(row);
+      await RNShare.open({ ...fileShareOptions(file), title: subject, subject, failOnCancel: false });
+    } catch (err: any) {
+      if (err?.message !== 'User did not share') toast.error(err?.response?.data?.message || 'Could not share the PDF file.');
     } finally {
       setBusyId(null);
     }
@@ -136,7 +248,13 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
           <Segmented value={type} options={DOC_TABS} onChange={(t) => { setType(t); setSearch(''); }} style={{ flex: 1 }} />
         </View>
 
-        <SearchBar value={search} onChangeText={setSearch} placeholder="Search number or school" style={{ marginTop: 12 }} />
+        <Text style={[styles.countTxt, { color: T.text }]}>
+          Saved {meta.label}s{!loading && <Text style={{ color: T.sub, fontWeight: '500' }}> ({rows.length})</Text>}
+        </Text>
+
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Search number or school" style={{ marginTop: 8 }} />
+
+        {isAdmin && !loading && rows.length > 0 && <AdminFilters rows={rows} filters={filters} setFilters={setFilters} />}
 
         {loading ? (
           <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
@@ -158,11 +276,19 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
                     </TouchableOpacity>
                     <Text style={[styles.amount, { color: T.text }]}>₹{money(row.grandTotal)}</Text>
                   </View>
-                  <Text style={[styles.school, { color: T.sub }]} numberOfLines={1}>{row.schoolName || '—'}</Text>
+                  <Text style={[styles.school, { color: T.sub }]} numberOfLines={1}>
+                    {row.schoolName || '—'}{row.documentDate ? ` · ${displayDate(row.documentDate)}` : ''}
+                  </Text>
                   <View style={styles.rowBottom}>
-                    <Text style={[styles.meta, { color: T.dim }]} numberOfLines={1}>
-                      {[row.createdByName, displayDate(row.documentDate)].filter(Boolean).join(' · ') || '—'}
-                    </Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.meta, { color: T.dim }]} numberOfLines={1}>{creatorLine(row) || '—'}</Text>
+                      {!!row.updatedAt && (
+                        <Text style={[styles.meta, { color: T.dim }]} numberOfLines={1}>
+                          Last updated {formatDateTime(row.updatedAt)}
+                          {row.updatedByName && row.updatedByName !== row.createdByName ? ` · ${row.updatedByName}` : ''}
+                        </Text>
+                      )}
+                    </View>
                     <View style={styles.actions}>
                       {busyId === row.id ? (
                         <ActivityIndicator size="small" color={T.dim} />
@@ -216,6 +342,13 @@ const styles = StyleSheet.create({
   h1: { fontWeight: '800', fontSize: 20, letterSpacing: -0.4 },
   h2: { fontWeight: '500', fontSize: 12.5, marginTop: 4, lineHeight: 18 },
   tabsRow: { flexDirection: 'row', marginTop: 14 },
+  countTxt: { fontSize: 14, fontWeight: '700', marginTop: 14 },
+  filterBar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  filterToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1 },
+  filterToggleTxt: { fontSize: 12, fontWeight: '600' },
+  filterClear: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  filterGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, marginTop: 10 },
+  filterCell: { flexBasis: '45%', flexGrow: 1 },
   empty: { alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 56 },
   emptyTxt: { fontSize: 13, fontWeight: '500', textAlign: 'center' },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -223,7 +356,7 @@ const styles = StyleSheet.create({
   amount: { fontSize: 14, fontWeight: '700' },
   school: { fontSize: 12.5, fontWeight: '500' },
   rowBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 8 },
-  meta: { fontSize: 11, fontWeight: '500', flex: 1 },
+  meta: { fontSize: 11, fontWeight: '500' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   iconBtn: { width: MIN_TAP, height: MIN_TAP, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   fab: { position: 'absolute', left: 16, right: 16 },

@@ -14,6 +14,7 @@ import Geolocation from '@react-native-community/geolocation';
 import { API_BASE_URL } from '../utils/constants';
 import { ensureFreshToken, refreshAccessToken } from '../api/client';
 import { nextPingSeq } from './pingSequence';
+import { trackingApi } from '../api/tracking';
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
 
@@ -135,13 +136,101 @@ export const sendLocationPing = async (): Promise<void> => {
   }
 };
 
-const queuePing = async (pingBody: string) => {
+/** Cap the offline queue so a device left offline for days can't grow it without bound — the
+ *  same 500 the native engine and the B2C queue use. Oldest-first eviction: a stale position
+ *  matters less than a recent one. */
+const MAX_QUEUED_PINGS = 500;
+
+const readPingQueue = async (): Promise<any[]> => {
   try {
     const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-    let queue: any[] = [];
-    try { queue = stored ? JSON.parse(stored) : []; } catch {}
-    queue.push(JSON.parse(pingBody));
-    await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue));
-    console.log('[PingService] Queued. Total queued:', queue.length);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writePingQueue = async (queue: any[]): Promise<void> => {
+  try {
+    if (queue.length === 0) await AsyncStorage.removeItem(PING_QUEUE_KEY);
+    else await AsyncStorage.setItem(PING_QUEUE_KEY, JSON.stringify(queue.slice(-MAX_QUEUED_PINGS)));
   } catch {}
+};
+
+const queuePing = async (pingBody: string) => {
+  try {
+    const queue = await readPingQueue();
+    queue.push(JSON.parse(pingBody));
+    await writePingQueue(queue);
+    console.log('[PingService] Queued. Total queued:', Math.min(queue.length, MAX_QUEUED_PINGS));
+  } catch {}
+};
+
+export interface B2BQueueFlushResult {
+  /** True when nothing is left queued afterwards. */
+  ok: boolean;
+  /** Rows still queued after the attempt. */
+  remaining: number;
+}
+
+/**
+ * Drains the B2B JS offline queue (`tracking_ping_queue`) via /tracking/ping/batch.
+ *
+ * Trimming is driven by the server's `acceptedThroughSeq` (scoped to THIS batch), not by the call
+ * merely not throwing: a 200 says the request was handled, not that every fix was stored, and
+ * the server deliberately stops its ack just below the first ping that failed to save. Rows at or
+ * below the ack are durable and dropped; rows above it — and any row without a numeric seq — are
+ * KEPT for the next attempt, where the server's (session, seq) dedup makes the re-send free. The
+ * queue is cleared wholesale only when the field is absent (older server) or on 403 (no session —
+ * these can never be accepted). Every other failure keeps the queue intact.
+ *
+ * Every row this module queues carries a seq (allocated before pingBody is built; if allocation
+ * throws nothing is queued), so the keep-seqless rule only affects rows from older builds.
+ *
+ * `dropOlderThanMs` optionally discards rows whose recordedAt is older than that window before
+ * sending (MyDayTrackingScreen's existing 24 h rule). Never throws.
+ */
+export const flushB2BPingQueue = async (
+  opts: { dropOlderThanMs?: number } = {},
+): Promise<B2BQueueFlushResult> => {
+  const cutoff = opts.dropOlderThanMs != null ? Date.now() - opts.dropOlderThanMs : null;
+  const isFresh = (p: any) =>
+    cutoff == null || !p?.recordedAt || new Date(p.recordedAt).getTime() > cutoff;
+
+  const stored = await readPingQueue();
+  if (stored.length === 0) return { ok: true, remaining: 0 };
+
+  const queue = stored.filter(isFresh);
+  if (queue.length === 0) {
+    await writePingQueue([]);
+    return { ok: true, remaining: 0 };
+  }
+
+  try {
+    const res: any = await trackingApi.sendBatchPings(queue);
+    const through = res?.data?.acceptedThroughSeq;
+    if (typeof through === 'number') {
+      // Re-read rather than filtering the snapshot: a fix queued while the batch was in flight
+      // must not be discarded along with it.
+      const remaining = (await readPingQueue()).filter(
+        p => isFresh(p) && (typeof p?.seq !== 'number' || p.seq > through),
+      );
+      await writePingQueue(remaining);
+      return { ok: remaining.length === 0, remaining: remaining.length };
+    }
+    await writePingQueue([]);
+    return { ok: true, remaining: 0 };
+  } catch (err: any) {
+    const status = err?.response?.status ?? err?.status;
+    if (status === 403) {
+      // No active session — these pings will never be accepted, so let them go.
+      await writePingQueue([]);
+      return { ok: true, remaining: 0 };
+    }
+    // 5xx, timeouts, no response, 401 after a failed refresh: KEEP the queue.
+    // Storage is left untouched (not rewritten from the snapshot) so a fix queued while the
+    // request was in flight cannot be overwritten.
+    return { ok: false, remaining: queue.length };
+  }
 };

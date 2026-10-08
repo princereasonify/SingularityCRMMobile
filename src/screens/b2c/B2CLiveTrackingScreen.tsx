@@ -11,7 +11,7 @@ import { StatTile, SectionLabel } from '../../components/ui';
 import { b2cTrackingService } from '../../api/b2c/b2cTrackingService';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
-import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
+import { useResponsive, MIN_TAP, tileFill } from '../../hooks/useResponsive';
 import { isoDate, todayStr, timeOnly } from '../../utils/dates';
 import { distanceHint, confidenceLabel } from '../../utils/distanceProvenance';
 
@@ -22,9 +22,11 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const fmtTime = (v?: string | null) => (v ? timeOnly(v) : '');
 const fmtDuration = (mins?: number | null) => {
-  const m = Math.max(0, Number(mins) || 0);
-  const h = Math.floor(m / 60);
-  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+  // Round the TOTAL first, then split — otherwise 59.6 renders as "0h 60m" / "59.6m".
+  const total = Math.round(Math.max(0, Number(mins) || 0));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
 const prettyDate = (dateStr: string) => {
   const [y, mo, dd] = dateStr.split('-').map(Number);
@@ -85,7 +87,8 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
   const roleColor = user.role === 'Counselor' ? T.warning : T.accent;
   const s = useMemo(() => makeStyles(r), [r]);
   // Three tiles fit one row on a tablet; on a phone the third would be ~90pt wide and clip.
-  const statW = r.isTablet ? '32%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const statW = tileFill(r.isTablet ? 3 : 2);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,15 +161,15 @@ const RouteDrilldown = ({ user, onBack }: { user: LiveUser; onBack: () => void }
       {/* Stats */}
       <View style={s.statsRow}>
         <StatTile
-          style={{ width: statW }}
+          style={statW}
           label="Distance"
           value={`${Number(data?.totalDistanceKm ?? 0).toFixed(1)} km`}
           icon={<RouteIcon size={15} color={T.accent} />}
           sub={[distanceHint(data?.distanceMethod, data?.distanceStatus), confidenceLabel(data?.matchConfidence)]
             .filter(Boolean).join(' · ') || undefined}
         />
-        <StatTile style={{ width: statW }} label="Duration" value={fmtDuration(data?.durationMinutes)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
-        <StatTile style={{ width: statW }} label="Started" value={fmtTime(data?.startedAt) || '—'} tint={T.success} icon={<MapPin size={15} color={T.success} />} />
+        <StatTile style={statW} label="Duration" value={fmtDuration(data?.durationMinutes)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
+        <StatTile style={statW} label="Started" value={fmtTime(data?.startedAt) || '—'} tint={T.success} icon={<MapPin size={15} color={T.success} />} />
       </View>
 
       {/* Route map */}

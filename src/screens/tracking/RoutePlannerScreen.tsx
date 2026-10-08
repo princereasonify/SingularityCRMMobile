@@ -21,6 +21,7 @@ import { Btn, IconBtn, Field, Trigger, Dropdown, ListCard, ConfirmModal } from '
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { todayStr } from '../../utils/dates';
 
 /**
  * Route Planner — 1:1 with web/src/pages/common/RoutePlanner.jsx.
@@ -45,7 +46,9 @@ import { rf, isTabletDevice } from '../../utils/responsive';
 /** Web parity: `schoolService.getSchools({ limit: 500 })`. */
 const SCHOOL_FETCH_LIMIT = 500;
 
-const today = () => new Date().toISOString().split('T')[0];
+// LOCAL calendar day — toISOString() is UTC, so between 00:00 and 05:29 IST it reported
+// yesterday and a plan saved then landed on the wrong date.
+const today = () => todayStr();
 
 type Stop = {
   order: number;
@@ -293,9 +296,18 @@ export const RoutePlannerScreen = () => {
       const here = await getCurrentLocation();
       setPermDenied(false);
       const valid = stops.filter(s => s.lat != null && s.lon != null);
-      setStops(reorder(nearestNeighborOrder(here, valid)));
+      // Stops with no map position can't be ordered by distance, but they are still visits:
+      // keep them at the end instead of dropping them from the plan (web RoutePlanner).
+      const unplaced = stops.filter(s => !(s.lat != null && s.lon != null));
+      setStops(reorder([...nearestNeighborOrder(here, valid), ...unplaced]));
       setShowMap(true);
-      Alert.alert('Route optimized', 'Stops reordered from your location — nearest first.');
+      Alert.alert(
+        'Route optimized',
+        'Stops reordered from your location — nearest first.' +
+          (unplaced.length
+            ? `\n\n${unplaced.length} school(s) without a map location were kept at the end.`
+            : ''),
+      );
     } catch (err: any) {
       const msg = String(err?.message ?? '');
       if (/denied|permission/i.test(msg) || err?.code === 1) {

@@ -88,12 +88,17 @@ function roleColor(T: AppTheme, role?: string): string {
   }
 }
 
+/** FO and ZH sit in a zone (the zone decides the region); RH in a region; SH/SCA in neither. */
+const placementKind = (r?: string): 'zone' | 'region' | null =>
+  r === 'FO' || r === 'ZH' ? 'zone' : r === 'RH' ? 'region' : null;
+
 const displayNameOf = (u: any) =>
   u?.name || [u?.firstName, u?.lastName].filter(Boolean).join(' ') || '';
 
 const initialsOf = (u: any) => {
   const n = displayNameOf(u);
-  return (u?.avatar || n.charAt(0) || '?').toUpperCase();
+  // A photo URL passes through untouched (Avatar renders it; upper-casing would break it).
+  return u?.avatar || (n.charAt(0) || '?').toUpperCase();
 };
 
 /**
@@ -268,6 +273,9 @@ export const UserManagementScreen = (_props: any) => {
   const [pendingUsers, setPendingUsers] = useState<UserDto[]>([]);
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [rejectingId, setRejectingId] = useState<number | null>(null);
+  /** Pending user id → chosen zone/region id. Approve stays disabled until one is picked. */
+  const [approvePlacement, setApprovePlacement] = useState<Record<number, string>>({});
+  const [openPlacementId, setOpenPlacementId] = useState<number | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -382,6 +390,22 @@ export const UserManagementScreen = (_props: any) => {
       Alert.alert('Error', 'Password must be at least 8 characters with uppercase, number, and special character.');
       return;
     }
+    // Placement the request will carry. Create: a ZH pins its own zone/region; an RH creates
+    // only inside its own region (the backend enforces this, so never send another region
+    // that would just 403). Edit: whatever the form holds.
+    const zoneId = !editingUser && role === 'ZH'
+      ? (user?.zoneId || undefined)
+      : (form.zoneId ? Number(form.zoneId) : undefined);
+    const regionId = !editingUser && (role === 'ZH' || role === 'RH')
+      ? (user?.regionId || undefined)
+      : (form.regionId ? Number(form.regionId) : undefined);
+    // Mirrors AuthService.ValidateHierarchyPlacement (web CreateUser.jsx:293-304, 368-386) —
+    // a blank picker reads as "fill this in" instead of a raw 400, and an edit can no longer
+    // save a row with a null zone/region that every zone-scoped query then can't see.
+    // (Web's FO message names a Zonal Head because web picks one; mobile picks the zone.)
+    if (form.role === 'RH' && !regionId) { Alert.alert('Error', 'Select a region for this Regional Head.'); return; }
+    if (form.role === 'ZH' && !zoneId) { Alert.alert('Error', 'Select a zone for this Zonal Head.'); return; }
+    if (form.role === 'FO' && !zoneId) { Alert.alert('Error', 'Select a zone for this Field Officer.'); return; }
     setFormLoading(true);
     try {
       if (editingUser) {
@@ -389,17 +413,10 @@ export const UserManagementScreen = (_props: any) => {
           name: form.name, email: form.email,
           password: form.password || undefined,
           role: form.role,
-          zoneId: form.zoneId ? Number(form.zoneId) : undefined,
-          regionId: form.regionId ? Number(form.regionId) : undefined,
+          zoneId,
+          regionId,
         });
       } else {
-        // ZH auto-assigns their own zone/region
-        const zoneId = role === 'ZH' ? (user?.zoneId || undefined) : (form.zoneId ? Number(form.zoneId) : undefined);
-        // ZH pins its own region; RH also creates only inside its own region (the backend
-        // now enforces this, so never send another region that would just 403).
-        const regionId = (role === 'ZH' || role === 'RH')
-          ? (user?.regionId || undefined)
-          : (form.regionId ? Number(form.regionId) : undefined);
         await authApi.createUser({
           name: form.name, email: form.email, password: form.password,
           role: form.role,
@@ -488,11 +505,25 @@ export const UserManagementScreen = (_props: any) => {
     return users.filter((x: any) => x.role === wanted && x.id !== deleteTarget.id);
   }, [users, deleteTarget, deleteInfo]);
 
+  // Web parity (CreateUser.jsx:531-545): the server refuses an FO/ZH without a zone and an
+  // RH without a region ("Choose a zone for this user before approving."), so the SCA picks
+  // the placement on the row and it rides along in the approve body.
   const handleApprove = async (id: number) => {
+    const pending: any = pendingUsers.find((u) => u.id === id);
+    const kind = placementKind(pending?.role);
+    const chosen = approvePlacement[id];
+    if (kind && !chosen) {
+      Alert.alert('Error', `Choose a ${kind} for ${displayNameOf(pending) || 'this user'} before approving.`);
+      return;
+    }
     setApprovingId(id);
     try {
-      await authApi.approveUser(id);
+      await authApi.approveUser(
+        id,
+        kind === 'zone' ? { zoneId: Number(chosen) } : kind === 'region' ? { regionId: Number(chosen) } : {},
+      );
       setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+      setApprovePlacement(({ [id]: _drop, ...rest }) => rest);
       fetchData();
       Alert.alert('Success', 'User approved successfully!');
     } catch (err: any) {
@@ -622,13 +653,14 @@ export const UserManagementScreen = (_props: any) => {
   // ── Pending approvals ───────────────────────────────────────────────────────
   const pendingActions = (u: any) => {
     const busy = approvingId === u.id || rejectingId === u.id;
+    const needsPlacement = !!placementKind(u.role) && !approvePlacement[u.id];
     return (
       <View style={s.actions}>
         <Btn
           label="Approve"
           variant="success"
           small
-          disabled={busy}
+          disabled={busy || needsPlacement}
           loading={approvingId === u.id}
           onPress={() => handleApprove(u.id)}
           icon={<UserCheck size={13} color="#FFF" strokeWidth={ICON_STROKE} />}
@@ -643,6 +675,41 @@ export const UserManagementScreen = (_props: any) => {
           icon={<X size={13} color="#FFF" strokeWidth={ICON_STROKE} />}
         />
       </View>
+    );
+  };
+
+  /** Zone (FO/ZH) or region (RH) the signup will be placed in — web's per-row select. */
+  const placementPicker = (u: any) => {
+    const kind = placementKind(u.role);
+    if (!kind) return null;
+    const options = kind === 'zone'
+      ? zones.map((z) => ({ label: `${z.name}${z.region ? ` · ${z.region}` : ''}`, value: String(z.id) }))
+      : regions.map((r) => ({ label: r.name, value: String(r.id) }));
+    const value = approvePlacement[u.id] || '';
+    const open = openPlacementId === u.id;
+    return (
+      <Field label={kind === 'zone' ? 'Zone *' : 'Region *'} style={s.placementField}>
+        <Trigger
+          label={options.find((o) => o.value === value)?.label || `Select ${kind}…`}
+          open={open}
+          onPress={() => setOpenPlacementId(open ? null : u.id)}
+          icon={kind === 'zone'
+            ? <MapPin size={14} color={T.sub} strokeWidth={ICON_STROKE} />
+            : <Globe size={14} color={T.sub} strokeWidth={ICON_STROKE} />}
+        />
+        {open && (
+          <Dropdown
+            style={s.ddFull}
+            maxHeight={200}
+            value={value}
+            onSelect={(v) => {
+              setApprovePlacement((p) => ({ ...p, [u.id]: String(v) }));
+              setOpenPlacementId(null);
+            }}
+            options={options}
+          />
+        )}
+      </Field>
     );
   };
 
@@ -663,7 +730,8 @@ export const UserManagementScreen = (_props: any) => {
           </Text>
         </View>
         {pagedPending.map((u: any) => (
-          <ListCard key={String(u.id)} style={table ? undefined : s.pendingCard}>
+          // A row with a placement picker stacks on iPad too, so the picker gets its own line.
+          <ListCard key={String(u.id)} style={table && !placementKind(u.role) ? undefined : s.pendingCard}>
             <View style={s.rowTop}>
               <Avatar initials={initialsOf(u)} color={T.warning} />
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -678,6 +746,7 @@ export const UserManagementScreen = (_props: any) => {
               </View>
               {table && pendingActions(u)}
             </View>
+            {placementPicker(u)}
             {!table && pendingActions(u)}
           </ListCard>
         ))}
@@ -978,6 +1047,7 @@ const s = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 5 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
   pendingCard: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
+  placementField: { alignSelf: 'stretch' },
 
   notice: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

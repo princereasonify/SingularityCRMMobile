@@ -30,14 +30,18 @@ import {
   Play,
   Square,
   Route as RouteIcon,
+  School,
+  ChevronRight,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import BackgroundService from '../../services/backgroundServiceShim';
 import BackgroundFetch from 'react-native-background-fetch';
 import { trackingApi, VehicleType } from '../../api/tracking';
-import { sendLocationPing } from '../../services/locationPingService';
-import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission, isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
+import { schoolAssignmentsApi } from '../../api/schoolAssignments';
+import { sendLocationPing, flushB2BPingQueue } from '../../services/locationPingService';
+import { startNativeTracking, stopNativeTracking, flushNativeQueue, requestIOSLocationPermission, checkIOSPermission, isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
 import {
   SessionResponseDto,
   TrackingSessionDto,
@@ -141,8 +145,14 @@ const Empty = ({ title, subtitle }: { title: string; subtitle: string }) => {
 export const MyDayTrackingScreen = () => {
   const { user } = useAuth();
   const T = useAppTheme();
+  const nav = useNavigation<any>();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+
+  // Today's assigned-school count, shown as a tappable entry into AssignedSchoolsScreen
+  // (the map + per-school "Report" flow — see AssignedSchoolsScreen.tsx). This card is
+  // the FO's only path to filing a Visit Report; it previously had none at all.
+  const [schoolSummary, setSchoolSummary] = useState<{ total: number; visited: number } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -168,6 +178,9 @@ export const MyDayTrackingScreen = () => {
   const [allowancesLoading, setAllowancesLoading] = useState(false);
 
   const mapRef = useRef<MapView>(null);
+  // Bumped on every history-date pick; a route response whose token is no longer current is
+  // discarded, so a slow reply for an earlier date cannot overwrite the date now selected.
+  const historyTokenRef = useRef(0);
   const [mapType, setMapType] = useState<MapKind>('standard');
 
   const [locationGranted, setLocationGranted] = useState(false);
@@ -388,45 +401,17 @@ export const MyDayTrackingScreen = () => {
 
   // ─── Network monitoring ──────────────────────────────────────────────────
   const syncOfflineQueue = useCallback(async () => {
-    try {
-      const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-      if (!stored) return;
-      let queue: any[];
-      try { queue = JSON.parse(stored); if (!Array.isArray(queue)) queue = []; } catch { return; }
-      if (queue.length === 0) return;
-
-      // Drop pings older than 24 hours — server will reject stale session data anyway
-      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-      queue = queue.filter((p: any) => !p.recordedAt || new Date(p.recordedAt).getTime() > cutoff);
-      if (queue.length === 0) {
-        await AsyncStorage.removeItem(PING_QUEUE_KEY);
-        setQueuedPings(0);
-        return;
-      }
-
-      try {
-        await trackingApi.sendBatchPings(queue);
-        await AsyncStorage.removeItem(PING_QUEUE_KEY);
-        setQueuedPings(0);
-      } catch (err: any) {
-        const status = err?.response?.status;
-
-        // 403 — no active session: these pings will never be accepted, so let them go.
-        // 401 — the interceptor already tried to refresh and failed; the user is being
-        //   logged out, and the queue is cleared with the rest of the session.
-        // Everything else (5xx, timeouts, no response) is transient: KEEP the queue.
-        //   The old code discarded on any status >= 400, which silently destroyed a
-        //   day's worth of route data whenever the token expired or the server hiccuped.
-        if (status === 403) {
-          await AsyncStorage.removeItem(PING_QUEUE_KEY);
-          setQueuedPings(0);
-        } else {
-          setQueuedPings(queue.length);
-        }
-      }
-    } catch {
-      // AsyncStorage read error — ignore
-    }
+    // Shared drain (services/locationPingService.ts): trims against the server's
+    // acceptedThroughSeq, keeps the queue on every failure except 403, and still drops pings
+    // older than 24 hours before sending (the server would file them under a closed day).
+    //
+    // 401 — the interceptor already tried to refresh and failed; the queue is KEPT (the user is
+    //   being logged out, and the queue is cleared with the rest of the session).
+    // The old code discarded on any status >= 400, which silently destroyed a day's worth of
+    // route data whenever the token expired or the server hiccuped.
+    const result = await flushB2BPingQueue({ dropOlderThanMs: 24 * 60 * 60 * 1000 });
+    setQueuedPings(result.remaining);
+    return result;
   }, []);
 
   useEffect(() => {
@@ -590,14 +575,24 @@ export const MyDayTrackingScreen = () => {
     }
   }, []);
 
+  const fetchSchoolSummary = useCallback(async () => {
+    try {
+      const res = await schoolAssignmentsApi.getMyAssignments(toISODate(new Date()));
+      const rows = (res.data as any[]) ?? [];
+      setSchoolSummary({ total: rows.length, visited: rows.filter(r => r.isVisited).length });
+    } catch {
+      setSchoolSummary(null);
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     try {
-      await Promise.all([fetchSession(), fetchAllowances()]);
+      await Promise.all([fetchSession(), fetchAllowances(), fetchSchoolSummary()]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fetchSession, fetchAllowances]);
+  }, [fetchSession, fetchAllowances, fetchSchoolSummary]);
 
   useEffect(() => {
     fetchAll().catch(() => {}).finally(() => {
@@ -607,6 +602,10 @@ export const MyDayTrackingScreen = () => {
   }, []);
 
   const onRefresh = () => { setRefreshing(true); fetchAll().catch(() => {}); };
+
+  // Re-check visited/pending counts whenever this screen regains focus — e.g. after
+  // filing a Visit Report or returning from AssignedSchoolsScreen.
+  useFocusEffect(useCallback(() => { fetchSchoolSummary().catch(() => {}); }, [fetchSchoolSummary]));
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
@@ -653,9 +652,19 @@ export const MyDayTrackingScreen = () => {
     setConfirmEnd(false);
     setActionLoading(true);
     try {
-      await stopTracking();
+      // Drain EVERYTHING queued on the device BEFORE ending the day — the server freezes the
+      // day's distance/allowance at end-day, so a fix delivered afterwards is stored only as
+      // "arrived after the day was closed" and never counts. Order matters:
+      //   1. native queue — while tracking is still running, because iOS stopTracking deletes
+      //      the stored token/URL and Android's would leave the queue for a service that is gone;
+      //   2. JS queue (tracking_ping_queue — the no-native-module fallback sender);
+      //   3. end-day;
+      //   4. only then stop capture.
+      // Both flushes resolve (never throw) and are time-boxed, so End Day cannot hang on them.
+      await flushNativeQueue();
       await syncOfflineQueue();
       const res = await trackingApi.endDay();
+      await stopTracking();
       const data = res.data as SessionResponseDto;
       setSession(data?.session ?? null);
       // Allow starting again immediately after ending
@@ -675,8 +684,10 @@ export const MyDayTrackingScreen = () => {
     if (!user) return;
     setSelectedDate(date);
     setHistoryLoading(true);
+    const token = ++historyTokenRef.current;
     try {
       const res = await trackingApi.getRoute(user.id, date);
+      if (token !== historyTokenRef.current) return;   // a newer date was picked meanwhile
       const data = res.data as any;
       setHistorySession(data?.session ?? null);
       const pts: RoutePointDto[] = data?.route ?? [];
@@ -692,10 +703,11 @@ export const MyDayTrackingScreen = () => {
         }, 400);
       }
     } catch {
+      if (token !== historyTokenRef.current) return;
       setHistorySession(null);
       setRoutePoints([]);
     } finally {
-      setHistoryLoading(false);
+      if (token === historyTokenRef.current) setHistoryLoading(false);
     }
   };
 
@@ -1008,6 +1020,30 @@ export const MyDayTrackingScreen = () => {
             </View>
           )}
         </View>
+
+        {/* ── Today's Schools (entry point to AssignedSchoolsScreen + Visit Report) ── */}
+        <TouchableOpacity
+          style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}
+          activeOpacity={0.8}
+          onPress={() => nav.navigate('AssignedSchools')}
+        >
+          <View style={s.cardHead}>
+            <View style={[s.tileIcon, { backgroundColor: withAlpha(T.accent, SOFT_TINT) }]}>
+              <School size={16} color={T.accent} strokeWidth={ICON_STROKE} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.cardTitle, { color: T.text }]}>Today's Schools</Text>
+              <Text style={[s.cardSub, { color: T.dim }]}>
+                {schoolSummary
+                  ? schoolSummary.total === 0
+                    ? 'No schools assigned today'
+                    : `${schoolSummary.visited} of ${schoolSummary.total} visited · tap to view route & file a report`
+                  : 'Loading…'}
+              </Text>
+            </View>
+            <ChevronRight size={18} color={T.dim} strokeWidth={ICON_STROKE} />
+          </View>
+        </TouchableOpacity>
 
         {/* ── Tracking History ── */}
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>

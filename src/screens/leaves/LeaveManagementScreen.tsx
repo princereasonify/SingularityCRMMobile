@@ -23,6 +23,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import type { AppTheme } from '../../theme/appTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { todayStr } from '../../utils/dates';
 
 /**
  * Leave Management — apply, track, and (for managers) approve/reject team leave.
@@ -100,7 +101,8 @@ const categoryToken = (T: AppTheme, cat: string): string =>
     Emergency: T.danger,
   } as Record<string, string>)[cat]) || T.dim;
 
-const getToday = () => new Date().toISOString().split('T')[0];
+/** LOCAL today — toISOString() named yesterday for IST between midnight and 05:30. */
+const getToday = () => todayStr();
 
 const fmtDate = (d?: string) =>
   !d ? DASH : new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -294,10 +296,17 @@ function RejectModal({ onClose, onReject, rejecting }: {
   );
 }
 
-/** A leave is cancellable while it is still upcoming and not already closed. */
-const isCancellable = (leave: any) =>
-  ['Pending', 'Approved', 'AutoApproved'].includes(leave.status) &&
-  new Date(leave.leaveDate) >= new Date(getToday());
+/**
+ * Same rule as the server (web parity, LeaveManagement.jsx): a future leave, or today's if
+ * still Pending. Once it's taken — past, or today and approved — it can't be cancelled.
+ * Compared as local `yyyy-mm-dd` strings so no timezone shift moves the day.
+ */
+const isCancellable = (leave: any) => {
+  if (!['Pending', 'Approved', 'AutoApproved'].includes(leave.status)) return false;
+  const day = String(leave.leaveDate).slice(0, 10);
+  const today = getToday();
+  return day > today || (day === today && leave.status === 'Pending');
+};
 
 // ─── Expanded detail — shared verbatim by the iPad table row and the phone row ─
 function LeaveDetail({ leave }: { leave: any }) {

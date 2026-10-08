@@ -58,7 +58,14 @@ export const trackingApi = {
     return res;
   },
 
+  /**
+   * Response `data.acceptedThroughSeq` is the highest seq of THIS batch the server durably holds
+   * (it stops just below the first ping that failed to save). Callers trim their queue against
+   * it — see flushB2BPingQueue in services/locationPingService.ts.
+   */
   sendBatchPings: async (pings: Array<{
+    /** Idempotency key — the server dedups on (session, seq). */
+    seq?: number;
     latitude: number;
     longitude: number;
     accuracyMetres?: number;

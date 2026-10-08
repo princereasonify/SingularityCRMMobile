@@ -130,3 +130,18 @@ export const gridCardWidth = (r: Responsive, itemCount: number): number | '100%'
   const innerW = Math.min(r.width, r.maxContentWidth) - r.gutter * 2;
   return Math.floor((innerW - r.gap * (cols - 1)) / cols);
 };
+
+/**
+ * Style for a stat tile in a wrapping row: `cols` tiles per line that GROW to fill it.
+ *
+ * Replaces `width: '48.5%'`-style tiles. Two of those plus the row's 10–12pt gap need more than
+ * the 3% they leave over on a phone (≈10pt at 360pt wide), so the second tile always wrapped and
+ * every grid became one half-width column with dead space beside it. A basis well under 1/cols
+ * plus flexGrow always fits `cols` per line and still fills the row exactly; an odd last tile
+ * simply spans the line.
+ */
+export const tileFill = (cols: number) => ({
+  flexBasis: `${Math.floor(100 / cols) - 6}%` as `${number}%`,
+  flexGrow: 1,
+  minWidth: 0,
+});

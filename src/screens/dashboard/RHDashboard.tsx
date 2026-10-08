@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl,
   useWindowDimensions, TouchableOpacity,
@@ -12,6 +12,7 @@ import { Segmented, StatusBadge } from '../../components/crud';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { dashboardApi } from '../../api/dashboard';
+import { TeamPlansPanel, useTeamActivities, hasTeamActivities } from './TeamPlansPanel';
 import { RegionDashboardDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/formatting';
@@ -100,13 +101,21 @@ export const RHDashboard = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [loadFailed, setLoadFailed] = useState(false);
+  // Web parity (rh/RegionDashboard.jsx): the team's approved activities for today/tomorrow.
+  const { teamActivities, reloadTeamActivities } = useTeamActivities();
+
+  // Latest request wins — an earlier period chip's response must not land over a later one.
+  const loadTokenRef = useRef(0);
 
   const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await dashboardApi.getRegionDashboard(p);
+      if (loadTokenRef.current !== token) return;
       setData(res.data);
       setLoadFailed(false);
     } catch {
+      if (loadTokenRef.current !== token) return;
       // The old fabricated fallback rendered invented figures identically to a
       // real region dashboard, so a RH could read made-up region revenue and act
       // on it. Mirrors ZHDashboard: record the failure and show a real error
@@ -114,8 +123,10 @@ export const RHDashboard = ({ navigation }: any) => {
       setData(null);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [period]);
 
@@ -124,12 +135,14 @@ export const RHDashboard = ({ navigation }: any) => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetch(period);
-  }, [fetch, period]);
+    reloadTeamActivities();
+  }, [fetch, period, reloadTeamActivities]);
 
   const reload = useCallback(() => {
     setLoading(true);
     fetch(period);
-  }, [fetch, period]);
+    reloadTeamActivities();
+  }, [fetch, period, reloadTeamActivities]);
 
   const regionName = data?.regionName || user?.region || 'Region';
 
@@ -522,6 +535,18 @@ export const RHDashboard = ({ navigation }: any) => {
   const rowB: { key: string; node: React.ReactNode }[] = [];
   if (revenueChart.length > 0) rowB.push({ key: 'revenue', node: revenuePanel });
   if (lossReasons.length > 0) rowB.push({ key: 'loss', node: lossPanel });
+  if (hasTeamActivities(teamActivities)) {
+    rowB.push({
+      key: 'teamPlans',
+      node: (
+        <TeamPlansPanel
+          activities={teamActivities}
+          wide={wide}
+          onViewAll={() => navigation.navigate('WeeklyPlanScreen', { pushed: true })}
+        />
+      ),
+    });
+  }
 
   const panelRow = (cells: { key: string; node: React.ReactNode }[]) => {
     const w = wide ? `${100 / cells.length}%` : '100%';

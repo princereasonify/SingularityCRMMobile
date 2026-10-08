@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { LeadStage } from '../types';
+import { LeadStage, ApprovalStatus, UserRole } from '../types';
 import { Colors } from '../theme';
 import { API_BASE_URL as ENV_API_BASE_URL } from '@env';
 
@@ -70,6 +70,92 @@ export const ALL_STAGES: LeadStage[] = [
   'NewLead', 'Contacted', 'Qualified', 'DemoStage', 'DemoDone',
   'ProposalSent', 'Negotiation', 'ContractSent', 'Won', 'ImplementationStarted', 'Lost',
 ];
+
+// ─── Stage rules ──────────────────────────────────────────────────────────────
+/*
+ * Port of web's src/data/leadStages.js — the same rules LeadService / DealService enforce:
+ *  - Won comes only from an approved deal (Create Deal), never from a drag or an edit.
+ *  - Lost comes only from Mark Lost, which records a reason.
+ *  - A Won lead can move on to Implementation Started (managers only); closed leads otherwise stay put.
+ */
+export const stageLabel = (stage?: string | null): string =>
+  (stage && STAGE_LABELS[stage as LeadStage]) || stage || '';
+
+/** Open pipeline stages, in order — the ones a lead can be moved between freely. */
+export const OPEN_STAGES: LeadStage[] = [
+  'NewLead', 'Contacted', 'Qualified', 'DemoStage', 'DemoDone',
+  'ProposalSent', 'Negotiation', 'ContractSent',
+];
+
+export const CLOSED_STAGES: LeadStage[] = ['Won', 'ImplementationStarted', 'Lost'];
+export const isClosedStage = (stage?: string | null) => CLOSED_STAGES.includes(stage as LeadStage);
+
+/** Stages from which a deal can be created (DealService.DealableStages). */
+export const DEALABLE_STAGES: LeadStage[] = ['DemoDone', 'ProposalSent', 'Negotiation', 'ContractSent', 'Won'];
+
+/** Why a move is refused, or null when it's allowed. */
+export function stageMoveError(from: string, to: string, role?: string): string | null {
+  if (from === to) return null;
+  if (to === 'Won') return 'A lead becomes Won when its deal is approved. Create the deal instead.';
+  if (to === 'Lost') return 'Use Mark Lost (with a reason) to close a lead as lost.';
+  if (to === 'ImplementationStarted') {
+    if (from !== 'Won') return 'Only a Won lead can move to Implementation Started.';
+    if (role === 'FO') return 'Your manager moves a Won lead to Implementation Started.';
+    return null;
+  }
+  if (isClosedStage(from)) return `A ${stageLabel(from)} lead can't be moved back into the pipeline.`;
+  return null;
+}
+
+/** Stages offered in the Edit Lead dropdown for a lead currently at `current`. */
+export function editableStages(current: string, role?: string): LeadStage[] {
+  const list: LeadStage[] = isClosedStage(current) ? [current as LeadStage] : [...OPEN_STAGES];
+  if (current === 'Won' && role !== 'FO') list.push('ImplementationStarted');
+  return list;
+}
+
+/** Deal approval states → label + tone (resolve the tone to a theme colour at the call site). */
+export const APPROVAL_LABELS: Record<ApprovalStatus, { label: string; tone: 'neutral' | 'positive' | 'warn' | 'negative' }> = {
+  Draft:        { label: 'Draft', tone: 'neutral' },
+  SelfApproved: { label: 'Self-approved', tone: 'positive' },
+  PendingZH:    { label: 'Awaiting Zonal Head', tone: 'warn' },
+  PendingRH:    { label: 'Awaiting Regional Head', tone: 'warn' },
+  PendingSH:    { label: 'Awaiting Sales Head', tone: 'warn' },
+  Approved:     { label: 'Approved', tone: 'positive' },
+  Rejected:     { label: 'Rejected', tone: 'negative' },
+};
+
+/** Who may act on a deal in each pending state (SCA can act on all of them). */
+export const APPROVER_ROLE: Partial<Record<ApprovalStatus, UserRole>> = { PendingZH: 'ZH', PendingRH: 'RH', PendingSH: 'SH' };
+
+/** Rupees rounded to paise — the same rounding DealService.Money uses. */
+export const money = (v: unknown): number => Math.round((Number(v) || 0) * 100 + Number.EPSILON) / 100;
+
+/**
+ * The approver a deal will be routed to — DealService.RouteForApproval: by discount
+ * (≤10 self, ≤20 ZH, ≤30 RH, above that SH), lifted above the creator's own level, then lifted
+ * again past a level with nobody to act on it (no zone → no ZH, no region → no RH).
+ * As on web, `undefined` means "assume present"; only an explicit null (the server's
+ * "no zone/region assigned") escalates.
+ */
+export function approvalRoute(
+  discount: number,
+  creatorRole?: string,
+  creatorZoneId: number | null | boolean = true,
+  creatorRegionId: number | null | boolean = true,
+): { level: string; tone: 'success' | 'warning' | 'error'; approver: string; selfApproved?: boolean } {
+  let level = discount <= 10 ? 0 : discount <= 20 ? 1 : discount <= 30 ? 2 : 3;
+  const creatorLevel = ({ ZH: 1, RH: 2, SH: 3, SCA: 3 } as Record<string, number>)[creatorRole || ''] || 0;
+  if (level > 0 && creatorLevel >= level) level = Math.min(creatorLevel + 1, 3);
+  if (level === 1 && creatorZoneId == null) level = 2;
+  if (level === 2 && creatorRegionId == null) level = 3;
+  return ([
+    { level: 'Self-Approved', tone: 'success', approver: 'You', selfApproved: true },
+    { level: 'Zonal Head Approval', tone: 'warning', approver: 'Zonal Head' },
+    { level: 'Regional Head Approval', tone: 'warning', approver: 'Regional Head' },
+    { level: 'Sales Head Approval', tone: 'error', approver: 'Sales Head' },
+  ] as const)[level];
+}
 
 // ─── Static Dropdown Data ─────────────────────────────────────────────────────
 export const BOARDS            = ['CBSE', 'ICSE', 'IB', 'State Board', 'IGCSE', 'Cambridge', 'Other'];

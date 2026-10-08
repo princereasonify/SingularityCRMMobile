@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import { FieldLabelContext } from './fieldLabelContext';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Pressable, Animated,
 } from 'react-native';
@@ -46,6 +47,11 @@ export const NumField = ({
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  // Show the label on the field itself unless a wrapping <Field label> already does.
+  const insideLabelledField = useContext(FieldLabelContext);
+  const showOwnLabel = !!label && !insideLabelledField;
+  // No own label → a Fragment, so the box stays a direct child of the caller's row exactly as before.
+  const LabelWrap: any = showOwnLabel ? View : React.Fragment;
 
   // Caret plumbing, identical in shape to KeyField's — the sheet holds a real focused
   // TextInput so a number can be corrected in the middle instead of only at its end.
@@ -91,25 +97,30 @@ export const NumField = ({
 
   return (
     <>
-      {/* The field face — a themed input row that shows the value; tapping opens the keypad. */}
-      <TouchableOpacity
-        activeOpacity={0.75}
-        disabled={disabled}
-        onPress={() => {
-          caret.current = { start: value.length, end: value.length };
-          setSel({ start: value.length, end: value.length });
-          setOpen(true);
-        }}
-        style={[s.face, { backgroundColor: T.fieldBg, borderColor: error ? T.danger : open ? T.accent : T.line }, style]}
-      >
-        <Text
-          numberOfLines={1}
-          style={[s.faceTxt, { color: value ? T.text : T.dim }]}
+      {/* With its own label, label + field + error move as ONE block so a caller's layout
+          style (flex:1 in a two-up row) applies to the whole thing, not just the box. */}
+      <LabelWrap {...(showOwnLabel ? { style } : {})}>
+        {showOwnLabel && <Text style={[s.ownLabel, { color: T.text }]} numberOfLines={2}>{label}</Text>}
+        {/* The field face — a themed input row that shows the value; tapping opens the keypad. */}
+        <TouchableOpacity
+          activeOpacity={0.75}
+          disabled={disabled}
+          onPress={() => {
+            caret.current = { start: value.length, end: value.length };
+            setSel({ start: value.length, end: value.length });
+            setOpen(true);
+          }}
+          style={[s.face, { backgroundColor: T.fieldBg, borderColor: error ? T.danger : open ? T.accent : T.line }, !showOwnLabel && style]}
         >
-          {value || placeholder || '0'}
-        </Text>
-      </TouchableOpacity>
-      {!!error && <Text style={[s.err, { color: T.danger }]}>{error}</Text>}
+          <Text
+            numberOfLines={1}
+            style={[s.faceTxt, { color: value ? T.text : T.dim }]}
+          >
+            {value || placeholder || '0'}
+          </Text>
+        </TouchableOpacity>
+        {!!error && <Text style={[s.err, { color: T.danger }]}>{error}</Text>}
+      </LabelWrap>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.scrim} onPress={() => setOpen(false)}>
@@ -277,6 +288,7 @@ const s = StyleSheet.create({
   keySpacer: { flex: 1 },
   keyTxt: { fontSize: rf(22), fontWeight: '600' },
   err: { fontSize: rf(11.5), fontWeight: '400', marginTop: 4 },
+  ownLabel: { fontSize: rf(12.5), fontWeight: '600', marginBottom: 6 },
 
   done: {
     height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

@@ -25,6 +25,11 @@ RCT_EXTERN_METHOD(updateAuthToken:(NSString *)token
 RCT_EXTERN_METHOD(stopTracking:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 
+// End Day: drain the native offline queue BEFORE the session is ended (and before stopTracking
+// deletes the token/URL). Resolves true/false; never rejects.
+RCT_EXTERN_METHOD(flushQueue:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(updateGeofences:(NSArray *)schools
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)

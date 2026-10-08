@@ -11,8 +11,10 @@ import { NumField } from '../../components/common/NumField';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { money } from '../../utils/constants';
 
-const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+// Up to 2 decimals, matching web's DealEstimate fmt — amounts are paise-rounded below.
+const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 const BILLING_OPTIONS = [
   { label: 'Annually', value: 'Annually' },
@@ -97,13 +99,14 @@ export const DealEstimateScreen = ({ navigation }: any) => {
   const tl = Number.isNaN(rawTl) ? 0 : Math.max(rawTl, 0);
   const disc = clamp(Number.isNaN(rawDisc) ? 0 : rawDisc, DISCOUNT_MIN, DISCOUNT_MAX);
 
-  const subtotal = bp * tl;
-  const amountWithoutGst = Math.round(subtotal * (1 - disc / 100));
-  const discountAmount = subtotal - amountWithoutGst;
-  const gstAmount = Math.round(amountWithoutGst * 0.18);
-  const totalMoney = amountWithoutGst + gstAmount;
+  // Rounded to paise at each step, exactly as DealService stores a deal (web parity).
+  const subtotal = money(money(bp) * tl);
+  const amountWithoutGst = money(subtotal * (1 - money(disc) / 100));
+  const discountAmount = money(subtotal - amountWithoutGst);
+  const gstAmount = money(amountWithoutGst * 0.18);
+  const totalMoney = money(amountWithoutGst + gstAmount);
   const installments = INSTALLMENT_MAP[billingFrequency] || 1;
-  const perInstallment = installments > 0 ? Math.round(totalMoney / installments) : 0;
+  const perInstallment = installments > 0 ? money(totalMoney / installments) : totalMoney;
 
   const hasValues = bp > 0 && tl > 0;
   const approval = disc > 0 && hasValues ? getApprovalInfo(disc, T) : null;
@@ -227,7 +230,6 @@ export const DealEstimateScreen = ({ navigation }: any) => {
       <AppHeader
         title="Deal Estimate"
         subtitle="Calculate pricing with GST before creating a deal"
-        onMenu={() => navigation.toggleDrawer()}
       />
 
       <ScrollView

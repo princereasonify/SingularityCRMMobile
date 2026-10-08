@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, Modal, Pressable, ScrollView, StyleSheet,
+  View, Text, TouchableOpacity, Modal, Pressable, StyleSheet,
 } from 'react-native';
 import { ChevronDown, Calendar, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { rf } from '../../utils/responsive';
@@ -143,7 +143,8 @@ export const DateInput = ({
             </View>
 
             {/* Year Quick Select */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.yearScroll} contentContainerStyle={styles.yearRow}>
+            {/* Wraps instead of scrolling sideways — all seven years visible at once. */}
+            <View style={[styles.yearScroll, styles.yearRow]}>
               {Array.from({ length: 7 }, (_, i) => today.getFullYear() - 1 + i).map((y) => (
                 <TouchableOpacity
                   key={y}
@@ -153,7 +154,7 @@ export const DateInput = ({
                   <Text style={[styles.yearChipText, { color: year === y ? '#FFF' : T.sub }]}>{y}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
 
             {/* Day Names */}
             <View style={styles.dayNamesRow}>
@@ -236,7 +237,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: rf(16), fontWeight: '700' },
   yearScroll: { marginBottom: 12, flexGrow: 0 },
-  yearRow: { flexDirection: 'row', gap: 6 },
+  yearRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   yearChip: {
     paddingHorizontal: 12, paddingVertical: 5,
     borderRadius: 100,

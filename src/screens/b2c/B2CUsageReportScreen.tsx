@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
@@ -105,18 +105,27 @@ export const B2CUsageReportScreen = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<B2CUsageUserDto | null>(null);
 
+  // Latest request wins. A quick preset flip or fast typing fires a second request before the
+  // first resolves; without this, whichever came back LAST was shown — sometimes an abandoned
+  // range. Each call claims a token and only the newest one's response is applied (web :657-677).
+  const loadTokenRef = useRef(0);
   const load = useCallback(async (silent = false) => {
+    const token = ++loadTokenRef.current;
     if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await b2cUsageReportService.getReport({ ...range, search });
+      if (loadTokenRef.current !== token) return;
       setReport(res.data ?? null);
     } catch (e: any) {
+      if (loadTokenRef.current !== token) return;
       setError(e?.response?.data?.message || 'Failed to load the usage report');
       setReport(null);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [range, search]);
 

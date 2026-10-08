@@ -87,6 +87,29 @@ export const payoutPayload = (v: PayoutValues) => ({
   ifscCode: v.ifscCode,
 });
 
+/** Seeds a form slice from a server payout-details response — mirrors web payoutFormFrom. */
+export const payoutFormFrom = (d?: Partial<Record<keyof PayoutValues, string | null>> | null): PayoutValues => ({
+  panNumber: d?.panNumber || '',
+  // Stored as 12 bare digits; grouped for the field so a loaded number looks the same as
+  // one being typed into it.
+  aadhaarNumber: formatAadhaar(d?.aadhaarNumber || ''),
+  accountNumber: d?.accountNumber || '',
+  ifscCode: d?.ifscCode || '',
+});
+
+/**
+ * The payout-details response as the server actually sends it (B2CPayoutDtos.cs): the four
+ * values plus a completeness summary the edit dialogs show as a banner.
+ */
+export interface PayoutDetailsResponse extends Partial<Record<keyof PayoutValues, string | null>> {
+  isComplete?: boolean;
+  missing?: string[];
+}
+
+/** Hint under an OPTIONAL payout block — web PayoutDetailsFields with required={false}. */
+export const PAYOUT_HINT_OPTIONAL =
+  'Optional now — all four are needed before commission can be paid, and can be added later.';
+
 /** PAN / Aadhaar / bank-account capture, shared by the Add User and Add Counselor forms. */
 export const PayoutFields = ({ values, onChange, colW }: {
   values: PayoutValues;
@@ -146,6 +169,8 @@ type Role = 'Agent' | 'Counselor' | 'CallingAgent' | 'B2CAdmin';
 // Roles paid a commission, and so the only ones a payout/KYC block belongs on. A Calling
 // Agent is salaried call-centre staff — mirrors web's B2CCreateUser.jsx COMMISSIONED_ROLES.
 const COMMISSIONED_ROLES: Role[] = ['Agent', 'Counselor', 'B2CAdmin'];
+/** One place for the rule, shared with the edit dialogs — web's PayoutDetailsFields.collectsPayout. */
+export const collectsPayout = (role?: string | null) => COMMISSIONED_ROLES.includes(role as Role);
 
 const emptyForm = {
   name: '', email: '', mobile: '', address: '', password: '',
@@ -188,7 +213,7 @@ export const B2CCreateUserScreen = () => {
   const mobileValid = /^\d{10}$/.test(form.mobile);
   const mobileError = form.mobile.length > 0 && !mobileValid ? 'Enter a valid 10-digit mobile number' : '';
   const passwordError = form.password.length > 0 && form.password.length < 6 ? 'At least 6 characters' : '';
-  const collectsPayout = COMMISSIONED_ROLES.includes(form.role);
+  const payoutApplies = collectsPayout(form.role);
   const kyc = payoutState(form);
 
   const canSubmit = !!form.name.trim() && !!form.email.trim() && mobileValid
@@ -196,7 +221,7 @@ export const B2CCreateUserScreen = () => {
     // an account rarely has the joiner's PAN and bank details to hand, and requiring them
     // blocked the account itself. They stay editable afterwards. Not applicable at all to a
     // Calling Agent, who never sees the payout fields in the first place.
-    && form.password.length >= 6 && (!collectsPayout || !kyc.hasErrors);
+    && form.password.length >= 6 && (!payoutApplies || !kyc.hasErrors);
 
   const submit = async () => {
     if (!canSubmit || saving) return;
@@ -212,7 +237,7 @@ export const B2CCreateUserScreen = () => {
         bio: form.role === 'Counselor' ? form.bio.trim() || undefined : undefined,
         isManager: form.role === 'Agent' ? form.isManager : false,
         agentIds: form.role === 'Agent' && form.isManager ? form.agentIds : undefined,
-        ...(collectsPayout ? payoutPayload(form) : {}),
+        ...(payoutApplies ? payoutPayload(form) : {}),
       };
       const res = await b2cUserService.createUser(body);
       const referralCode = res.data?.referralCode;
@@ -304,11 +329,13 @@ export const B2CCreateUserScreen = () => {
 
       {/* Payout / KYC — commissioned roles only. A Calling Agent is salaried, not paid a
           commission, so these fields would just be personal data the business never uses. */}
-      {collectsPayout && (
+      {payoutApplies && (
         <Card style={s.card}>
           <Text style={[s.sectionTitle, { color: T.accent }]}>Payout Details</Text>
           <Text style={[s.sectionHint, { color: T.dim }]}>
-            All four are needed before commission can be paid.
+            {/* KYC is optional on create, so the copy says so — "all four are needed" over
+                optional fields reads as a broken form. Web: PayoutDetailsFields required={false}. */}
+            {PAYOUT_HINT_OPTIONAL}
           </Text>
           <View style={s.grid}>
             <PayoutFields values={form} onChange={(k, v) => set(k, v)} colW={colW} />

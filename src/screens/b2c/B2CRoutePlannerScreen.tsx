@@ -20,7 +20,7 @@ import { optimizeRoute } from '../../utils/routeOptimizationEngine';
 import { B2CLeadListDto } from '../../types/b2c';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha } from '../../theme';
-import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
+import { useResponsive, MIN_TAP, tileFill } from '../../hooks/useResponsive';
 import { useToast } from '../../context/ToastContext';
 import {
   todayStr, isSameLocalDay, isoDate, dayOffset, timeOnly, timeOnDay, splitLocal, joinLocal,
@@ -123,7 +123,8 @@ export const B2CRoutePlannerScreen = () => {
   const r = useResponsive();
   const mapRef = useRef<MapView>(null);
 
-  const kpiWidth = r.isWide ? '23.5%' : r.isTablet ? '23.5%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiWidth = tileFill(r.isTablet ? 4 : 2);
 
   const [date, setDate] = useState(todayStr());
   const [visits, setVisits] = useState<PlannedVisit[]>([]);
@@ -650,10 +651,10 @@ export const B2CRoutePlannerScreen = () => {
 
       {/* Day summary — responsive KPI grid */}
       <View style={[s.grid, { marginTop: 16 }]}>
-        <StatTile style={{ width: kpiWidth }} label="Planned" value={visits.length} sub={prettyDate(date)} icon={<CalendarClock size={16} color={T.accent} />} />
-        <StatTile style={{ width: kpiWidth }} label="Done" value={doneCount} sub="visited" tint={T.success} icon={<CheckCircle2 size={16} color={T.success} />} />
-        <StatTile style={{ width: kpiWidth }} label="Skipped" value={skippedCount} sub="this day" tint={T.dim} icon={<SkipForward size={16} color={T.dim} />} />
-        <StatTile style={{ width: kpiWidth }} label="Selected" value={selected.size} sub={appointmentCount ? `${appointmentCount} booked` : 'for route'} tint={T.info} icon={<ListChecks size={16} color={T.info} />} />
+        <StatTile style={kpiWidth} label="Planned" value={visits.length} sub={prettyDate(date)} icon={<CalendarClock size={16} color={T.accent} />} />
+        <StatTile style={kpiWidth} label="Done" value={doneCount} sub="visited" tint={T.success} icon={<CheckCircle2 size={16} color={T.success} />} />
+        <StatTile style={kpiWidth} label="Skipped" value={skippedCount} sub="this day" tint={T.dim} icon={<SkipForward size={16} color={T.dim} />} />
+        <StatTile style={kpiWidth} label="Selected" value={selected.size} sub={appointmentCount ? `${appointmentCount} booked` : 'for route'} tint={T.info} icon={<ListChecks size={16} color={T.info} />} />
       </View>
 
       {/* Day selector + optimise */}

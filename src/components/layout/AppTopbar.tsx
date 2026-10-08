@@ -154,8 +154,11 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
       </View>
 
       {/* Actions */}
-      <View style={styles.cluster}>
-        {action(
+      <View style={[styles.cluster, !isTabletDevice && styles.clusterPhone]}>
+        {/* On a phone the theme switch lives in the account menu instead: three 44pt buttons
+            plus the pill left a narrow phone too little room, and every longer screen title
+            ("Purchase Order & Invoice", "Payment Integration") was cut to a few letters. */}
+        {isTabletDevice && action(
           toggle,
           'Toggle theme',
           mode === 'dark'
@@ -177,7 +180,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
           accessibilityLabel="Account menu"
           onPress={() => setOpen(v => !v)}
           activeOpacity={0.75}
-          style={[styles.pill, { backgroundColor: T.card, borderColor: T.line }]}
+          style={[styles.pill, !isTabletDevice && styles.pillPhone, { backgroundColor: T.card, borderColor: T.line }]}
         >
           {renderAvatar(styles.avatar, styles.avatarTxt)}
           {isTabletDevice && (
@@ -185,7 +188,7 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
               {user?.name}
             </Text>
           )}
-          <ChevronDown size={15} color={T.sub} strokeWidth={2} />
+          {isTabletDevice && <ChevronDown size={15} color={T.sub} strokeWidth={2} />}
         </TouchableOpacity>
       </View>
 
@@ -229,6 +232,22 @@ export const AppTopbar = ({ title, onMenu, hasUnread, onNotifications, onProfile
               <SettingsIcon size={16} color={T.text} strokeWidth={1.9} />
               <Text style={[styles.menuTxt, { color: T.text }]}>Settings</Text>
             </TouchableOpacity>
+
+            {!isTabletDevice && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                accessibilityLabel="Toggle theme"
+                onPress={() => { toggle(); }}
+              >
+                {mode === 'dark'
+                  ? <Sun size={16} color={T.text} strokeWidth={1.9} />
+                  : <Moon size={16} color={T.text} strokeWidth={1.9} />}
+                <Text style={[styles.menuTxt, { color: T.text }]}>
+                  {mode === 'dark' ? 'Light mode' : 'Dark mode'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.menuItem}
@@ -276,6 +295,8 @@ const styles = StyleSheet.create({
   crumb: { fontSize: 11.5, fontWeight: '400', marginTop: 1 },
 
   cluster: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
+  // Phone: a tighter cluster, and the pill is just the avatar (no chevron) so it is round.
+  clusterPhone: { gap: 8 },
   action: {
     width: 40, height: 40, borderRadius: 12, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
@@ -290,6 +311,7 @@ const styles = StyleSheet.create({
     height: 42, borderRadius: 22, borderWidth: 1,
     flexDirection: 'row', alignItems: 'center', gap: 8, padding: 5, paddingRight: 10,
   },
+  pillPhone: { paddingRight: 5, gap: 0 },
   avatar: {
     width: 32, height: 32, borderRadius: 16, overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',

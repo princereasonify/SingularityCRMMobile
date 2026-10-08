@@ -28,6 +28,7 @@ import { rf } from '../../utils/responsive';
 import {
   DOC_TYPES, DOC_META, COMPANY, DocType, SalesDocData,
   emptyDocument, financialYear, computeTotals, money, finalizeDocument, validateDocument,
+  isIntraStateGst, gstTotalsRows, amountInWords,
   isLegacyNumber, invoiceFieldsFromOrder, orderFieldsFromQuotation, setPath,
 } from '../../utils/salesDocUtils';
 
@@ -147,7 +148,11 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
   };
 
   const hasErrors = useMemo(() => Object.values(errors).some(Boolean), [errors]);
-  const totals = useMemo(() => computeTotals(doc.qty, doc.rate), [doc.qty, doc.rate]);
+  // Place of supply decides the tax heads: CGST+SGST for a Gujarat school, IGST anywhere else.
+  const intraState = isIntraStateGst(doc.school);
+  const totals = useMemo(() => computeTotals(doc.qty, doc.rate, intraState), [doc.qty, doc.rate, intraState]);
+  const finalLabel = type === DOC_TYPES.TAX_INVOICE ? 'GRAND TOTAL (₹)'
+    : type === DOC_TYPES.PURCHASE_ORDER ? 'TOTAL ORDER VALUE (₹)' : 'TOTAL (₹)';
 
   const build = (): SalesDocData | null => {
     const errs = validateDocument(type, doc);
@@ -257,13 +262,21 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
 
         <Card style={{ marginTop: 12 }}>
           <SectionLabel>Totals</SectionLabel>
-          <View style={styles.totalsRow}><Text style={[styles.totalsLabel, { color: T.sub }]}>Sub Total</Text><Text style={[styles.totalsVal, { color: T.text }]}>₹{money(totals.subTotal)}</Text></View>
-          <View style={styles.totalsRow}><Text style={[styles.totalsLabel, { color: T.sub }]}>CGST @ 9%</Text><Text style={[styles.totalsVal, { color: T.text }]}>₹{money(totals.cgst)}</Text></View>
-          <View style={styles.totalsRow}><Text style={[styles.totalsLabel, { color: T.sub }]}>SGST @ 9%</Text><Text style={[styles.totalsVal, { color: T.text }]}>₹{money(totals.sgst)}</Text></View>
-          <View style={[styles.totalsRow, styles.totalsGrand, { borderTopColor: T.line }]}>
-            <Text style={[styles.totalsLabel, { color: T.text, fontWeight: '800' }]}>Grand Total</Text>
-            <Text style={[styles.totalsVal, { color: T.accent, fontWeight: '800' }]}>₹{money(totals.grandTotal)}</Text>
-          </View>
+          {gstTotalsRows(totals, intraState, finalLabel).map((r) => r.strong ? (
+            <View key={r.label} style={[styles.totalsRow, styles.totalsGrand, { borderTopColor: T.line }]}>
+              <Text style={[styles.totalsLabel, { color: T.text, fontWeight: '800' }]}>{r.label}</Text>
+              <Text style={[styles.totalsVal, { color: T.accent, fontWeight: '800' }]}>₹{r.value}</Text>
+            </View>
+          ) : (
+            <View key={r.label} style={styles.totalsRow}>
+              <Text style={[styles.totalsLabel, { color: T.sub }]}>{r.label}</Text>
+              <Text style={[styles.totalsVal, { color: T.text }]}>₹{r.value}</Text>
+            </View>
+          ))}
+          <Text style={{ color: T.sub, fontSize: rf(12), marginTop: 8 }}>
+            <Text style={{ fontWeight: '700' }}>Amount in words: </Text>
+            <Text style={{ fontStyle: 'italic' }}>{amountInWords(totals.grandTotal)}</Text>
+          </Text>
         </Card>
       </ScrollView>
 
@@ -401,7 +414,7 @@ const PurchaseOrderFields = ({ doc, set, errors, nextSuffix, pickQuotation, quot
           busy={quotationBusy} busyLabel="Filling from quotation…" emptyLabel="No quotations saved yet" placeholder="Select quotation"
         />
         <StatePicker label="Place of Supply" value={doc.placeOfSupply || ''} onChange={(x) => set('placeOfSupply', x)} />
-        <Input label="Academic Year *" value={doc.academicYearOverride} onChangeText={(x: string) => set('academicYearOverride', x)} placeholder="e.g. 2026-27" error={errors.academicYearOverride} />
+        <Input label="Academic Year *" value={doc.academicYearOverride} onChangeText={(x: string) => set('academicYearOverride', x.replace(/[^\d\-/–\s]/g, ''))} placeholder="e.g. 2026-27" error={errors.academicYearOverride} />
       </Card>
 
       <Card style={{ marginTop: 12 }}>

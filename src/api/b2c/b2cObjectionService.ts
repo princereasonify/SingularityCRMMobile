@@ -10,7 +10,10 @@ export const b2cObjectionService = {
   // Counselor queue (own) / admin oversight (all, filter by counselorId/agentId/status).
   getQueue: (params?: any) => apiClient.get<any>(`${BASE}/queue`, { params }),
   update: (id: number, payload: any) => apiClient.patch<any>(`${BASE}/${id}`, payload),
-  generateBrief: (id: number) => apiClient.post<any>(`${BASE}/${id}/brief`),
+  // DISABLED: the backend route is commented out (B2CObjectionsController.cs) — it let a
+  // CallingAgent pull any lead's brief regardless of assignment. Kept here, unused, so the
+  // whole feature can be restored in one place once it's properly re-scoped.
+  // generateBrief: (id: number) => apiClient.post<any>(`${BASE}/${id}/brief`),
   generatePostSession: (id: number) => apiClient.post<any>(`${BASE}/${id}/post-session`),
 };
 

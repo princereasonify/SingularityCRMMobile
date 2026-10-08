@@ -35,6 +35,10 @@ export const FO_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      // Web Sidebar parity: Deals sits right under Create Deal for every B2B role. For
+      // ZH/RH/SH/SCA it also carries the "Awaiting my decision" tab that the old
+      // separate Deal Approvals screen used to provide.
+      { route: 'Deals', label: 'Deals', icon: 'Deal' },
       { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
       { route: 'Activity Log', label: 'Activity Log', icon: 'Activity' },
     ],
@@ -99,6 +103,10 @@ export const ZH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      // Web Sidebar parity: Deals sits right under Create Deal for every B2B role. For
+      // ZH/RH/SH/SCA it also carries the "Awaiting my decision" tab that the old
+      // separate Deal Approvals screen used to provide.
+      { route: 'Deals', label: 'Deals', icon: 'Deal' },
       { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
@@ -130,7 +138,10 @@ export const ZH_NAV: NavGroup[] = [
   },
   {
     label: 'Insights',
-    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+    items: [
+      { route: 'Reports', label: 'Reports', icon: 'Reports' },
+      { route: 'Reports Library', label: 'Reports Library', icon: 'Reports' },
+    ],
   },
   {
     label: 'Admin',
@@ -165,6 +176,10 @@ export const RH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      // Web Sidebar parity: Deals sits right under Create Deal for every B2B role. For
+      // ZH/RH/SH/SCA it also carries the "Awaiting my decision" tab that the old
+      // separate Deal Approvals screen used to provide.
+      { route: 'Deals', label: 'Deals', icon: 'Deal' },
       { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
     ],
   },
@@ -196,7 +211,14 @@ export const RH_NAV: NavGroup[] = [
   },
   {
     label: 'Insights',
-    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+    items: [
+      { route: 'Reports', label: 'Reports', icon: 'Reports' },
+      // Closes the biggest single gap found: web's ReportsLibrary.jsx (Team Performance,
+      // Pipeline by Stage, Lost Deal Analysis, School Visits, all CSV-exportable) had an
+      // exact mobile equivalent in `src/api/reports.ts` — fully typed, correctly scoped —
+      // that literally nothing in the app ever called. See ReportsLibraryScreen.tsx.
+      { route: 'Reports Library', label: 'Reports Library', icon: 'Reports' },
+    ],
   },
   {
     label: 'Admin',
@@ -233,7 +255,16 @@ export const SH_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      // Web Sidebar parity: Deals sits right under Create Deal for every B2B role. For
+      // ZH/RH/SH/SCA it also carries the "Awaiting my decision" tab that the old
+      // separate Deal Approvals screen used to provide.
+      { route: 'Deals', label: 'Deals', icon: 'Deal' },
       { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
+      // Web's admin-only Register tab (SalesDocuments.jsx, SH/SCA only — every PO/Invoice/
+      // Quotation company-wide) had a typed API client method on mobile already
+      // (`salesDocumentService.register`) but no screen ever called it. See
+      // SalesRegisterScreen.tsx.
+      { route: 'Sales Register', label: 'Sales Register', icon: 'Receipt' },
     ],
   },
   {
@@ -264,7 +295,11 @@ export const SH_NAV: NavGroup[] = [
   },
   {
     label: 'Insights',
-    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+    items: [
+      { route: 'Reports', label: 'Reports', icon: 'Reports' },
+      // See the matching comment in ZH_NAV/RH_NAV — same Reports Library gap, closed here too.
+      { route: 'Reports Library', label: 'Reports Library', icon: 'Reports' },
+    ],
   },
   {
     label: 'Admin',
@@ -298,7 +333,13 @@ export const SCA_NAV: NavGroup[] = [
       { route: 'Pipeline', label: 'Pipeline', icon: 'Pipeline' },
       { route: 'Deal Estimate', label: 'Deal Estimate', icon: 'Estimate' },
       { route: 'Create Deal', label: 'Create Deal', icon: 'Deal' },
+      // Web Sidebar parity: Deals sits right under Create Deal for every B2B role. For
+      // ZH/RH/SH/SCA it also carries the "Awaiting my decision" tab that the old
+      // separate Deal Approvals screen used to provide.
+      { route: 'Deals', label: 'Deals', icon: 'Deal' },
       { route: 'Purchase Order & Invoice', label: 'Purchase Order & Invoice', icon: 'Receipt' },
+      // See the matching comment in SH_NAV — same Sales Register gap, closed here too.
+      { route: 'Sales Register', label: 'Sales Register', icon: 'Receipt' },
     ],
   },
   {
@@ -330,12 +371,20 @@ export const SCA_NAV: NavGroup[] = [
   },
   {
     label: 'Insights',
-    items: [{ route: 'Reports', label: 'Reports', icon: 'Reports' }],
+    items: [
+      { route: 'Reports', label: 'Reports', icon: 'Reports' },
+      // See the matching comment in ZH_NAV/RH_NAV — same Reports Library gap, closed here
+      // too. SCA sees every zone/region (org-wide, enforced server-side).
+      { route: 'Reports Library', label: 'Reports Library', icon: 'Reports' },
+    ],
   },
   {
     label: 'Admin',
     items: [
       { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
+      // SCA outranks SH and the backend already allows it (IsFieldConfigAdmin: SH or SCA) —
+      // this was reachable only via a generic Settings push before, not the sidebar.
+      { route: 'Visit Fields', label: 'Visit Fields', icon: 'Onboarding' },
       { route: 'Regions & Zones', label: 'Regions & Zones', icon: 'Regions' },
       { route: 'Manage Users', label: 'Manage Users', icon: 'Users' },
     ],
@@ -378,6 +427,14 @@ export const B2CAdmin_NAV: NavGroup[] = [
       // them either. Both routes stay registered and reachable; only the drawer rows are gone.
       { route: 'Approval Center', label: 'Approval Center', icon: 'Onboarding' },
       { route: 'Allowance Config', label: 'Allowance Config', icon: 'Allowance' },
+      // Web's admin claims-review screen (B2CAllowances.jsx) — approve/reject/bulk-approve
+      // agent & counselor allowance claims. The API client (b2cAllowanceService) already had
+      // getClaims/approve/reject/bulkApprove fully wired to match the backend; no screen
+      // anywhere in the app ever called them, so a B2CAdmin had no way to do this on mobile
+      // at all. See B2CAllowanceApprovalsScreen.tsx. Distinct from "Allowance Config" (the
+      // per-visit/per-km RATE setup) and "My Allowances" (the self-service screen Agents and
+      // Counselors use to submit their own claims).
+      { route: 'Allowances', label: 'Allowances', icon: 'Allowance' },
     ],
   },
   {

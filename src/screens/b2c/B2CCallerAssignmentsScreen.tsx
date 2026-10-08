@@ -14,7 +14,7 @@ import { statusMeta } from '../../api/b2c/b2cParentRequestService';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useToast } from '../../context/ToastContext';
-import { useResponsive } from '../../hooks/useResponsive';
+import { useResponsive, tileFill } from '../../hooks/useResponsive';
 import {
   b2cCallerAssignmentService, CallerAssignmentsOverview, AssignableLeadRow, UnassignedRequestRow,
 } from '../../api/b2c/b2cCallerAssignmentService';
@@ -135,6 +135,9 @@ export const B2CCallerAssignmentsScreen = ({ navigation }: any) => {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  // Header checkbox on web (:144-145): selects exactly the rows on this page, or clears.
+  const allOnPage = leads.length > 0 && leads.every((l) => selected.has(l.leadId));
+  const toggleAll = () => setSelected(allOnPage ? new Set() : new Set(leads.map((l) => l.leadId)));
   const selectedIds = [...selected];
   const selectedRows = leads.filter((l) => selected.has(l.leadId));
   const selectedAssigned = selectedRows.filter((l) => l.assignedCallerId);
@@ -160,7 +163,8 @@ export const B2CCallerAssignmentsScreen = ({ navigation }: any) => {
     });
   };
 
-  const kpiW = r.isTablet ? '24%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiW = tileFill(r.isTablet ? 4 : 2);
   const leadsPageCount = Math.ceil(leadsTotal / PAGE_SIZE) || 1;
   const reqPageCount = Math.ceil(reqTotal / REQ_PAGE_SIZE) || 1;
 
@@ -173,10 +177,10 @@ export const B2CCallerAssignmentsScreen = ({ navigation }: any) => {
         </View>
 
         <View style={styles.kpiGrid}>
-          <StatTile style={{ width: kpiW }} label="Unassigned leads" value={overview?.unassignedLeads ?? '…'} icon={<UserX size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} />
-          <StatTile style={{ width: kpiW }} label="Assigned leads" value={overview?.assignedLeads ?? '…'} icon={<Users size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
-          <StatTile style={{ width: kpiW }} label="Calling agents" value={overview ? activeCallers.length : '…'} icon={<Headphones size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
-          <StatTile style={{ width: kpiW }} label="No caller" value={reqTotal} icon={<Inbox size={17} color={reqTotal > 0 ? T.danger : T.text} strokeWidth={ICON_STROKE} />} tint={reqTotal > 0 ? T.danger : undefined} />
+          <StatTile style={kpiW} label="Unassigned leads" value={overview?.unassignedLeads ?? '…'} icon={<UserX size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} />
+          <StatTile style={kpiW} label="Assigned leads" value={overview?.assignedLeads ?? '…'} icon={<Users size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={kpiW} label="Calling agents" value={overview ? activeCallers.length : '…'} icon={<Headphones size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={kpiW} label="No caller" value={reqTotal} icon={<Inbox size={17} color={reqTotal > 0 ? T.danger : T.text} strokeWidth={ICON_STROKE} />} tint={reqTotal > 0 ? T.danger : undefined} />
         </View>
 
         <Card>
@@ -241,6 +245,7 @@ export const B2CCallerAssignmentsScreen = ({ navigation }: any) => {
             <Text style={{ color: T.sub, textAlign: 'center', paddingVertical: 30 }}>{view === 'unassigned' ? 'Every lead has a calling agent.' : 'No leads match these filters.'}</Text>
           ) : (
             <View style={{ gap: 8 }}>
+              <Checkbox on={allOnPage} onToggle={toggleAll} label="Select all on this page" />
               {leads.map((lr) => (
                 <View key={lr.leadId} style={[styles.leadCard, { backgroundColor: T.card, borderColor: T.line }]}>
                   <Checkbox on={selected.has(lr.leadId)} onToggle={() => toggleOne(lr.leadId)} label="" />

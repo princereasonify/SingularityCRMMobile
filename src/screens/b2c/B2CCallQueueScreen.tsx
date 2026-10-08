@@ -12,7 +12,7 @@ import {
   Phone, PhoneCall, Clock, AlertTriangle, UserCheck, ChevronDown, ChevronUp,
 } from 'lucide-react-native';
 import {
-  Btn, StatusBadge, SearchBar, Dropdown, Trigger, FormModal, Input, Segmented, Checkbox,
+  Btn, StatusBadge, SearchBar, Dropdown, Trigger, FormModal, Input, Segmented, Checkbox, Pagination,
 } from '../../components/crud';
 import { StatTile } from '../../components/ui';
 import { DateInput } from '../../components/common/DateInput';
@@ -21,7 +21,7 @@ import { StaffAvailabilityPicker } from '../../components/b2c/StaffAvailabilityP
 import { ICON_STROKE } from '../../components/common/Icon';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useToast } from '../../context/ToastContext';
-import { useResponsive } from '../../hooks/useResponsive';
+import { useResponsive, tileFill } from '../../hooks/useResponsive';
 import { todayStr, joinLocal, splitLocal } from '../../utils/dates';
 import {
   b2cCallingService, CALL_OUTCOMES, outcomeMeta, HANDOFF_REASONS, CallQueueRow, CallQueueSummary,
@@ -108,6 +108,10 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
   // Log Call modal
   const [active, setActive] = useState<CallQueueRow | null>(null);
   const [lockWarning, setLockWarning] = useState('');
+  // Which lead the open call modal belongs to. acquireLock is awaited AFTER the modal is
+  // already open for `row` — cancel it and open a different lead before that resolves, and the
+  // stale response would paint ITS lock-holder's name over the now-different lead on screen.
+  const activeCallRef = useRef<number | null>(null);
   const [outcome, setOutcome] = useState('');
   const [discussion, setDiscussion] = useState('');
   const [notes, setNotes] = useState('');
@@ -147,6 +151,11 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
   const clearFilters = () => { setSearch(''); setStage(''); setSource(''); setPriority(''); setNeverCalled(false); setPage(1); };
   const anyFilter = !!(search || stage || source || priority || neverCalled);
 
+  // Web parity: the queue pages 20 at a time over the server's totalCount.
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, totalCount);
+
   const grouped = useMemo(
     () => BUCKETS.map((b) => ({ ...b, rows: rows.filter((row) => row.bucket === b.key) })).filter((b) => b.rows.length > 0),
     [rows],
@@ -154,11 +163,15 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
 
   // ── Calling ───────────────────────────────────────────────────────────────
   const startCall = async (row: CallQueueRow) => {
+    activeCallRef.current = row.id;
     setActive(row);
     setOutcome(''); setDiscussion(''); setNotes(''); setNextCallAt('');
     setHandoff(null); setError(''); setLockWarning('');
     try {
       const res = await b2cCallingService.acquireLock(row.id);
+      // The modal may have been closed and reopened for someone else's lead while this was in
+      // flight — a stale refusal must never land on whichever lead happens to be open now.
+      if (activeCallRef.current !== row.id) return;
       if (res.data && res.data.acquired === false) {
         setLockWarning(`${res.data.heldByName || 'Someone'} is on this lead right now.`);
       }
@@ -166,7 +179,13 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
   };
 
   const closeCall = () => {
+    // A Save already in flight is not actually cancellable — closing the modal here would look
+    // like the call never happened, but the logCall (and any hand-off) still lands a moment
+    // later. Refuse to close until it settles; this one guard covers Cancel, the X, the
+    // backdrop and Android back, since FormModal routes all of them through onClose.
+    if (saving) return;
     const leadId = active?.id;
+    activeCallRef.current = null;
     setActive(null);
     if (leadId) b2cCallingService.releaseLock(leadId).catch(() => {});
   };
@@ -199,6 +218,7 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
           handoffNote = ` · handed to ${handoff.staff.name}`;
         } catch (err: any) {
           toast.error(`Call saved, but the hand-off failed: ${err?.response?.data?.message || 'try again from the lead'}`);
+          activeCallRef.current = null;
           setActive(null);
           load();
           return;
@@ -206,6 +226,7 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
       }
 
       toast.success((res.data?.stageAdvanced ? 'Call logged — lead moved on' : 'Call logged') + handoffNote);
+      activeCallRef.current = null;
       setActive(null);
       b2cCallingService.releaseLock(active.id).catch(() => {});
       load();
@@ -221,7 +242,8 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
     || (outcome === 'CallBackLater' && !nextCallAt)
     || (!!handoff && (!handoff.staff || !handoff.at || (handoff.kind === 'Counselor' && !handoff.reason)));
 
-  const kpiW = r.isTablet ? '24%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiW = tileFill(r.isTablet ? 4 : 2);
   const nextCallSplit = splitLocal(nextCallAt);
   const handoffSplit = splitLocal(handoff?.at || '');
 
@@ -240,10 +262,10 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
         </View>
 
         <View style={styles.kpiGrid}>
-          <StatTile style={{ width: kpiW }} label="Overdue" value={summary?.overdue ?? '—'} icon={<AlertTriangle size={17} color={T.danger} strokeWidth={ICON_STROKE} />} tint={T.danger} />
-          <StatTile style={{ width: kpiW }} label="Due this day" value={summary?.dueToday ?? '—'} icon={<Clock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} />
-          <StatTile style={{ width: kpiW }} label="Never called" value={summary?.neverCalled ?? '—'} icon={<PhoneCall size={17} color={T.accent} strokeWidth={ICON_STROKE} />} />
-          <StatTile style={{ width: kpiW }} label="In queue" value={summary?.total ?? totalCount} icon={<Phone size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={kpiW} label="Overdue" value={summary?.overdue ?? '—'} icon={<AlertTriangle size={17} color={T.danger} strokeWidth={ICON_STROKE} />} tint={T.danger} />
+          <StatTile style={kpiW} label="Due this day" value={summary?.dueToday ?? '—'} icon={<Clock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} />
+          <StatTile style={kpiW} label="Never called" value={summary?.neverCalled ?? '—'} icon={<PhoneCall size={17} color={T.accent} strokeWidth={ICON_STROKE} />} />
+          <StatTile style={kpiW} label="In queue" value={summary?.total ?? totalCount} icon={<Phone size={17} color={T.text} strokeWidth={ICON_STROKE} />} />
         </View>
 
         <View style={styles.searchRow}>
@@ -304,7 +326,7 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
                         <Text style={[styles.phone, { color: T.accent }]}>{row.parentMobile || row.mobileNumber}</Text>
                       </TouchableOpacity>
                       {!row.parentMobile && <Text style={{ color: T.warning, fontSize: 11, fontWeight: '600' }}>student's own number</Text>}
-                      <CoinBalance value={row.coinBalance} />
+                      <CoinBalance value={row.coinBalance} syncStatus={row.reasonifySyncStatus ?? null} />
                     </View>
 
                     <View style={styles.metaRow}>
@@ -326,6 +348,13 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
                 ))}
               </View>
             ))}
+
+            {totalPages > 1 && (
+              <View style={styles.pgRow}>
+                <Text style={[styles.metaTxt, { color: T.dim }]}>Showing {from}–{to} of {totalCount} leads</Text>
+                <Pagination page={page} pageCount={totalPages} onChange={(p: number) => { if (p >= 1 && p <= totalPages && p !== page) setPage(p); }} />
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -358,7 +387,7 @@ export const B2CCallQueueScreen = ({ navigation }: any) => {
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                   <StatusBadge label={spaced(active.stage)} color={stageColor(T, active.stage)} />
-                  <CoinBalance value={active.coinBalance} />
+                  <CoinBalance value={active.coinBalance} syncStatus={active.reasonifySyncStatus ?? null} />
                 </View>
               </View>
 
@@ -517,6 +546,7 @@ const styles = StyleSheet.create({
   handoffToggle: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   handoffToggleTxt: { fontWeight: '600', fontSize: 13 },
   handoffHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
 });
 
 export default B2CCallQueueScreen;

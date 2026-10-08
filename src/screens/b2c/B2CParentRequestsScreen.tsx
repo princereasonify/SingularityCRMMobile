@@ -6,13 +6,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PhoneIncoming, CheckCircle2, Clock, ArrowRight, AlertTriangle } from 'lucide-react-native';
-import { Btn, StatusBadge, Dropdown, Trigger, FormModal, Input } from '../../components/crud';
+import { Btn, StatusBadge, Dropdown, Trigger, FormModal, Input, SearchBar } from '../../components/crud';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { DateInput } from '../../components/common/DateInput';
+import { todayStr, joinLocal, splitLocal } from '../../utils/dates';
 import {
   b2cParentRequestService, CALL_OUTCOMES, CALL_REQUEST_STATUSES, statusMeta, ParentCallRequestRow,
 } from '../../api/b2c/b2cParentRequestService';
@@ -44,10 +45,24 @@ const toneColor = (T: ReturnType<typeof useAppTheme>, tone?: string) => {
   }
 };
 
-const inAnHourInput = () => {
-  const d = new Date(Date.now() + 3600000);
-  return d.toISOString();
+/** A UTC ISO instant one hour from now — the business's own slot length. */
+const inAnHourInput = () => new Date(Date.now() + 3600000).toISOString();
+
+// Same day + quarter-hour picker the Call Queue uses for its callbacks: the callback is held as
+// a UTC ISO instant and split into a LOCAL date/time pair for the two controls (splitLocal /
+// joinLocal). Slicing the ISO string directly read UTC digits back as local time and shifted
+// the callback by the device's offset on every edit.
+const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
+const timeLabel = (v: string) => {
+  const [h, m] = v.split(':').map(Number);
+  if (Number.isNaN(h)) return '';
+  return `${h % 12 || 12}:${pad2(m || 0)} ${h >= 12 ? 'pm' : 'am'}`;
 };
+const TIME_SLOTS: { label: string; value: string }[] = (() => {
+  const out: { label: string; value: string }[] = [];
+  for (let h = 6; h <= 21; h++) for (const m of [0, 15, 30, 45]) out.push({ value: `${pad2(h)}:${pad2(m)}`, label: timeLabel(`${pad2(h)}:${pad2(m)}`) });
+  return out;
+})();
 
 export const B2CParentRequestsScreen = () => {
   const T = useAppTheme();
@@ -58,6 +73,7 @@ export const B2CParentRequestsScreen = () => {
   const [status, setStatus] = useState('');
   const [openStatus, setOpenStatus] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
+  const [search, setSearch] = useState('');        // client-side only — the real API has no search param
   const [rows, setRows] = useState<ParentCallRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -66,7 +82,8 @@ export const B2CParentRequestsScreen = () => {
   const [outcome, setOutcome] = useState('');
   const [openOutcome, setOpenOutcome] = useState(false);
   const [notes, setNotes] = useState('');
-  const [callbackAt, setCallbackAt] = useState('');
+  const [callbackAt, setCallbackAt] = useState(''); // UTC ISO
+  const [openTime, setOpenTime] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -78,6 +95,12 @@ export const B2CParentRequestsScreen = () => {
   }, [status, mineOnly]);
 
   useEffect(() => { load(); }, [load]);
+
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? rows.filter((row) => [row.parentName, row.studentName, row.phoneNumber, row.message, row.category]
+        .some((x) => (x || '').toLowerCase().includes(q)))
+    : rows;
 
   const take = async (row: ParentCallRequestRow) => {
     try {
@@ -101,7 +124,7 @@ export const B2CParentRequestsScreen = () => {
   };
 
   const openLog = (row: ParentCallRequestRow) => {
-    setLogging(row); setOutcome(''); setNotes(''); setCallbackAt('');
+    setLogging(row); setOutcome(''); setNotes(''); setCallbackAt(''); setOpenTime(false);
   };
 
   const submitLog = async () => {
@@ -110,7 +133,7 @@ export const B2CParentRequestsScreen = () => {
     try {
       await b2cParentRequestService.logCall(logging.parentCallRequestId, {
         outcome, notes: notes || undefined,
-        callbackAt: outcome === 'CallBackLater' ? new Date(callbackAt).toISOString() : undefined,
+        callbackAt: outcome === 'CallBackLater' && callbackAt ? new Date(callbackAt).toISOString() : undefined,
       });
       toast.success('Call logged');
       setLogging(null);
@@ -121,6 +144,8 @@ export const B2CParentRequestsScreen = () => {
       setSaving(false);
     }
   };
+
+  const callbackSplit = splitLocal(callbackAt);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -141,6 +166,15 @@ export const B2CParentRequestsScreen = () => {
           </View>
         )}
 
+        {/* No "Feedback" tab: the backend only lets a parent read their OWN feedback tickets.
+            The only feedback a caller ever sees is the kind that arrived WITH a call request,
+            merged into the row below and tagged "via Feedback". */}
+        <Text style={[styles.note, { color: T.dim }]}>
+          Showing call requests only. A parent's feedback that did not ask for a call stays between them and the Parent Portal — it never reaches this queue.
+        </Text>
+
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Parent, student, number, or what they need…" />
+
         <View style={styles.filters}>
           <View style={{ flex: 1 }}>
             <Trigger label={status ? CALL_REQUEST_STATUSES.find((s) => s.value === status)?.label || status : 'Open work (default)'} open={openStatus} onPress={() => setOpenStatus((o) => !o)} />
@@ -155,9 +189,17 @@ export const B2CParentRequestsScreen = () => {
           <Btn label="Taken by me" small variant={mineOnly ? 'primary' : 'secondary'} onPress={() => setMineOnly((m) => !m)} />
         </View>
 
+        <View style={styles.countRow}>
+          <PhoneIncoming size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+          <Text style={[styles.count, { color: T.text }]}>
+            {visible.length} request{visible.length === 1 ? '' : 's'}
+            {!status && <Text style={{ color: T.dim, fontWeight: '500' }}> · open work</Text>}
+          </Text>
+        </View>
+
         {loading ? (
           <ActivityIndicator color={T.accent} style={{ marginTop: 40 }} />
-        ) : rows.length === 0 ? (
+        ) : visible.length === 0 ? (
           <View style={styles.empty}>
             <PhoneIncoming size={28} color={T.dim} strokeWidth={ICON_STROKE} />
             <Text style={[styles.emptyTxt, { color: T.sub }]}>Nothing matches these filters.</Text>
@@ -167,7 +209,7 @@ export const B2CParentRequestsScreen = () => {
           </View>
         ) : (
           <View style={{ gap: 10 }}>
-            {rows.map((row) => {
+            {visible.map((row) => {
               const sMeta = statusMeta(row.status);
               const late = isLate(row);
               return (
@@ -238,7 +280,16 @@ export const B2CParentRequestsScreen = () => {
             </View>
 
             {outcome === 'CallBackLater' && (
-              <DateInput label="Call them back on *" value={callbackAt.slice(0, 10)} onChange={(d) => setCallbackAt(new Date(`${d}T${callbackAt.slice(11, 16) || '10:00'}`).toISOString())} />
+              <View>
+                <Text style={[styles.fieldLabel, { color: T.text }]}>Call them back on *</Text>
+                <View style={styles.slotPick}>
+                  <View style={{ flex: 1 }}><DateInput value={callbackSplit.date} onChange={(d) => setCallbackAt(joinLocal(d, callbackSplit.time || '10:00') || '')} placeholder="Pick a day" /></View>
+                  <View style={{ flex: 1 }}>
+                    <Trigger label={callbackSplit.time ? timeLabel(callbackSplit.time) : 'Pick a time'} open={openTime} onPress={() => setOpenTime((o) => !o)} />
+                    {openTime && <Dropdown options={TIME_SLOTS} value={callbackSplit.time} onSelect={(v) => { setCallbackAt(joinLocal(callbackSplit.date || todayStr(), v) || ''); setOpenTime(false); }} maxHeight={220} />}
+                  </View>
+                </View>
+              </View>
             )}
 
             {outcome === 'Connected' && (
@@ -285,6 +336,11 @@ const styles = StyleSheet.create({
   callInfo: { borderRadius: 12, padding: 12, gap: 6 },
   phoneLg: { fontWeight: '800', fontSize: 18 },
   categorySm: { fontSize: 11.5, fontWeight: '500' },
+  note: { fontSize: 11.5, fontWeight: '500', lineHeight: 16, marginTop: -6 },
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  count: { fontSize: 13, fontWeight: '600' },
+  fieldLabel: { fontSize: 11, fontWeight: '600', marginBottom: 6 },
+  slotPick: { flexDirection: 'row', gap: 10 },
 });
 
 export default B2CParentRequestsScreen;

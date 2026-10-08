@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, TextInput,
   useWindowDimensions, Alert, ActivityIndicator, TouchableOpacity, Image,
@@ -135,13 +135,16 @@ export const ActivityLogScreen = ({ route }: any) => {
 
   const fetchActivities = useCallback(async (pg: number) => {
     try {
-      // GET /activities takes PaginationParams (`page`, `pageSize`) + `type` and returns
+      // GET /activities takes PaginationParams (`page`, `pageSize`) + `type` + `outcome` and returns
       // ApiResponse<PaginatedResult<ActivityDto>> → { items, totalCount, page, pageSize }
       // — see ActivitiesController.GetActivities. The client unwraps ApiResponse.data.
       const res = await activitiesApi.getActivities({
         page: pg,
         pageSize: PAGE_SIZE,
         type: typeFilter !== 'All' ? typeFilter : undefined,
+        // Server-side (ActivitiesController binds [FromQuery] string? outcome), so paging
+        // and the total count reflect the filter — web parity.
+        outcome: outcomeFilter !== 'All' ? outcomeFilter : undefined,
       });
       const d: any = res.data;
       const total = d?.totalCount ?? 0;
@@ -156,7 +159,7 @@ export const ActivityLogScreen = ({ route }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [typeFilter]);
+  }, [typeFilter, outcomeFilter]);
 
   // Any filter change resets to page 1.
   useEffect(() => {
@@ -164,7 +167,8 @@ export const ActivityLogScreen = ({ route }: any) => {
     setPage(1);
     setExpanded(null);
     fetchActivities(1);
-  }, [typeFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, outcomeFilter]);
 
   useEffect(() => {
     leadsApi.getPipeline()
@@ -185,12 +189,8 @@ export const ActivityLogScreen = ({ route }: any) => {
     fetchActivities(p);
   };
 
-  // The server has no `outcome` param, so — exactly like web — this narrows the page
-  // that came back, never the query. See the note in the count row below.
-  const filtered = useMemo(
-    () => (outcomeFilter === 'All' ? activities : activities.filter(a => a.outcome === outcomeFilter)),
-    [activities, outcomeFilter],
-  );
+  // The outcome filter is applied server-side now, so the page is already the filtered set.
+  const filtered = activities;
 
   const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val }));
 
@@ -632,9 +632,7 @@ export const ActivityLogScreen = ({ route }: any) => {
 
           <View style={s.countRow}>
             <Text style={[s.count, { color: T.dim }]}>
-              {outcomeFilter === 'All'
-                ? `${totalCount} activit${totalCount === 1 ? 'y' : 'ies'}`
-                : `${filtered.length} ${outcomeFilter.toLowerCase()} on this page · ${totalCount} total`}
+              {`${totalCount} activit${totalCount === 1 ? 'y' : 'ies'}`}
             </Text>
             {activeChips.length > 0 && (
               <View style={s.chipWrap}>

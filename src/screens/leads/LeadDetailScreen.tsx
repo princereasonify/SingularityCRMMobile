@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Alert, Linking, useWindowDimensions, ActivityIndicator,
@@ -16,7 +16,9 @@ import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, IconBtn, Input, StatusBadge, ListCard, Avatar, FormModal, Field, Trigger, Dropdown,
 } from '../../components/crud';
-import { ACTIVITY_COLORS, STAGE_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS } from '../../utils/constants';
+import {
+  ACTIVITY_COLORS, STAGE_COLORS, STAGE_LABELS, getScoreColor, OUTCOME_COLORS, DEALABLE_STAGES, isClosedStage,
+} from '../../utils/constants';
 import { formatCurrency, formatDate, formatRelativeDate } from '../../utils/formatting';
 import { rf, isTabletDevice } from '../../utils/responsive';
 import { withAlpha, SOFT_TINT } from '../../theme';
@@ -103,6 +105,17 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
 
   useEffect(() => { fetch(); }, [fetch]);
 
+  // Returning from Edit Lead / Create Deal must show the saved stage and fields — the
+  // first focus is the mount itself, already covered above.
+  const seenFocus = useRef(false);
+  useEffect(() => {
+    const unsub = navigation.addListener?.('focus', () => {
+      if (!seenFocus.current) { seenFocus.current = true; return; }
+      fetch();
+    });
+    return unsub;
+  }, [navigation, fetch]);
+
   const handleMarkLost = async () => {
     const reason = lossReason.trim();
     if (!reason) return;
@@ -142,8 +155,10 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
     ? [...STAGE_ORDER, 'ImplementationStarted']
     : STAGE_ORDER;
   const stageIdx = stages.indexOf(lead.stage as LeadStage);
-  const canCreateDeal = ['DemoDone', 'ProposalSent', 'Negotiation', 'ContractSent', 'Won'].includes(lead.stage);
-  const canMarkLost = role === 'FO' && !['Won', 'Lost'].includes(lead.stage);
+  const canCreateDeal = DEALABLE_STAGES.includes(lead.stage as LeadStage);
+  // Web parity: any role may close an open lead as Lost; closed leads (Won, Implementation
+  // Started, Lost) cannot be — the old FO-only gate also offered it on Implementation Started.
+  const canMarkLost = !isClosedStage(lead.stage);
 
   // Web parity: LeadDetail.jsx's info card, in order.
   const info: { label: string; value: string }[] = [
@@ -188,10 +203,13 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
       </View>
 
       <ScrollView contentContainerStyle={[s.scroll, wide && s.scrollWide]}>
-        {/* Stage stepper */}
+        {/* Stage stepper — never a sideways scroll. A tablet wraps the stage pills onto as
+            many lines as it needs; a phone shows where the lead is as a compact progress bar
+            ("Stage 4 of 8 · Proposal Sent", one segment per stage, next stage named), because
+            eight pills would either run off the right edge or wrap into a tall block. */}
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={s.stepper}>
+          {isTabletDevice ? (
+            <View style={[s.stepper, s.stepperWrap]}>
               {stages.map((stage, idx) => {
                 const done = idx < stageIdx;
                 const current = idx === stageIdx;
@@ -219,7 +237,34 @@ export const LeadDetailScreen = ({ route, navigation }: any) => {
                 );
               })}
             </View>
-          </ScrollView>
+          ) : (
+            <View style={s.progressWrap}>
+              <View style={s.progressHead}>
+                <Text style={[s.progressStage, { color: T.text }]} numberOfLines={1}>
+                  {STAGE_LABELS[stages[stageIdx]] ?? STAGE_LABELS[lead.stage] ?? lead.stage}
+                </Text>
+                {stageIdx >= 0 && (
+                  <Text style={[s.progressCount, { color: T.dim }]}>Stage {stageIdx + 1} of {stages.length}</Text>
+                )}
+              </View>
+              <View style={s.progressBar}>
+                {stages.map((stage, idx) => (
+                  <View
+                    key={stage}
+                    style={[
+                      s.progressSeg,
+                      { backgroundColor: idx < stageIdx ? T.success : idx === stageIdx ? T.accent : T.cardAlt },
+                    ]}
+                  />
+                ))}
+              </View>
+              {stageIdx >= 0 && stageIdx < stages.length - 1 && (
+                <Text style={[s.progressNext, { color: T.sub }]} numberOfLines={1}>
+                  Next: {STAGE_LABELS[stages[stageIdx + 1]]}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         <View style={wide ? s.cols : undefined}>
@@ -489,6 +534,15 @@ const s = StyleSheet.create({
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
   step: { height: 28, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   stepTxt: { fontSize: rf(11.5), fontWeight: '700' },
+  stepperWrap: { flexWrap: 'wrap', rowGap: 8 },
+  // phone: compact progress bar instead of the pill row
+  progressWrap: { gap: 8 },
+  progressHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  progressStage: { flex: 1, fontSize: rf(14.5), fontWeight: '800' },
+  progressCount: { fontSize: rf(11.5), fontWeight: '600' },
+  progressBar: { flexDirection: 'row', gap: 4 },
+  progressSeg: { flex: 1, height: 6, borderRadius: 3 },
+  progressNext: { fontSize: rf(11.5), fontWeight: '600' },
 
   infoHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   infoName: { fontSize: rf(14), fontWeight: '700' },

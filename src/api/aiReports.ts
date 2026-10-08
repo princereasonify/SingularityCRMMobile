@@ -18,6 +18,13 @@ export const aiReportsApi = {
   // Unified generate endpoint
   generate: (params: GenerateReportParams) =>
     apiClient.post<any>('/ai-reports/generate', undefined, { params }),
+  /**
+   * "All (batch)" — AiReportsController.GenerateTeam ([FromQuery] type/date/dateFrom/dateTo).
+   * FoDaily/FoWeekly/FoMonthly only; ZH/RH/SH/SCA only. Queues in the background and returns
+   * 202 with the status message as `data` (a string), so `res.data` is the message to show.
+   */
+  generateTeam: (params: Omit<GenerateReportParams, 'foId'>) =>
+    apiClient.post<string>('/ai-reports/generate-team', undefined, { params }),
   // Legacy endpoints kept for backward compatibility
   generateMyDaily: (date?: string) =>
     apiClient.post<any>('/ai-reports/generate-my-daily', null, { params: { date } }),

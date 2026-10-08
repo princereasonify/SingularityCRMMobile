@@ -13,6 +13,7 @@ import {
 import { visitReportApi } from '../../api/visitReport';
 import { AppHeader } from '../../components/ui';
 import { Btn, Trigger, Dropdown } from '../../components/crud';
+import { DateInput } from '../../components/common/DateInput';
 
 // Values MUST match the backend enums exactly — the server Enum.TryParse's them and
 // silently defaults to the first value on any mismatch, which is why free text was lost.
@@ -97,6 +98,38 @@ const KIND_LABEL: Record<MediaKind, string> = { photo: 'Photo', video: 'Video', 
 const SENTIMENTS = ['Positive', 'Negative', 'Neutral'] as const;
 type Sentiment = (typeof SENTIMENTS)[number];
 
+/**
+ * Admin-defined visit fields (Settings → Visit Fields), as GET /visit-reports/fields really
+ * returns them — VisitFieldConfigDto { Id, FieldName, FieldType, Options (string?), IsRequired,
+ * IsActive, DisplayOrder }. `Options` is a JSON array string (or, from older rows, a comma
+ * list), not the string[] src/types' VisitField declares — hence this local shape.
+ */
+interface CustomFieldDef {
+  id: number;
+  fieldName: string;
+  fieldType: string;
+  options?: string | string[] | null;
+  isRequired?: boolean;
+  isActive?: boolean;
+  displayOrder?: number;
+}
+type CustomValue = string | string[];
+
+/** Web's optionsOf (LiveTracking.jsx:859): JSON array first, comma list as the fallback. */
+const optionsOf = (f: CustomFieldDef): string[] => {
+  if (!f.options) return [];
+  if (Array.isArray(f.options)) return f.options.map(String);
+  try {
+    const v = JSON.parse(f.options);
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return f.options.split(',').map(x => x.trim()).filter(Boolean);
+  }
+};
+
+const isBlank = (v: CustomValue | undefined) =>
+  v == null || v === '' || (Array.isArray(v) && v.length === 0);
+
 export const VisitReportScreen = ({ navigation, route }: any) => {
   const { schoolVisitLogId, schoolName, activityId, schoolId } = route.params ?? {};
   const T = useAppTheme();
@@ -110,7 +143,8 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
   const [nextAction, setNextAction] = useState('');
   const [nextActionDate, setNextActionDate] = useState('');
   const [nextActionNotes, setNextActionNotes] = useState('');
-  const [openDd, setOpenDd] = useState<'purpose' | 'nextAction' | null>(null);
+  /** 'purpose' | 'nextAction' | `custom:<field id>` — one inline dropdown open at a time. */
+  const [openDd, setOpenDd] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [sentiment, setSentiment] = useState<Sentiment | ''>('');
@@ -122,6 +156,25 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const audioPath = useRef<string | null>(null);
+
+  // Admin-defined fields. They were configurable in Settings but the mobile form never
+  // showed them, so nothing was captured (web LiveTracking.jsx:833-855 renders them).
+  const [customDefs, setCustomDefs] = useState<CustomFieldDef[]>([]);
+  const [custom, setCustom] = useState<Record<string, CustomValue>>({});
+  useEffect(() => {
+    visitReportApi.getFields()
+      .then(res => {
+        const list = ((Array.isArray(res.data) ? res.data : []) as unknown as CustomFieldDef[])
+          .filter(f => f.isActive !== false);
+        setCustomDefs(list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)));
+      })
+      .catch(() => setCustomDefs([]));
+  }, []);
+  const setCustomValue = (name: string, v: CustomValue) => setCustom(c => ({ ...c, [name]: v }));
+  const toggleCustomOption = (name: string, opt: string) => setCustom(c => {
+    const cur = Array.isArray(c[name]) ? (c[name] as string[]) : [];
+    return { ...c, [name]: cur.includes(opt) ? cur.filter(x => x !== opt) : [...cur, opt] };
+  });
 
   useEffect(() => () => {
     AudioRecorderPlayer.removeRecordBackListener();
@@ -347,12 +400,16 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
     if (!outcome.trim()) { Alert.alert('Validation', 'Visit outcome is required'); return; }
     if (!sentiment) { Alert.alert('Validation', 'Please select feedback sentiment'); return; }
     if (!nextAction.trim()) { Alert.alert('Validation', 'Next action is required'); return; }
+    const missing = customDefs.find(f => f.isRequired && isBlank(custom[f.fieldName]));
+    if (missing) { Alert.alert('Validation', `${missing.fieldName} is required`); return; }
     if (recording) { Alert.alert('Recording in progress', 'Stop the audio recording first.'); return; }
     if (uploadsPending) { Alert.alert('Uploads in progress', 'Please wait for attachments to finish uploading.'); return; }
 
     const photos = urlsOf('photo');
     const videos = urlsOf('video');
     const audio = urlsOf('audio');
+    // Keyed by field name and sent as a JSON string — exactly web's shape (LiveTracking.jsx:913).
+    const filled = Object.fromEntries(Object.entries(custom).filter(([, v]) => !isBlank(v)));
 
     setSubmitting(true);
     try {
@@ -376,6 +433,7 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
         photos: photos.length ? JSON.stringify(photos) : undefined,
         videos: videos.length ? JSON.stringify(videos) : undefined,
         audioNotes: audio.length ? JSON.stringify(audio) : undefined,
+        customFields: Object.keys(filled).length > 0 ? JSON.stringify(filled) : undefined,
       });
       Alert.alert('Success', 'Visit report submitted successfully');
       navigation.goBack();
@@ -442,6 +500,79 @@ export const VisitReportScreen = ({ navigation, route }: any) => {
               placeholder="Any additional observations or notes..."
               multiline
             />
+
+            {customDefs.map((f, i) => {
+              const type = (f.fieldType || '').toLowerCase();
+              const label = `${f.fieldName}${f.isRequired ? ' *' : ''}`;
+              const raw = custom[f.fieldName];
+              if (type === 'multiselect') {
+                const chosen = Array.isArray(raw) ? raw : [];
+                return (
+                  <View key={f.id} style={styles.fieldGroup}>
+                    <Text style={[styles.fieldLabel, { color: T.text }]}>{label}</Text>
+                    <View style={styles.optionRow}>
+                      {optionsOf(f).map(o => {
+                        const on = chosen.includes(o);
+                        return (
+                          <TouchableOpacity
+                            key={o}
+                            onPress={() => toggleCustomOption(f.fieldName, o)}
+                            activeOpacity={0.85}
+                            style={[
+                              styles.optionChip,
+                              { borderColor: on ? T.accent : T.line, backgroundColor: on ? T.accent : T.fieldBg },
+                            ]}
+                          >
+                            <Text style={[styles.optionTxt, { color: on ? '#FFF' : T.sub }]}>{o}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              }
+              const value = typeof raw === 'string' ? raw : '';
+              if (type === 'dropdown') {
+                const key = `custom:${f.id}`;
+                const opts = optionsOf(f).map(o => ({ label: o, value: o }));
+                return (
+                  // Later fields stack lower (and under Purpose's 30) so an open list overlays the fields beneath it.
+                  <View key={f.id} style={[styles.fieldGroup, { zIndex: Math.max(1, 29 - i) }]}>
+                    <Text style={[styles.fieldLabel, { color: T.text }]}>{label}</Text>
+                    <Trigger
+                      label={value || 'Select'}
+                      open={openDd === key}
+                      onPress={() => setOpenDd(openDd === key ? null : key)}
+                    />
+                    {openDd === key && (
+                      <Dropdown
+                        value={value}
+                        options={opts}
+                        maxHeight={220}
+                        onSelect={(v) => { setCustomValue(f.fieldName, v); setOpenDd(null); }}
+                      />
+                    )}
+                  </View>
+                );
+              }
+              if (type === 'date') {
+                return (
+                  <View key={f.id} style={styles.fieldGroup}>
+                    <Text style={[styles.fieldLabel, { color: T.text }]}>{label}</Text>
+                    <DateInput value={value} onChange={(v: string) => setCustomValue(f.fieldName, v)} accentColor={T.accent} />
+                  </View>
+                );
+              }
+              return (
+                <Field
+                  key={f.id}
+                  label={label}
+                  value={value}
+                  onChange={(v: string) => setCustomValue(f.fieldName, v)}
+                  keyboardType={type === 'number' ? 'decimal-pad' : undefined}
+                />
+              );
+            })}
           </SectionCard>
 
           <SectionCard label="School Feedback">
@@ -634,7 +765,7 @@ const AttachButton = ({ icon, label, onPress, tone }: {
   );
 };
 
-const Field = ({ label, value, onChange, placeholder, multiline }: any) => {
+const Field = ({ label, value, onChange, placeholder, multiline, keyboardType }: any) => {
   const T = useAppTheme();
   return (
     <View style={styles.fieldGroup}>
@@ -651,6 +782,7 @@ const Field = ({ label, value, onChange, placeholder, multiline }: any) => {
         placeholderTextColor={T.dim}
         multiline={multiline}
         numberOfLines={multiline ? 3 : 1}
+        keyboardType={keyboardType}
       />
     </View>
   );
@@ -698,6 +830,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 9,
   },
   sentimentTxt: { fontWeight: '700', fontSize: rf(13) },
+
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  optionChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
+  optionTxt: { fontWeight: '600', fontSize: rf(12) },
 
   attachRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   attachBtn: {

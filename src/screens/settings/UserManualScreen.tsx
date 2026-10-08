@@ -237,15 +237,15 @@ const renderMockup = (id: string, T: AppTheme) => {
           }
         >
           <View style={{ backgroundColor: withAlpha(T.info, SOFT_TINT), padding: 4 }}>
-            <Text style={{ textAlign: 'center', fontSize: rf(8), color: T.info }}>🤏 Pinch · ✌ Drag · 👆 Long press to move</Text>
+            <Text style={{ textAlign: 'center', fontSize: rf(8), color: T.info }}>👆 Tap a stage · Move stage · or long-press and drop on a stage</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ padding: 6 }}>
+          <View style={{ padding: 6 }}>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               <KanbanCol title="New" count={12} cards={['DPS Dwarka', 'Bloom Int\'l']} colColor={T.warning} />
               <KanbanCol title="Qualified" count={8} cards={['GD Goenka']} colColor={T.warning} />
               <KanbanCol title="Demo" count={11} cards={['Oxford Int\'l']} isTarget colColor={T.warning} />
             </View>
-          </ScrollView>
+          </View>
           <View style={[phoneS.ghostCard, { borderColor: T.line, backgroundColor: T.card, borderLeftColor: T.warning }]}>
             <Text style={[phoneS.ghostSchool, { color: T.text }]}>🔥 Sunrise Int'l</Text>
             <Text style={[phoneS.ghostMeta, { color: T.dim }]}>Dragging... · ₹4,50,000</Text>
@@ -590,7 +590,7 @@ const phoneS = StyleSheet.create({
   overdueText: { fontSize: rf(9), marginTop: 3 },
   chipItem: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   chipText: { fontSize: rf(9), fontWeight: '600' },
-  kCol: { width: 85, borderWidth: 1, borderRadius: 9, overflow: 'hidden' },
+  kCol: { flex: 1, minWidth: 0, borderWidth: 1, borderRadius: 9, overflow: 'hidden' },
   kColHeader: { paddingHorizontal: 7, paddingVertical: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   kColTitle: { fontSize: rf(9), fontWeight: '700' },
   kColBadge: { borderRadius: 10, paddingHorizontal: 5, paddingVertical: 1 },
@@ -688,23 +688,19 @@ const SECTIONS = [
   },
   {
     id: 'pipeline', icon: GitBranch, title: '5. Pipeline (Kanban)',
-    summary: 'Visual board with pinch-to-zoom and drag-and-drop card movement.',
+    summary: 'Every stage at a glance — a five-column board on iPad landscape, stage tiles on a phone.',
     content: [
-      { type: 'steps', title: 'Drag & Drop a Card', items: [
-        'Long press a card for ~0.4 seconds — ghost card appears.',
-        'Drag to the target column — it highlights with "↓ Drop here".',
-        'Release — card moves instantly (optimistic update).',
-        'Syncs to server; reverts automatically if server update fails.',
+      { type: 'steps', title: 'On a phone (and iPad portrait)', items: [
+        'The five stage tiles at the top show each stage and its lead count — tap one to list its leads.',
+        'Tap "Move stage" on a card and pick the new stage; stages the lead cannot go to are greyed out with the reason.',
+        'Or long-press a card and drop it on a stage tile.',
+        'Moving to Won opens Create Deal — a lead is marked Won once its deal is approved.',
       ]},
-      { type: 'table', title: 'Gestures & Controls', headers: ['Control', 'Action'],
-        rows: [
-          ['Pinch in / out', 'Zoom the board'],
-          ['Two-finger drag', 'Pan the board'],
-          ['− / + buttons', 'Zoom out / in by 20%'],
-          ['⊡ button', 'Reset zoom and position'],
-          ['Single-finger scroll', 'Scroll cards within a column'],
-        ],
-      },
+      { type: 'steps', title: 'On iPad landscape', items: [
+        'All five columns fit side by side.',
+        'Long press a card for ~0.4 seconds — a ghost card appears; drag it to the target column and release.',
+        'The move shows instantly and reverts automatically if the server refuses it.',
+      ]},
     ],
   },
   {

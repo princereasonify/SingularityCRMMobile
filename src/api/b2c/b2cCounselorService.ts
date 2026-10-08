@@ -18,6 +18,8 @@ export interface B2CCounselorQuery {
   page?: number;
   pageSize?: number;
   isActive?: boolean;
+  /** Name/email contains — the server filters (web Counselors list search). */
+  search?: string;
 }
 
 export const b2cCounselorService = {

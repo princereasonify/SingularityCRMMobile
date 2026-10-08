@@ -13,14 +13,14 @@ import {
 import { Screen, Card, StatTile, SectionLabel } from '../../components/ui';
 import { Btn, StatusBadge, ConfirmModal } from '../../components/crud';
 import { b2cTrackingService } from '../../api/b2c/b2cTrackingService';
-import { sendB2CPing } from '../../services/b2cLocationPingService';
+import { sendB2CPing, flushB2CQueue, resetB2CMotionState } from '../../services/b2cLocationPingService';
 import { startB2CBackgroundTracking, stopB2CBackgroundTracking } from '../../services/b2cBackgroundTracking';
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
-import { isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
+import { isNativeTrackingAvailable, flushNativeQueue } from '../../services/nativeLocationTracking';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
+import { useResponsive, MIN_TAP, tileFill } from '../../hooks/useResponsive';
 import { isoDate, todayStr, timeOnly } from '../../utils/dates';
 import { distanceHint, confidenceLabel } from '../../utils/distanceProvenance';
 
@@ -34,9 +34,12 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 
 const fmtTime = (v?: string | null) => (v ? timeOnly(v) : '—');
 const fmtDuration = (mins?: number | null) => {
-  const m = Math.max(0, Number(mins) || 0);
-  const h = Math.floor(m / 60);
-  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+  // Round the TOTAL first, then split: rounding only the remainder rendered 59.6 as "0h 60m"
+  // and fractional minutes as "12.4m".
+  const total = Math.round(Math.max(0, Number(mins) || 0));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
 const fmtLongDate = (dateStr: string) => {
   const [y, mo, dd] = dateStr.split('-').map(Number);
@@ -89,7 +92,13 @@ export const B2CMyDayScreen = () => {
   const [me, setMe] = useState<any>(null);           // /me for today (session + route)
   const [history, setHistory] = useState<any>(null); // /route for a past date
   const [date, setDate] = useState(todayStr());
-  const [loading, setLoading] = useState(true);
+  // Split in two (web B2CMyDay parity): fetchMe re-runs on every delivered ping, and sharing one
+  // flag with fetchHistory let a ping landing mid-way through a just-picked past date's fetch
+  // flip it false early — the PREVIOUS date's history then rendered as if the new one had
+  // loaded. Each fetch owns its flag; `loading` picks the relevant one.
+  const [loadingMe, setLoadingMe] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const historyTokenRef = useRef(0);   // discards a stale date's response if a newer one is picked
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -111,6 +120,7 @@ export const B2CMyDayScreen = () => {
   const lastPos = useRef<Fix | null>(null); // freshest high-accuracy fix from watchPosition
 
   const isToday = date === todayStr();
+  const loading = isToday ? loadingMe : loadingHistory;
   const session = me?.activeSession;
   // The ONLY source of truth for "is my day on". A session abandoned overnight is auto-closed
   // server-side after 16h, so the next morning this is null and nothing here starts capturing.
@@ -133,22 +143,25 @@ export const B2CMyDayScreen = () => {
     } catch {
       setMe(null);
     } finally {
-      setLoading(false);
+      setLoadingMe(false);
       setRefreshing(false);
     }
   }, []);
 
   const fetchHistory = useCallback(async (d: string) => {
-    if (!user?.id) { setHistory(null); setLoading(false); setRefreshing(false); return; }
-    setLoading(true);
+    if (!user?.id) { setHistory(null); setLoadingHistory(false); setRefreshing(false); return; }
+    const token = ++historyTokenRef.current;
+    setLoadingHistory(true);
     try {
       const res = await b2cTrackingService.getRoute(user.id, d);
-      setHistory(res.data || null);
+      if (historyTokenRef.current === token) setHistory(res.data || null);
     } catch {
-      setHistory(null);
+      if (historyTokenRef.current === token) setHistory(null);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (historyTokenRef.current === token) {
+        setLoadingHistory(false);
+        setRefreshing(false);
+      }
     }
   }, [user?.id]);
 
@@ -309,6 +322,7 @@ export const B2CMyDayScreen = () => {
   const startDay = async () => {
     setBusy(true); setError(''); setGeoNote('');
     try {
+      resetB2CMotionState();   // a new shift must not inherit the last one's stationary streak
       await b2cTrackingService.startDay();
       toast.success('Day started');
       await fetchMe();
@@ -324,8 +338,20 @@ export const B2CMyDayScreen = () => {
     setBusy(true); setError('');
     try {
       stopForeground();
-      await stopB2CBackgroundTracking();
+      // Drain EVERYTHING queued on the device BEFORE ending the day — the server freezes the
+      // day's totals at end, and once the session is closed a queued fix is refused (403) and
+      // discarded. Order matters:
+      //   1. native queue — while the native engine is still running, because iOS stopTracking
+      //      deletes the stored token/URL the flush needs;
+      //   2. JS queue (b2c_tracking_ping_queue — the no-native-module sender);
+      //   3. end the day;
+      //   4. only then stop background capture.
+      // Both flushes never throw and are time-boxed, so End Day cannot hang on them.
+      await flushNativeQueue();
+      await flushB2CQueue();
       await b2cTrackingService.endDay();
+      resetB2CMotionState();   // the next shift starts from a clean stationary streak
+      await stopB2CBackgroundTracking();
       toast.success('Day ended');
       setEndConfirm(false);
       await fetchMe();
@@ -390,7 +416,8 @@ export const B2CMyDayScreen = () => {
   const s = useMemo(() => makeStyles(r), [r]);
   // Two up everywhere: on a wide screen the stats share the left pane with the day controls,
   // so four across would squeeze each tile narrower than its own label.
-  const kpiWidth = '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiWidth = tileFill(2);
 
   const statusCard = isToday ? (
     <Card style={{ gap: 12 }}>
@@ -435,16 +462,16 @@ export const B2CMyDayScreen = () => {
   const stats = (
     <View style={s.grid}>
       <StatTile
-        style={{ width: kpiWidth }}
+        style={kpiWidth}
         label="Distance"
         value={`${Number(view.distance).toFixed(1)} km`}
         icon={<RouteIcon size={15} color={T.accent} />}
         sub={[distanceHint(view.distanceMethod, view.distanceStatus), confidenceLabel(view.matchConfidence)]
           .filter(Boolean).join(' · ') || undefined}
       />
-      <StatTile style={{ width: kpiWidth }} label="Duration" value={fmtDuration(view.duration)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
-      <StatTile style={{ width: kpiWidth }} label="Start" value={fmtTime(view.startedAt)} tint={T.success} icon={<Play size={15} color={T.success} />} />
-      <StatTile style={{ width: kpiWidth }} label="Location pings" value={view.pings} tint={T.warning} icon={<Gauge size={15} color={T.warning} />} />
+      <StatTile style={kpiWidth} label="Duration" value={fmtDuration(view.duration)} tint={T.info} icon={<Clock size={15} color={T.info} />} />
+      <StatTile style={kpiWidth} label="Start" value={fmtTime(view.startedAt)} tint={T.success} icon={<Play size={15} color={T.success} />} />
+      <StatTile style={kpiWidth} label="Location pings" value={view.pings} tint={T.warning} icon={<Gauge size={15} color={T.warning} />} />
     </View>
   );
 

@@ -13,6 +13,7 @@ import { leadsApi } from '../../api/leads';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { School, DuplicateMatch, UserDto, BulkSchoolRow } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { getErrorMessage } from '../../utils/errorMessage';
 import { AppHeader } from '../../components/ui';
 import { Btn, Field, Input, Trigger, Dropdown, Segmented, FormModal } from '../../components/crud';
 import { NumField } from '../../components/common/NumField';
@@ -126,6 +127,9 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const T = useAppTheme();
   const isEdit = !!existing;
   const isFO = user?.role === 'FO';
+  // Pin and geofence radius decide what counts as a visit — managers only (the API refuses an
+  // FO changing them), so an FO's edit leaves them out entirely (web SchoolDetail.jsx).
+  const isManager = ['ZH', 'RH', 'SH', 'SCA'].includes(user?.role || '');
 
   // ── Responsive: iPad in landscape gets the two-column form the migrated
   // screens use (CreateDealScreen). Phones — and a tablet held in portrait —
@@ -173,6 +177,13 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
   const [showDupModal, setShowDupModal] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit only — the version the form is editing (expectedUpdatedAt) and the school's own
+  // geofence radius. Both refresh when a 409 reloads the record.
+  const [version, setVersion] = useState<{ updatedAt?: string; radius?: number }>({
+    updatedAt: existing?.updatedAt,
+    radius: existing?.geofenceRadiusMetres,
+  });
 
   // ── Bulk upload (create mode only) ──
   const [bulkRows, setBulkRows] = useState<BulkSchoolRow[] | null>(null);
@@ -367,19 +378,29 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
         address: fullAddress || undefined,
         phone: phone || undefined,
         email: email || undefined,
-        studentCount: studentCount ? parseInt(studentCount) : undefined,
+        // '' means the field was actually cleared; 0 is a real, deliberately-saved value
+        // (a school onboarded with no students yet) and must not collapse to null.
+        studentCount: studentCount.trim() === '' ? null : parseInt(studentCount, 10),
         staffCount: staffCount ? parseInt(staffCount) : undefined,
         principalName: principalName || undefined,
         principalPhone: principalPhone || undefined,
-        latitude: latitude ?? 0,
-        longitude: longitude ?? 0,
-        geofenceRadiusMetres: 100, // DTO spells it Metres; Meters never bound
       };
+      if (!isEdit) {
+        data.latitude = latitude ?? 0;
+        data.longitude = longitude ?? 0;
+        data.geofenceRadiusMetres = 100; // DTO spells it Metres; Meters never bound
+      } else if (isManager) {
+        // Managers only, and never a hard-coded radius: an edit keeps the school's own
+        // geofence instead of silently resetting it to 100 m.
+        if (latitude != null) data.latitude = latitude;
+        if (longitude != null) data.longitude = longitude;
+        if (version.radius) data.geofenceRadiusMetres = version.radius;
+      }
       // The version this form was opened on — the server refuses (409) if someone saved
       // since (matches web's SchoolDetail.jsx). Only present when `existing` came from the
       // full detail fetch (SchoolDetailScreen); a list-row edit has no updatedAt to send,
       // same as before this existed.
-      if (isEdit && existing?.updatedAt) data.expectedUpdatedAt = existing.updatedAt;
+      if (isEdit && version.updatedAt) data.expectedUpdatedAt = version.updatedAt;
       let schoolId: number | undefined;
       if (isEdit) {
         await schoolsApi.update(existing!.id, data);
@@ -423,9 +444,44 @@ export const AddSchoolScreen = ({ navigation, route }: any) => {
       }
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to save the school.');
+      if (isEdit && err?.response?.status === 409) {
+        // Someone else saved since this form was opened — expectedUpdatedAt is now stale, so
+        // retrying would 409 forever. Say so, then reload the record under the form (which also
+        // refreshes the version the next save needs) so the edit can be redone against it.
+        Alert.alert('Error', getErrorMessage(err, 'This school was changed by someone else. Reloading the latest version — please redo your changes.'));
+        await reloadExisting();
+      } else {
+        Alert.alert('Error', getErrorMessage(err, 'Failed to save the school.'));
+      }
     }
     finally { setSubmitting(false); setShowDupModal(false); }
+  };
+
+  /** Re-reads GET /schools/{id} into the form after a 409 (web SchoolDetail.jsx). */
+  const reloadExisting = async () => {
+    if (!existing) return;
+    try {
+      const res = await schoolsApi.getById(existing.id);
+      const fresh: any = res.data;
+      if (!fresh) return;
+      setName(fresh.name ?? '');
+      setBoard(fresh.board ?? '');
+      setType(fresh.type ?? '');
+      setFullAddress(fresh.address ?? '');
+      setCity(fresh.city ?? '');
+      setState(fresh.state ?? '');
+      setPincode(fresh.pincode ?? '');
+      setPhone(fresh.phone ?? '');
+      setEmail(fresh.email ?? '');
+      setPrincipalName(fresh.principalName ?? '');
+      setPrincipalPhone(fresh.principalPhone ?? '');
+      setStudentCount(fresh.studentCount != null ? String(fresh.studentCount) : '');
+      setStaffCount(fresh.staffCount != null ? String(fresh.staffCount) : '');
+      setLatitude(fresh.latitude ?? null);
+      setLongitude(fresh.longitude ?? null);
+      setLocationSet(!!fresh.latitude);
+      setVersion({ updatedAt: fresh.updatedAt, radius: fresh.geofenceRadiusMetres });
+    } catch { /* the next save will 409 again and retry this reload */ }
   };
 
   const handleSubmit = async () => {

@@ -681,8 +681,9 @@ export const WeeklyPlanScreen = ({ route }: any) => {
 
       try {
         // LeadsController.GetLeads binds [FromQuery] PaginationParams → `pageSize`
-        // (capped at MaxPageSize = 50) and returns PaginatedResult { items, totalCount, … }.
-        const res = await leadsApi.getLeads({ pageSize: 200 });
+        // (capped at MaxPageSize = 500) and returns PaginatedResult { items, totalCount, … }.
+        // Web parity: 500, so stage gating sees every lead, not just the first 200.
+        const res = await leadsApi.getLeads({ pageSize: 500 });
         const d: any = res.data;
         setLeads(Array.isArray(d) ? d : d?.items ?? d?.leads ?? []);
       } catch {}
@@ -692,12 +693,22 @@ export const WeeklyPlanScreen = ({ route }: any) => {
     // on every week arrow — only when the caller (and therefore the scope) changes.
   }, [isManager, user]);
 
+  /**
+   * Latest request wins (web parity, WeeklyPlanner.jsx). Tapping the week arrows quickly —
+   * or switching tabs mid-fetch — fired one request per tap, and whichever resolved LAST
+   * overwrote the week actually showing. One token covers both loaders, since only one of
+   * them is ever the live fetch.
+   */
+  const fetchTokenRef = useRef(0);
+
   // ── My plan ────────────────────────────────────────────────────────────────
   const loadMyPlan = useCallback(async (silent = false) => {
+    const token = ++fetchTokenRef.current;
     if (!silent) setLoadingMy(true);
     try {
       // GET /weekly-plans/my?weekStart= → ApiResponse<WeeklyPlanDto?>; data may be null.
       const res = await weeklyPlanApi.getMy(toYMD(weekMonday));
+      if (fetchTokenRef.current !== token) return;
       const plan: any = res.data;
       if (plan && plan.id) {
         setMyPlan(plan);
@@ -726,31 +737,39 @@ export const WeeklyPlanScreen = ({ route }: any) => {
       }
       setError(null);
     } catch {
+      if (fetchTokenRef.current !== token) return;
       setMyPlan(null);
       setPlanDays(buildWeek(weekMonday));
       setApprovedCounts({});
       setError('Failed to load plan.');
     } finally {
-      setLoadingMy(false);
-      setRefreshing(false);
+      if (fetchTokenRef.current === token) {
+        setLoadingMy(false);
+        setRefreshing(false);
+      }
     }
   }, [weekMonday]);
 
   // ── Team plans ─────────────────────────────────────────────────────────────
   const loadTeamPlans = useCallback(async (silent = false) => {
+    const token = ++fetchTokenRef.current;
     if (!silent) setLoadingTeam(true);
     try {
       // GET /weekly-plans/team?weekStart= → ApiResponse<List<WeeklyPlanDto>> (bare array).
       const res = await weeklyPlanApi.getTeam(toYMD(weekMonday));
+      if (fetchTokenRef.current !== token) return;
       const d: any = res.data;
       setTeamPlans(Array.isArray(d) ? d : d?.items ?? []);
       setError(null);
     } catch {
+      if (fetchTokenRef.current !== token) return;
       setTeamPlans([]);
       setError('Failed to load team plans.');
     } finally {
-      setLoadingTeam(false);
-      setRefreshing(false);
+      if (fetchTokenRef.current === token) {
+        setLoadingTeam(false);
+        setRefreshing(false);
+      }
     }
   }, [weekMonday]);
 
@@ -921,13 +940,20 @@ export const WeeklyPlanScreen = ({ route }: any) => {
           banner(T.danger, <TriangleAlert size={14} color={T.danger} strokeWidth={ICON_STROKE} />,
             `Plan rejected — ${myPlan.reviewNotes}. Please revise and resubmit.`, 'rej')}
 
-        {st === 'EditedByManager' && !!(myPlan as any)?.managerEdits &&
+        {/* Web parity: shown on the status alone — a manager edit with no stored diff
+            (managerEdits empty) is still a manager edit the FO must know about. */}
+        {st === 'EditedByManager' &&
           banner(T.warning, <Pencil size={14} color={T.warning} strokeWidth={ICON_STROKE} />,
             `Manager edited your plan. Review the changes below.${myPlan?.reviewNotes ? ` ${myPlan.reviewNotes}` : ''}`, 'edt')}
 
         {isApprovedAddOnly &&
           banner(T.success, <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />,
             'This plan is approved. You can add more activities and submit for re-approval.', 'app')}
+
+        {/* A Draft that carries an approved snapshot is an edited approved plan (web parity). */}
+        {st === 'Draft' && !!(myPlan as any)?.approvedPlanData &&
+          banner(T.warning, <TriangleAlert size={14} color={T.warning} strokeWidth={ICON_STROKE} />,
+            'You changed an approved plan. Submit it for re-approval — until then the approved version stands.', 'reapp')}
 
         {/* iPad landscape lays the seven days out two-across so the horizontal room the
             sidebar leaves is used instead of running one narrow column down the page.

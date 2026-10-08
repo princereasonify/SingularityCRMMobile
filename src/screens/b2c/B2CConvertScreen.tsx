@@ -123,6 +123,37 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
       .finally(() => { setLoading(false); setRefreshing(false); });
   }, [leadId]);
 
+  // A new leadId on the same mounted screen (navigation reusing the instance) must start from
+  // a clean wizard. load() only OVERWRITES fields the new lead's data happens to have, so
+  // step, orderId, result and a running payment poll used to carry over — a poll for lead A's
+  // payment could resolve after moving to lead B and paint B's screen "Payment received".
+  // Kept out of load() on purpose: load also runs on pull-to-refresh, which must not reset a
+  // wizard mid-flow. Declared before the load effect so the reset lands first.
+  useEffect(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setLoading(true);
+    setStep(1);
+    setEnrollment(null);
+    setError('');
+    setForm({
+      firstName: '', lastName: '', email: '', mobile: '', gender: '', dateOfBirth: '',
+      grade: '', board: '', medium: '', schoolName: '',
+      parentName: '', parentEmail: '', parentMobile: '',
+    });
+    setProfilePic('');
+    setDocs([]);
+    setDocType('Aadhaar');
+    setSubjects([]);
+    setSubjectInput('');
+    setPlan('OneTime');
+    setDurationMonths('');
+    setAmount('');
+    setOrderId(null);
+    setPaying(false);
+    setVerifying(false);
+    setResult(null);
+  }, [leadId]);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 

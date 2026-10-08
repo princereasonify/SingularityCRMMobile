@@ -11,7 +11,7 @@ import { StatTile, Card, SectionLabel } from '../../components/ui';
 import { DateInput } from '../../components/common/DateInput';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { useResponsive } from '../../hooks/useResponsive';
+import { useResponsive, tileFill } from '../../hooks/useResponsive';
 import { todayStr } from '../../utils/dates';
 import {
   b2cCallingService, CALL_OUTCOMES, CallCenterSummary, CallLogRow,
@@ -89,7 +89,8 @@ export const B2CCallCenterScreen = ({ navigation }: any) => {
 
   const callers = summary?.callers || [];
   const pageCount = Math.ceil(total / PAGE_SIZE) || 1;
-  const kpiW = r.isTablet ? '24%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiW = tileFill(r.isTablet ? 4 : 2);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['bottom']}>
@@ -109,10 +110,10 @@ export const B2CCallCenterScreen = ({ navigation }: any) => {
         </View>
 
         <View style={styles.kpiGrid}>
-          <StatTile style={{ width: kpiW }} label="Calls" value={loadingSummary ? '…' : summary?.totalCalls ?? '—'} icon={<PhoneCall size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub={summary ? `${summary.connected} reached someone` : ''} />
-          <StatTile style={{ width: kpiW }} label="Connect rate" value={loadingSummary ? '…' : (summary ? rateText(summary.connectRate, summary.totalCalls) : '—')} icon={<PhoneOff size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Of calls made in this window" />
-          <StatTile style={{ width: kpiW }} label="Callbacks booked" value={loadingSummary ? '…' : summary?.callbacksBooked ?? '—'} icon={<CalendarClock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} sub="Parents promised a call back" />
-          <StatTile style={{ width: kpiW }} label="Handed over" value={loadingSummary ? '…' : summary?.handoffs ?? '—'} icon={<UserCheck size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Sent to an agent or counsellor" />
+          <StatTile style={kpiW} label="Calls" value={loadingSummary ? '…' : summary?.totalCalls ?? '—'} icon={<PhoneCall size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub={summary ? `${summary.connected} reached someone` : ''} />
+          <StatTile style={kpiW} label="Connect rate" value={loadingSummary ? '…' : (summary ? rateText(summary.connectRate, summary.totalCalls) : '—')} icon={<PhoneOff size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Of calls made in this window" />
+          <StatTile style={kpiW} label="Callbacks booked" value={loadingSummary ? '…' : summary?.callbacksBooked ?? '—'} icon={<CalendarClock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} sub="Parents promised a call back" />
+          <StatTile style={kpiW} label="Handed over" value={loadingSummary ? '…' : summary?.handoffs ?? '—'} icon={<UserCheck size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Sent to an agent or counsellor" />
         </View>
 
         {!!summary && (summary.overdue > 0 || summary.leadsNeverCalled > 0) && (

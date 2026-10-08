@@ -17,6 +17,7 @@ import { OfflineProvider } from './src/context/OfflineContext';
 import { NotificationProvider } from './src/context/NotificationContext';
 import { ToastProvider } from './src/context/ToastContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { AppErrorBoundary } from './src/components/common/AppErrorBoundary';
 import messaging from '@react-native-firebase/messaging';
 import { onForegroundMessage, onNotifeeEvent } from './src/services/pushNotificationService';
 import { navigationRef } from './src/navigation/AppNavigator';
@@ -77,7 +78,9 @@ function App() {
               <AuthProvider>
                 <ToastProvider>
                   <NotificationProvider>
-                    <AppNavigator />
+                    <AppErrorBoundary>
+                      <AppNavigator />
+                    </AppErrorBoundary>
                   </NotificationProvider>
                 </ToastProvider>
               </AuthProvider>

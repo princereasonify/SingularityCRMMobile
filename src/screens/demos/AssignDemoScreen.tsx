@@ -12,6 +12,7 @@ import { schoolsApi } from '../../api/schools';
 import { leadsApi } from '../../api/leads';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
+import { todayStr } from '../../utils/dates';
 import { Btn, Trigger, Dropdown, SearchBar } from '../../components/crud';
 import { Card, Chip } from '../../components/ui';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -111,14 +112,26 @@ export const AssignDemoScreen = ({ navigation, route }: any) => {
     if (!selectedSchool) { Alert.alert('Validation', 'Please select a school'); return; }
     if (!selectedUser) { Alert.alert('Validation', 'Please select a demo person to assign'); return; }
     if (!scheduledDate) { Alert.alert('Validation', 'Please enter the scheduled date (YYYY-MM-DD)'); return; }
-    const today = new Date().toISOString().split('T')[0];
-    if (scheduledDate < today) { Alert.alert('Validation', 'Demo date must be today or a future date.'); return; }
+    // Local calendar day — toISOString() is UTC, which in IST reads as yesterday until 05:30.
+    if (scheduledDate < todayStr()) { Alert.alert('Validation', 'Demo date must be today or a future date.'); return; }
     if (!startTime || !endTime) { Alert.alert('Validation', 'Please enter start and end time'); return; }
+    // Web parity (AssignDemo.jsx). Compared as minutes, not strings — these are typed, so
+    // "9:00" vs "10:00" would sort the wrong way as text.
+    const toMin = (t: string) => {
+      const m = /^(\d{1,2}):(\d{2})/.exec(t.trim());
+      return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+    };
+    const startMin = toMin(startTime);
+    const endMin = toMin(endTime);
+    if (!Number.isNaN(startMin) && !Number.isNaN(endMin) ? endMin <= startMin : endTime.trim() <= startTime.trim()) {
+      Alert.alert('Validation', 'End time must be after the start time.'); return;
+    }
 
     setSubmitting(true);
     try {
       await demosApi.create({
-        leadId: parseInt(routeLeadId) || 0,
+        // CreateDemoRequest.LeadId is int? — no lead means null, not a bogus lead 0.
+        leadId: parseInt(routeLeadId) || null,
         schoolId: selectedSchool.id,
         assignedToId: selectedUser.id,
         scheduledDate,

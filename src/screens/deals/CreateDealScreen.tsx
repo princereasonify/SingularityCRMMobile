@@ -3,7 +3,6 @@ import {
   View, Text, ScrollView, StyleSheet, Alert, TextInput, useWindowDimensions, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerActions } from '@react-navigation/native';
 import { Building2, Calculator, Info } from 'lucide-react-native';
 import { dealsApi } from '../../api/deals';
 import { leadsApi } from '../../api/leads';
@@ -12,13 +11,19 @@ import { DateInput } from '../../components/common/DateInput';
 import { AppHeader, Card } from '../../components/ui';
 import { Btn, Field, Trigger, Dropdown, StatusBadge } from '../../components/crud';
 import { NumField } from '../../components/common/NumField';
-import { CONTRACT_DURATIONS } from '../../utils/constants';
+import {
+  CONTRACT_DURATIONS, DEALABLE_STAGES, APPROVAL_LABELS, stageLabel, money, approvalRoute,
+} from '../../utils/constants';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
-const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+// Up to 2 decimals: amounts are paise-rounded (money()), so whole-rupee display hid real paise.
+const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 const GST_RATE = 0.18;
 
@@ -52,16 +57,14 @@ const DISCOUNT_MAX = 100;
 // (JSON) and deal detail renders them, so the picker feeds a real field.
 const MODULE_CATALOG = ['AI Voice', 'Curriculum', 'AI Videos', 'Lab Simulator', 'ERP', 'Homework', 'Exam'];
 
-// Escalation ladder, coloured from the theme. Four tiers, four distinct hues:
-// `accent` sits between warning and danger because two adjacent escalation tiers
-// sharing a colour makes the banner unreadable. DealEstimateScreen uses this same
-// ramp — the two screens must agree.
-const getApprovalLevel = (discount: number, T: AppTheme) => {
-  if (discount <= 10) return { level: 'Self-Approved', color: T.success, approver: 'You (FO)', desc: 'Within your authority. Deal will be self-approved.' };
-  if (discount <= 20) return { level: 'Zonal Head Approval', color: T.warning, approver: 'Zonal Head', desc: 'Deal will be locked until decision.' };
-  if (discount <= 30) return { level: 'Regional Head Approval', color: T.accent, approver: 'Regional Head', desc: 'Deal will be locked until decision.' };
-  return { level: 'Sales Head Approval', color: T.danger, approver: 'Sales Head', desc: 'Deal will require approval at this discount level.' };
-};
+// Approval preview colour — one hue per escalation tier, from the theme. The tier itself
+// comes from approvalRoute() (web's leadStages.js port), which also lifts the route past
+// the creator's own level and past a missing zone/region, as DealService does.
+const approvalColor = (level: string, T: AppTheme) =>
+  level === 'Self-Approved' ? T.success
+    : level === 'Zonal Head Approval' ? T.warning
+      : level === 'Regional Head Approval' ? T.accent
+        : T.danger;
 
 const billingLabel = (b: string) => {
   if (b === 'Monthly') return 'Month';
@@ -86,12 +89,16 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const wide = isTabletDevice && width > height;
+  const { user } = useAuth();
+  const toast = useToast();
+  // LeadDetail / Pipeline hand a lead in as { leadId } — preselected only if it is eligible.
+  const preselectLeadId = route?.params?.leadId ? String(route.params.leadId) : '';
 
   const [leads, setLeads] = useState<LeadListDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [openDd, setOpenDd] = useState<'lead' | 'billing' | 'duration' | null>(null);
   const [form, setForm] = useState({
-    leadId: route?.params?.leadId ? String(route.params.leadId) : '' as any,
+    leadId: '',
     basePrice: '',
     totalLogins: '',
     discount: '0',
@@ -101,6 +108,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
     contractStartDate: '',
     contractEndDate: '',
     modules: [] as string[],
+    numberOfLicenses: '',
   });
 
   const toggleModule = (m: string) => setForm((f) => ({
@@ -109,27 +117,33 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   }));
 
   useEffect(() => {
-    // GET /leads/pipeline returns ApiResponse<List<LeadListDto>>; the client's response
-    // interceptor unwraps `success/data`, so `r.data` is already the array.
-    //
-    // Only Won leads may become deals — the same gate web's CreateDeal.jsx enforces.
-    // LeadListDto.Stage is a string projected server-side as `l.Stage.ToString()` over
-    // the LeadStage enum, so the wire value for the Won member is exactly "Won";
-    // the lowercase check mirrors web's defensive filter.
-    leadsApi.getPipeline().then((r) => {
-      const items = Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [];
-      const wonOnly = (items as LeadListDto[]).filter((l) => {
-        const st = (l.stage || '').toString();
-        return st === 'Won' || st === 'won';
+    // A deal can be raised once the demo is done (DealService.DealableStages) — the deal's
+    // approval is what makes the lead Won. This used to list only leads already marked Won,
+    // which forced people to drag leads to Won with no deal behind them. Same as web's
+    // CreateDeal.jsx: one request per stage, 500 a page (PaginationParams.MaxPageSize); the
+    // server scopes to the caller's team. Nothing is auto-selected.
+    const PAGE_SIZE = 500;
+    let alive = true;
+    Promise.all(DEALABLE_STAGES.map((stage) =>
+      leadsApi.getLeads({ page: 1, pageSize: PAGE_SIZE, stage })
+        .then((r) => {
+          const d: any = r.data;
+          return (Array.isArray(d) ? d : (d?.items ?? [])) as LeadListDto[];
+        })
+        .catch(() => [] as LeadListDto[])))
+      .then((lists) => {
+        if (!alive) return;
+        const byId = new Map<number, LeadListDto>();
+        lists.flat().forEach((l) => { if (DEALABLE_STAGES.includes(l.stage)) byId.set(l.id, l); });
+        const eligible = [...byId.values()].sort((a, b) => (a.school || '').localeCompare(b.school || ''));
+        setLeads(eligible);
+        const preselected = preselectLeadId && eligible.find((l) => String(l.id) === preselectLeadId);
+        if (preselected) setForm((f) => ({ ...f, leadId: String(preselected.id) }));
+        else if (preselectLeadId) toast.warning('That lead is not ready for a deal yet (the demo must be done).');
       });
-      setLeads(wonOnly);
-      // Auto-select the first Won lead, as web does — but never clobber a lead
-      // handed in by the caller via route params.
-      if (wonOnly.length > 0) {
-        setForm((f) => (f.leadId ? f : { ...f, leadId: String(wonOnly[0].id) }));
-      }
-    }).catch(() => {});
-  }, []);
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectLeadId]);
 
   const set = (key: string, val: any) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -137,15 +151,20 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   const tl = parseInt(form.totalLogins) || 0;
   const disc = parseFloat(form.discount) || 0;
 
-  const subtotal = bp * tl;
-  const amountWithoutGst = Math.round(subtotal * (1 - disc / 100));
-  const discountAmount = subtotal - amountWithoutGst;
-  const gstAmount = Math.round(amountWithoutGst * GST_RATE);
-  const totalMoney = amountWithoutGst + gstAmount;
+  // Base price is per login; billing only splits the total. Rounded to paise at each step,
+  // exactly as DealService stores it — whole-rupee rounding here disagreed with the saved deal.
+  const subtotal = money(money(bp) * tl);
+  const amountWithoutGst = money(subtotal * (1 - money(disc) / 100));
+  const discountAmount = money(subtotal - amountWithoutGst);
+  const gstAmount = money(amountWithoutGst * GST_RATE);
+  const totalMoney = money(amountWithoutGst + gstAmount);
   const installments = INSTALLMENT_MAP[form.billing] || 1;
-  const perInstallment = installments > 0 ? Math.round(totalMoney / installments) : 0;
+  const perInstallment = installments > 0 ? money(totalMoney / installments) : totalMoney;
 
-  const approval = getApprovalLevel(disc, T);
+  // Previews off the signed-in user's own zone/region (accurate for an FO on their own
+  // lead). The confirmation after submit reads the real route back from the server.
+  const route0 = approvalRoute(money(disc), user?.role, user?.zoneId, user?.regionId);
+  const approval = { ...route0, color: approvalColor(route0.level, T) };
   const hasValues = bp > 0 && tl > 0;
 
   const discErr =
@@ -161,24 +180,30 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
       ? 'Contract start date must be before end date.'
       : undefined;
 
-  const leadOptions = leads.map((l) => ({ label: `${l.school} — ${l.city}`, value: String(l.id) }));
+  const leadOptions = leads.map((l) => ({ label: `${l.school} — ${l.city} (${stageLabel(l.stage)})`, value: String(l.id) }));
   const selectedLead = leadOptions.find((o) => o.value === String(form.leadId));
 
   const handleSubmit = async () => {
-    if (!form.leadId) { Alert.alert('Error', 'Please select a lead'); return; }
+    const leadIdNum = Number(form.leadId);
+    if (!form.leadId || !Number.isInteger(leadIdNum) || leadIdNum <= 0) { Alert.alert('Error', 'Please select a valid lead.'); return; }
     if (tl <= 0) { Alert.alert('Error', 'Total Logins is required'); return; }
     if (bp <= 0) { Alert.alert('Error', 'Base Price is required'); return; }
     // Web parity: CreateDeal.jsx rejects discount < 0 || > 100 and start > end.
     if (discErr) { Alert.alert('Error', discErr); return; }
     if (datesErr) { Alert.alert('Error', datesErr); return; }
+    const licences = form.numberOfLicenses.trim() === '' ? null : Number(form.numberOfLicenses);
+    if (licences !== null && (!Number.isInteger(licences) || licences <= 0)) {
+      Alert.alert('Error', 'Licences must be a whole number above 0.'); return;
+    }
 
     setLoading(true);
     try {
-      await dealsApi.createDeal({
-        leadId: Number(form.leadId),
+      const res = await dealsApi.createDeal({
+        leadId: leadIdNum,
         contractValue: subtotal,
-        discount: disc,
-        basePrice: bp,
+        discount: money(disc),
+        basePrice: money(bp),
+        numberOfLicenses: licences,
         totalLogins: tl,
         billingFrequency: form.billing,
         paymentTerms: form.billing,
@@ -186,18 +211,25 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
         modules: form.modules,
         notes: form.notes || undefined,
         submitForApproval: true,
-        contractStartDate: form.contractStartDate || undefined,
-        contractEndDate: form.contractEndDate || undefined,
-      } as any);
+        contractStartDate: form.contractStartDate || null,
+        contractEndDate: form.contractEndDate || null,
+      });
+      // Say what actually happened — the server decides the route (it also escalates past a
+      // missing zone/region), so read it back instead of guessing from the discount.
+      const status = res?.data?.approvalStatus;
+      const selfApproved = status ? status === 'SelfApproved' : !!approval.selfApproved;
+      const approver = (status && APPROVAL_LABELS[status]?.label?.replace('Awaiting ', '')) || approval.approver;
       Alert.alert(
         'Deal Submitted!',
-        disc <= 10
+        selfApproved
           ? 'Deal auto-approved and lead marked as Won.'
-          : `Deal submitted for ${approval.approver} approval.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
+          : `Deal submitted for ${approver} approval.`,
+        // 'Main' is the role drawer on the root stack — works from both the drawer's
+        // Create Deal entry and the stacked CreateDeal screen.
+        [{ text: 'OK', onPress: () => navigation.navigate('Main', { screen: 'Deals' }) }],
       );
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to create deal');
+      Alert.alert('Error', getErrorMessage(err, 'Failed to create deal.'));
     } finally {
       setLoading(false);
     }
@@ -222,7 +254,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
       <View style={s.fields}>
         <Field label="Linked Lead *">
           <Trigger
-            label={selectedLead ? selectedLead.label : (leads.length === 0 ? 'No Won leads available' : 'Select a Won lead')}
+            label={selectedLead ? selectedLead.label : (leads.length === 0 ? 'No leads ready for a deal' : 'Select a lead')}
             open={openDd === 'lead'}
             onPress={() => leads.length > 0 && setOpenDd(openDd === 'lead' ? null : 'lead')}
           />
@@ -237,7 +269,7 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
           )}
           {leads.length === 0 && (
             <Text style={[s.hint, { color: T.warning }]}>
-              Deals can only be created from leads that are marked as Won. Move a lead to the Won stage first.
+              A deal can be created once a lead's demo is done (Demo Done, Proposal Sent, Negotiation or Contract Sent). Approving the deal marks the lead Won.
             </Text>
           )}
         </Field>
@@ -259,6 +291,14 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
             style={s.half}
           />
         </View>
+
+        <NumField
+          label="Licences"
+          value={form.numberOfLicenses}
+          onChangeText={(v) => set('numberOfLicenses', v)}
+          placeholder={tl > 0 ? `Same as logins (${tl})` : 'Same as logins'}
+          allowDecimal={false}
+        />
 
         <View style={s.row}>
           <NumField
@@ -396,7 +436,9 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
           <View style={s.flex}>
             <StatusBadge label={approval.level} color={approval.color} />
             <Text style={[s.approvalDesc, { color: T.sub }]}>
-              {disc <= 10 ? approval.desc : `Approver: ${approval.approver}. ${approval.desc}`}
+              {approval.selfApproved
+                ? 'Within your authority. The deal is approved on submit and the lead is marked Won.'
+                : `Approver: ${approval.approver}. The lead is marked Won once the deal is approved.`}
             </Text>
           </View>
         </View>
@@ -412,12 +454,13 @@ export const CreateDealScreen = ({ route, navigation }: any) => {
   );
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['top']}>
+    // Pushed as the 'CreateDeal' stack route there is no top bar, so this screen pays the
+    // status-bar inset; as the drawer's "Create Deal" the AppTopbar already did.
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={route?.name === 'CreateDeal' ? ['top'] : []}>
       <AppHeader
         title="Create Deal"
         subtitle="Formalise a school's purchase intent"
         onBack={canGoBack ? () => navigation.goBack() : undefined}
-        onMenu={canGoBack ? undefined : () => navigation.dispatch(DrawerActions.toggleDrawer())}
       />
 
       <ScrollView

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Phone, CheckCircle, Clock, Pencil, Mail, Trash2, UserRound } from 'lucide-react-native';
 import { schoolsApi } from '../../api/schools';
 import { contactsApi } from '../../api/contacts';
+import { geofenceApi } from '../../api/geofence';
 import { School, Contact, SchoolVisitLog } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Screen, AppHeader, Card, Badge } from '../../components/ui';
@@ -72,10 +73,16 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
 
         await fetchContacts();
 
-        // Visit history: GET /schools/{id}/visit-history is not a route any
-        // controller serves, so this only ever 404'd into an empty list. Dropped
-        // rather than left spamming a request per open; restore with a real endpoint.
-        setVisits([]);
+        // Visit history — GET /geofence/visits/school/{schoolId} (GeofenceController),
+        // the same endpoint web's geofenceService.getVisitLogsBySchool() uses. The old
+        // GET /schools/{id}/visit-history guess 404'd; this is the real route, server-
+        // scoped to the caller's own visits + anyone they manage.
+        try {
+          const visitsRes = await geofenceApi.getVisitLogsBySchool(schoolId);
+          setVisits(Array.isArray(visitsRes.data) ? visitsRes.data : []);
+        } catch {
+          setVisits([]);
+        }
       } catch {
         Alert.alert('Error', 'Failed to load school details');
       } finally {
@@ -311,11 +318,19 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
           )}
         </Card>
 
-        {/* Visit History */}
-        {visits.length > 0 && (
-          <Card>
-            <Text style={[styles.sectionTitle, { color: T.text }]}>Recent Visits</Text>
-            {visits.slice(0, 5).map((v, i) => (
+        {/* Visit History — GET /geofence/visits/school/{schoolId}, scoped server-side to
+            the caller's own visits + anyone they manage (so an FO only ever sees their
+            own rows here, a manager sees their team's too). */}
+        <Card>
+          <Text style={[styles.sectionTitle, { color: T.text }]}>Recent Visits</Text>
+          {visits.length === 0 ? (
+            <EmptyState
+              icon="📍"
+              title="No visits recorded yet"
+              subtitle="Visits appear here when field officers enter this school's geofence."
+            />
+          ) : (
+            visits.slice(0, 5).map((v, i) => (
               <View
                 key={v.id ?? i}
                 style={[styles.visitRow, i < Math.min(visits.length, 5) - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.line }]}
@@ -327,15 +342,15 @@ export const SchoolDetailScreen = ({ navigation, route }: any) => {
                 </View>
                 <View style={styles.visitInfo}>
                   <Text style={[styles.visitDate, { color: T.text }]}>{formatDate(v.enteredAt)}</Text>
-                  {v.durationMinutes != null && (
-                    <Text style={[styles.visitDuration, { color: T.sub }]}>{v.durationMinutes} min</Text>
-                  )}
+                  <Text style={[styles.visitDuration, { color: T.sub }]} numberOfLines={1}>
+                    {v.userName || 'Unknown'}{v.durationMinutes != null ? ` · ${v.durationMinutes} min` : ''}
+                  </Text>
                 </View>
-                {v.hasVisitReport && <Badge label="Report" color={T.success} />}
+                {!v.isVerified && <Badge label="Unverified" color={T.warning} />}
               </View>
-            ))}
-          </Card>
-        )}
+            ))
+          )}
+        </Card>
       </ScrollView>
 
       <FormModal

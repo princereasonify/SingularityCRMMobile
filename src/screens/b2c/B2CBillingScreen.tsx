@@ -4,18 +4,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Wallet, Check, ExternalLink } from 'lucide-react-native';
-import { Btn, FormModal } from '../../components/crud';
+import { Btn, FormModal, Pagination } from '../../components/crud';
 import { Card, SectionLabel } from '../../components/ui';
 import { b2cBillingService } from '../../api/b2c/b2cBillingService';
 import {
   B2CWalletDto, B2CBillingTransactionDto, B2CBillingPlan, B2C_BILLING_PLANS,
 } from '../../types/b2c';
-import { formatCurrency, formatRelativeDate } from '../../utils/formatting';
+import { formatCurrency, formatRelativeDate, formatDate } from '../../utils/formatting';
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, Responsive, MIN_TAP } from '../../hooks/useResponsive';
 
 const POLL_MS = 5000;
+/** Web parity: B2CBilling.jsx pages the ledger 15 at a time. */
+const TX_PAGE_SIZE = 15;
 
 export const B2CBillingScreen = () => {
   const T = useAppTheme();
@@ -23,6 +25,8 @@ export const B2CBillingScreen = () => {
   const toast = useToast();
   const [wallet, setWallet] = useState<B2CWalletDto | null>(null);
   const [txns, setTxns] = useState<B2CBillingTransactionDto[]>([]);
+  const [txPage, setTxPage] = useState(1);
+  const [totalTxns, setTotalTxns] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -38,16 +42,17 @@ export const B2CBillingScreen = () => {
     try {
       const [w, t] = await Promise.all([
         b2cBillingService.getWallet(),
-        b2cBillingService.getTransactions({ page: 1, pageSize: 20 }),
+        b2cBillingService.getTransactions({ page: txPage, pageSize: TX_PAGE_SIZE }),
       ]);
       setWallet(w.data);
       setTxns(t.data?.items ?? []);
+      setTotalTxns(t.data?.totalCount ?? 0);
     } catch {
       /* keep whatever we had */
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, []);
+  }, [txPage]);
 
   useEffect(() => { loadWallet(); }, [loadWallet]);
 
@@ -118,6 +123,8 @@ export const B2CBillingScreen = () => {
     setSelectedPlan(null);
   };
 
+  const txTotalPages = Math.max(1, Math.ceil(totalTxns / TX_PAGE_SIZE));
+
   const s = useMemo(() => makeStyles(r), [r]);
 
   return (
@@ -145,6 +152,9 @@ export const B2CBillingScreen = () => {
                   <Text style={[s.metaTxt, { color: T.dim }]}>Consumed {wallet.totalConsumed.toLocaleString('en-IN')}</Text>
                 </View>
               )}
+              {!!wallet?.planExpiresAt && (
+                <Text style={[s.metaTxt, { color: T.dim, marginTop: 6 }]}>Expires: {formatDate(wallet.planExpiresAt)}</Text>
+              )}
               <Btn label="Top up credits" onPress={() => { setSelectedPlan(null); setShowBuy(true); }} style={{ marginTop: 14 }} />
             </Card>
 
@@ -167,6 +177,14 @@ export const B2CBillingScreen = () => {
                       </View>
                     );
                   })}
+                  {txTotalPages > 1 && (
+                    <View style={[s.pgRow, { borderTopColor: T.line }]}>
+                      <Text style={[s.txMeta, { color: T.dim, marginTop: 0 }]}>
+                        Showing {(txPage - 1) * TX_PAGE_SIZE + 1}–{Math.min(txPage * TX_PAGE_SIZE, totalTxns)} of {totalTxns} transactions
+                      </Text>
+                      <Pagination page={txPage} pageCount={txTotalPages} onChange={p => { if (p >= 1 && p <= txTotalPages && p !== txPage) setTxPage(p); }} />
+                    </View>
+                  )}
                 </Card>
               )}
             </View>
@@ -254,6 +272,7 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   txDesc: { fontSize: r.rf(13), fontWeight: '600' },
   txMeta: { fontSize: r.rf(11), fontWeight: '500', marginTop: 2 },
   txAmt: { fontSize: r.rf(15), fontWeight: '800' },
+  pgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 24 },
   planRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1.5, padding: 14, minHeight: MIN_TAP },
   planTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },

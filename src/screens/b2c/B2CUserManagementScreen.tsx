@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { Plus, Power, Edit2, Trash2 } from 'lucide-react-native';
+import { Plus, Power, Edit2, Trash2, Check, AlertTriangle } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   SearchBar, Segmented, Pagination, ListCard, Avatar, StatusBadge,
@@ -15,6 +15,10 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, Responsive, MIN_TAP, gridCardWidth} from '../../hooks/useResponsive';
+import {
+  PayoutFields, PayoutDetailsResponse, payoutState, payoutPayload, payoutFormFrom,
+  collectsPayout, EMPTY_PAYOUT, PAYOUT_HINT_OPTIONAL,
+} from './B2CCreateUserScreen';
 
 const PAGE_SIZE = 20;
 
@@ -24,8 +28,20 @@ const initialsOf = (name?: string) =>
 type RoleFilter = '' | 'Agent' | 'Counselor' | 'B2CAdmin' | 'CallingAgent';
 type StatusFilter = '' | 'active' | 'inactive';
 
-// Local alias — this screen only ever deals with the roster list shape.
-type B2CUser = B2CUserListDto;
+// Local alias — this screen only ever deals with the roster list shape. The payout-presence
+// flags are on the server's list DTO (B2CUserDtos.cs) but not yet on the shared mobile type;
+// presence only — the values themselves are never in this payload.
+type B2CUser = B2CUserListDto & {
+  payoutDetailsComplete?: boolean;
+  hasPanNumber?: boolean;
+  hasAadhaarNumber?: boolean;
+  hasBankDetails?: boolean;
+};
+
+/** "PAN + Bank pending" — what the list badge says is still missing. Web :344-348. */
+const missingPayoutLabel = (u: B2CUser) =>
+  [!u.hasPanNumber && 'PAN', !u.hasAadhaarNumber && 'Aadhaar', !u.hasBankDetails && 'Bank']
+    .filter(Boolean).join(' + ');
 
 const toggleId = (arr: number[], id: number) =>
   arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
@@ -58,13 +74,23 @@ export const B2CUserManagementScreen = () => {
   const [newPassword, setNewPassword] = useState('');
   const [resetting, setResetting] = useState(false);
   const [editForm, setEditForm] = useState({
-    name: '', mobile: '', address: '', bio: '', referralCode: '', isActive: true, isManager: false, agentIds: [] as number[],
+    name: '', email: '', mobile: '', address: '', bio: '', referralCode: '', isActive: true, isManager: false, agentIds: [] as number[],
     // Payout identity, fetched per-user when the dialog opens. Web has had these since the
     // dialog was built; without them an admin could not correct a wrong bank account from
     // a phone, which is exactly when a failed payout gets noticed.
-    panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
+    ...EMPTY_PAYOUT,
   });
   const [editErr, setEditErr] = useState('');
+  // The fetched payout record, or null until (and unless) the fetch succeeds. handleEdit
+  // only sends payout fields when this is set: the server treats '' as "clear", so sending
+  // the blank seed — mid-fetch, or after a failed fetch — would erase real KYC data.
+  const [payoutData, setPayoutData] = useState<PayoutDetailsResponse | null>(null);
+  // Gates Save while the per-person fetch is in flight. Web :83-86.
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  // Which user the open dialog belongs to. A ref, not state: the fetch continuation has to
+  // read what is on screen NOW, after the admin may have closed this dialog and opened
+  // someone else's — a stale response must never land in a different person's form.
+  const openEditUserIdRef = useRef<number | null>(null);
 
   // Destructive confirms
   const [deleteTarget, setDeleteTarget] = useState<B2CUser | null>(null);
@@ -109,14 +135,18 @@ export const B2CUserManagementScreen = () => {
   const roleColor = (r: string) => (r === 'Counselor' ? T.info : r === 'CallingAgent' ? T.warning : T.accent);
 
   // ── Edit ────────────────────────────────────────────────────────────────
-  const openEdit = (u: B2CUser) => {
+  const openEdit = async (u: B2CUser) => {
     setEditUser(u);
     setNewPassword('');
+    setPayoutData(null);
+    setPayoutLoading(true);
+    openEditUserIdRef.current = u.id;
     // Seed the whole form FIRST, payout blank, then fill payout in when the fetch lands.
     // The other way round, this reset would wipe the fetched values whenever the request
     // happened to win the race.
     setEditForm({
       name: u.name || '',
+      email: u.email || '',
       mobile: u.mobile || '',
       address: u.address || '',
       bio: u.bio || '',
@@ -124,32 +154,44 @@ export const B2CUserManagementScreen = () => {
       isActive: u.isActive ?? true,
       isManager: u.isManager ?? false,
       agentIds: u.teamAgentIds || [],
-      panNumber: '', aadhaarNumber: '', accountNumber: '', ifscCode: '',
+      ...EMPTY_PAYOUT,
     });
     setEditErr('');
 
-    // Non-fatal: a failed fetch leaves the payout fields empty rather than blocking a rename.
-    b2cUserService.getPayoutDetails(u.id)
-      .then(res => setEditForm(f => ({
-        ...f,
-        panNumber: res.data?.panNumber || '',
-        aadhaarNumber: res.data?.aadhaarNumber || '',
-        accountNumber: res.data?.accountNumber || '',
-        ifscCode: res.data?.ifscCode || '',
-      })))
-      .catch(() => {});
+    // A Calling Agent is salaried and never has payout details — skip the request entirely.
+    // payoutData stays null, which is also what keeps handleEdit from sending the fields.
+    if (!collectsPayout(u.role)) { setPayoutLoading(false); return; }
+
+    try {
+      const res = await b2cUserService.getPayoutDetails(u.id);
+      if (openEditUserIdRef.current !== u.id) return;
+      const data = (res.data ?? {}) as PayoutDetailsResponse;
+      setPayoutData(data);
+      setEditForm(f => ({ ...f, ...payoutFormFrom(data) }));
+    } catch {
+      // Non-fatal: the fields start empty rather than blocking a rename, and payoutData stays
+      // null so Save leaves the stored values alone (omitted = untouched server-side).
+      if (openEditUserIdRef.current !== u.id) return;
+      setPayoutData(null);
+    } finally {
+      if (openEditUserIdRef.current === u.id) setPayoutLoading(false);
+    }
   };
 
+  const showPayout = collectsPayout(editUser?.role);
+  const editKyc = payoutState(editForm);
+  const canSaveEdit = !saving && !payoutLoading && !!editForm.name.trim() && !!editForm.email.trim()
+    // Blocked on a value that is present but WRONG, never on merely incomplete — these get
+    // filled in over several sittings. Irrelevant for a Calling Agent, who has no block.
+    && !(showPayout && editKyc.hasErrors);
+
   const handleEdit = async () => {
-    if (!editUser) return;
+    if (!editUser || !canSaveEdit) return;
     setSaving(true); setEditErr('');
     try {
       await b2cUserService.updateUser(editUser.id, {
-        panNumber: editForm.panNumber.trim(),
-        aadhaarNumber: editForm.aadhaarNumber.trim(),
-        accountNumber: editForm.accountNumber.trim(),
-        ifscCode: editForm.ifscCode.trim().toUpperCase(),
         name: editForm.name.trim(),
+        email: editForm.email.trim(),
         mobile: editForm.mobile.trim(),
         address: editForm.address.trim(),
         bio: editUser.role === 'Counselor' ? editForm.bio.trim() : undefined,
@@ -157,6 +199,10 @@ export const B2CUserManagementScreen = () => {
         isActive: editForm.isActive,
         isManager: editUser.role === 'Agent' ? editForm.isManager : undefined,
         agentIds: editUser.role === 'Agent' && editForm.isManager ? editForm.agentIds : undefined,
+        // Only once the fetch actually succeeded: an omitted field is "leave alone" server-side,
+        // whereas the blank seed would be read as "clear" and wipe real PAN/Aadhaar/bank data.
+        // Save is also disabled while payoutLoading — this is defense in depth. Web :197.
+        ...(payoutData ? payoutPayload(editForm) : {}),
       });
       closeEdit();
       invalidateFieldStaff();
@@ -211,7 +257,13 @@ export const B2CUserManagementScreen = () => {
   };
 
   // Agents this manager can oversee (exclude the edited user itself).
-  const closeEdit = () => { setEditUser(null); setNewPassword(''); };
+  const closeEdit = () => {
+    openEditUserIdRef.current = null;
+    setEditUser(null);
+    setNewPassword('');
+    setPayoutData(null);
+    setPayoutLoading(false);
+  };
 
   const handleResetPassword = async () => {
     if (!editUser || newPassword.trim().length < 6) return;
@@ -289,6 +341,18 @@ export const B2CUserManagementScreen = () => {
                       <StatusBadge label={u.role} color={roleColor(u.role)} />
                       <StatusBadge label={u.isActive ? 'Active' : 'Inactive'} color={u.isActive ? T.success : T.danger} />
                     </View>
+                    {/* Payout presence. A Calling Agent structurally never has this data, so
+                        "pending" there would read as a standing problem to chase, for nothing. */}
+                    <View style={s.rowTop}>
+                      <Text style={[s.sub, { color: T.dim }]}>Payout</Text>
+                      {!collectsPayout(u.role) ? (
+                        <Text style={[s.sub, { color: T.dim, opacity: 0.6 }]}>—</Text>
+                      ) : u.payoutDetailsComplete ? (
+                        <StatusBadge label="Complete" color={T.success} />
+                      ) : (
+                        <StatusBadge label={`${missingPayoutLabel(u)} pending`} color={T.warning} />
+                      )}
+                    </View>
                     {!!u.email && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{u.email}</Text>}
                     {!!u.mobile && <Text style={[s.sub, { color: T.sub }]} numberOfLines={1}>{u.mobile}</Text>}
                     {!!u.referralCode && (
@@ -349,7 +413,13 @@ export const B2CUserManagementScreen = () => {
         footer={
           <>
             <Btn label="Cancel" variant="secondary" onPress={closeEdit} style={{ flex: 1 }} />
-            <Btn label={saving ? 'Saving…' : 'Save Changes'} onPress={handleEdit} loading={saving} disabled={saving || !editForm.name.trim()} style={{ flex: 1 }} />
+            <Btn
+              label={saving ? 'Saving…' : payoutLoading ? 'Loading payout details…' : 'Save Changes'}
+              onPress={handleEdit}
+              loading={saving}
+              disabled={!canSaveEdit}
+              style={{ flex: 1 }}
+            />
           </>
         }
       >
@@ -357,6 +427,16 @@ export const B2CUserManagementScreen = () => {
           <View style={{ gap: 12 }}>
             {!!editErr && <Text style={[s.err, { color: T.danger }]}>{editErr}</Text>}
             <Input label="Full Name" value={editForm.name} onChangeText={v => setEditForm(f => ({ ...f, name: v }))} placeholder="Full name" />
+            <Field label="Email">
+              <Input
+                value={editForm.email}
+                onChangeText={v => setEditForm(f => ({ ...f, email: v }))}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholder="user@example.com"
+              />
+              <Text style={[s.hint, { color: T.dim }]}>This is their login</Text>
+            </Field>
             <Input label="Mobile" value={editForm.mobile} onChangeText={v => setEditForm(f => ({ ...f, mobile: v }))} keyboardType="phone-pad" placeholder="10-digit mobile" />
             <Input
               label="Referral Code"
@@ -368,11 +448,32 @@ export const B2CUserManagementScreen = () => {
             <Field label="Address">
               <Input value={editForm.address} onChangeText={v => setEditForm(f => ({ ...f, address: v }))} placeholder="Residential / base address" multiline />
             </Field>
-            {/* Payout identity — saved with the rest of the dialog. */}
-            <Input label="PAN" value={editForm.panNumber} onChangeText={v => setEditForm(f => ({ ...f, panNumber: v.toUpperCase() }))} autoCapitalize="characters" maxLength={10} placeholder="ABCDE1234F" />
-            <Input label="Aadhaar" value={editForm.aadhaarNumber} onChangeText={v => setEditForm(f => ({ ...f, aadhaarNumber: v.replace(/\D/g, '').slice(0, 12) }))} keyboardType="number-pad" maxLength={12} placeholder="12-digit Aadhaar" />
-            <Input label="Bank Account" value={editForm.accountNumber} onChangeText={v => setEditForm(f => ({ ...f, accountNumber: v.replace(/\D/g, '') }))} keyboardType="number-pad" placeholder="Account number" />
-            <Input label="IFSC" value={editForm.ifscCode} onChangeText={v => setEditForm(f => ({ ...f, ifscCode: v.toUpperCase() }))} autoCapitalize="characters" maxLength={11} placeholder="HDFC0001234" />
+            {/* Payout identity — saved with the rest of the dialog, through the same field set
+                and rules as Add User. Hidden for a Calling Agent (salaried, not commissioned).
+                Not required here: people who predate the fields fill them in over time. */}
+            {showPayout && (
+              <View style={[s.payoutBlock, { borderTopColor: T.line }]}>
+                <Text style={[s.sectionTitle, { color: T.accent }]}>Payout Details</Text>
+                <Text style={[s.hint, { color: T.dim }]}>{PAYOUT_HINT_OPTIONAL}</Text>
+                {payoutData && (
+                  <View style={[s.banner, { backgroundColor: (payoutData.isComplete ? T.success : T.warning) + '1F' }]}>
+                    {payoutData.isComplete
+                      ? <Check size={14} color={T.success} strokeWidth={ICON_STROKE} />
+                      : <AlertTriangle size={14} color={T.warning} strokeWidth={ICON_STROKE} />}
+                    <Text style={[s.bannerTxt, { color: payoutData.isComplete ? T.success : T.warning }]}>
+                      {payoutData.isComplete
+                        ? 'All payout details on file — this person can be paid.'
+                        : `Still needed: ${(payoutData.missing ?? []).join(', ')}.`}
+                    </Text>
+                  </View>
+                )}
+                <PayoutFields
+                  values={editForm}
+                  onChange={(k, v) => setEditForm(f => ({ ...f, [k]: v }))}
+                  colW="100%"
+                />
+              </View>
+            )}
 
             {/* Its own action, not part of Save: a password change is immediate and must not
                 ride along with an unrelated rename the admin may still be editing. */}
@@ -491,6 +592,11 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   err: { fontSize: r.rf(12), fontWeight: '600' },
   pickList: { borderWidth: 1.5, borderRadius: 13, padding: 12 },
   pickEmpty: { fontSize: r.rf(12), fontWeight: '500' },
+  hint: { fontSize: r.rf(11.5), fontWeight: '500', marginTop: 4 },
+  sectionTitle: { fontWeight: '700', fontSize: r.rf(12), letterSpacing: 1, textTransform: 'uppercase' },
+  payoutBlock: { gap: 12, paddingTop: 12, borderTopWidth: 1 },
+  banner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10, padding: 10 },
+  bannerTxt: { flex: 1, fontSize: r.rf(12), fontWeight: '600' },
   activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MIN_TAP },
 });
 

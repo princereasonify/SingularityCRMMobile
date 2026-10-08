@@ -188,7 +188,12 @@ export const sendB2CPing = async (body: B2CPingBody): Promise<boolean> => {
     stationaryStreak += 1;
     // Past the streak the device is parked: stop feeding the route entirely. The session stays
     // open and the next real movement resumes it — we are dropping jitter, not ending the day.
-    if (stationaryStreak >= STATIONARY_STREAK) return false;
+    if (stationaryStreak >= STATIONARY_STREAK) {
+      // Still drain anything queued: a recovered network should not have to wait for the agent
+      // to start moving again (web b2cPingSender, and the native engines, do the same).
+      await flushB2CQueue();
+      return false;
+    }
   } else {
     stationaryStreak = 0;
   }

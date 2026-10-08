@@ -22,6 +22,68 @@ export interface ReportFilters {
   activityType?: string;
 }
 
+// Field names/casing verified against ReportDtos.cs (C# PascalCase → camelCase JSON,
+// same convention every other typed DTO in this app already follows).
+export interface UserPerformanceDto {
+  userId: number;
+  name: string;
+  role: string;
+  totalVisits: number;
+  totalDemos: number;
+  totalDeals: number;
+  totalRevenue: number;
+  totalDistanceKm: number;
+  totalAllowance: number;
+  avgVisitDurationMinutes: number;
+  schoolsVisited: number;
+  conversionRate: number;
+}
+
+export interface SchoolVisitSummaryDto {
+  schoolId: number;
+  schoolName: string;
+  city?: string;
+  totalVisits: number;
+  totalTimeSpentMinutes: number;
+  avgVisitDurationMinutes: number;
+  uniqueVisitors: number;
+  lastVisitDate?: string;
+  lastOutcome?: string;
+}
+
+export interface PipelineReportDto {
+  stage: string;
+  count: number;
+  totalValue: number;
+  avgAgeDays: number;
+}
+
+export interface LostDealItemDto {
+  leadId: number;
+  school: string;
+  city: string;
+  value: number;
+  lossReason: string;
+  foId: number;
+  foName: string;
+  zoneId?: number;
+  zoneName?: string;
+  closeDate?: string;
+}
+
+export interface LostDealReasonGroupDto { reason: string; count: number; totalValue: number; }
+export interface LostDealFoGroupDto { foId: number; foName: string; count: number; totalValue: number; }
+export interface LostDealZoneGroupDto { zoneId?: number; zoneName: string; count: number; totalValue: number; }
+
+export interface LostDealAnalysisDto {
+  totalLost: number;
+  totalLostValue: number;
+  byReason: LostDealReasonGroupDto[];
+  byFo: LostDealFoGroupDto[];
+  byZone: LostDealZoneGroupDto[];
+  deals: LostDealItemDto[];
+}
+
 /**
  * The four reports ReportsController actually serves. The previous version of
  * this file also exposed getReport/getExportUrl/monthly-performance/deal-aging/
@@ -30,15 +92,19 @@ export interface ReportFilters {
  * 404. They are omitted rather than left as traps; add them back only alongside
  * the matching backend action.
  *
- * Nothing consumes this module today — ReportsScreen uses `aiReportsApi`.
+ * All four 403 for FO (ReportsController.IsManager) — reachable by ZH/RH/SH/SCA
+ * only. ZH/RH additionally get their filters pinned server-side to their own
+ * zone/region (ScopeFiltersAsync) regardless of what's requested.
+ *
+ * Consumed by ReportsLibraryScreen (src/screens/reports/ReportsLibraryScreen.tsx).
  */
 export const reportsApi = {
   getUserPerformance: (filters?: ReportFilters) =>
-    apiClient.get<any>('/reports/user-performance', { params: filters }),
+    apiClient.get<UserPerformanceDto[]>('/reports/user-performance', { params: filters }),
   getSchoolVisits: (filters?: ReportFilters) =>
-    apiClient.get<any>('/reports/school-visits', { params: filters }),
+    apiClient.get<SchoolVisitSummaryDto[]>('/reports/school-visits', { params: filters }),
   getPipeline: (filters?: ReportFilters) =>
-    apiClient.get<any>('/reports/pipeline', { params: filters }),
+    apiClient.get<PipelineReportDto[]>('/reports/pipeline', { params: filters }),
   getLostDealAnalysis: (filters?: ReportFilters) =>
-    apiClient.get<any>('/reports/lost-deals', { params: filters }),
+    apiClient.get<LostDealAnalysisDto>('/reports/lost-deals', { params: filters }),
 };

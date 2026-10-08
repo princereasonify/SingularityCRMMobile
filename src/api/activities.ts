@@ -2,7 +2,7 @@ import { apiClient } from './client';
 import { ActivityDto, PaginatedResult, CreateActivityRequest, UpdateActivityRequest } from '../types';
 
 export const activitiesApi = {
-  getActivities: (params?: { page?: number; pageSize?: number; type?: string }) =>
+  getActivities: (params?: { page?: number; pageSize?: number; type?: string; outcome?: string }) =>
     apiClient.get<PaginatedResult<ActivityDto>>('/activities', { params }),
 
   createActivity: (data: CreateActivityRequest) =>

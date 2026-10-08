@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertTriangle, Clock, Sparkles, RefreshCw, CalendarClock, Phone, ExternalLink, Filter, Play, CheckCircle2, XCircle } from 'lucide-react-native';
+import { AlertTriangle, Clock, CalendarClock, Phone, ExternalLink, Filter, Play, CheckCircle2, XCircle } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, FormModal,
@@ -87,10 +87,8 @@ export const B2CReengagementScreen = ({ navigation }: any) => {
   const [busy, setBusy] = useState(false);
   const [actionErr, setActionErr] = useState('');
 
-  // AI brief modal
-  const [briefRow, setBriefRow] = useState<Objection | null>(null);
-  const [briefBusy, setBriefBusy] = useState(false);
-  const [briefErr, setBriefErr] = useState('');
+  // The AI brief view/regenerate modal is gone: the /brief endpoint is commented out
+  // (B2CObjectionsController.cs) pending a proper re-scoping, so there is nothing to call.
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -144,22 +142,6 @@ export const B2CReengagementScreen = ({ navigation }: any) => {
       toast.error(e?.response?.data?.message || 'Action failed');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const regenerateBrief = async () => {
-    if (!briefRow) return;
-    setBriefBusy(true); setBriefErr('');
-    try {
-      const res = await b2cObjectionService.generateBrief(briefRow.id);
-      setBriefRow(res.data ?? briefRow);
-      toast.success('Brief generated');
-      fetchQueue(page);
-    } catch (e: any) {
-      setBriefErr(e?.response?.data?.message || 'Could not generate the brief');
-      toast.error(e?.response?.data?.message || 'Could not generate the brief');
-    } finally {
-      setBriefBusy(false);
     }
   };
 
@@ -297,10 +279,6 @@ export const B2CReengagementScreen = ({ navigation }: any) => {
                             icon={<XCircle size={13} color={T.danger} strokeWidth={ICON_STROKE} />}
                             onPress={() => openAction(o, 'LostCause')} />
                         )}
-                        <Btn variant={o.aiBrief ? 'secondary' : 'soft'}
-                          label={o.aiBrief ? 'Brief' : 'No brief'}
-                          icon={<Sparkles size={13} color={o.aiBrief ? T.text : T.accent} strokeWidth={ICON_STROKE} />}
-                          onPress={() => { setBriefRow(o); setBriefErr(''); }} />
                         <Btn variant="secondary" label="Open lead"
                           icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
                           onPress={() => navigation?.navigate('B2CLeadDetail', { leadId: o.leadId })} />
@@ -369,51 +347,6 @@ export const B2CReengagementScreen = ({ navigation }: any) => {
         )}
       </FormModal>
 
-      {/* AI brief modal — view + regenerate */}
-      <FormModal
-        wide={r.isTablet}
-        visible={!!briefRow}
-        title="AI Counseling Brief"
-        onClose={() => setBriefRow(null)}
-        footer={
-          <>
-            <Btn label="Close" variant="secondary" onPress={() => setBriefRow(null)} disabled={briefBusy} style={{ flex: 1 }} />
-            <Btn label={briefBusy ? 'Generating…' : 'Regenerate'} onPress={regenerateBrief} loading={briefBusy} disabled={briefBusy} icon={!briefBusy ? <RefreshCw size={14} color="#FFF" strokeWidth={ICON_STROKE} /> : undefined} style={{ flex: 1 }} />
-          </>
-        }
-      >
-        {briefRow && (
-          <View style={{ gap: 12 }}>
-            {!!briefErr && (
-              <View style={[s.errBox, { backgroundColor: T.danger + '1A', borderColor: T.danger }]}>
-                <Text style={[s.errTxt, { color: T.danger }]}>{briefErr}</Text>
-              </View>
-            )}
-            <Text style={[s.briefMeta, { color: T.sub }]}>
-              {briefRow.studentName} · {typeLabel(briefRow.type)} · {briefRow.counselorName || 'Unassigned'}
-            </Text>
-
-            {briefRow.aiBrief ? (
-              <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
-                <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiBrief}</Text>
-              </View>
-            ) : (
-              <Text style={[s.sub, { color: T.dim }]}>No brief yet — tap Regenerate to create one.</Text>
-            )}
-
-            {!!briefRow.aiPostSession && (
-              <View style={{ gap: 6 }}>
-                <Text style={[s.blockLabel, { color: T.sub }]}>Post-session next step</Text>
-                <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
-                  <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiPostSession}</Text>
-                </View>
-              </View>
-            )}
-
-            {!!briefRow.aiGeneratedAt && <Text style={[s.sub, { color: T.dim }]}>Generated {fmtDateTime(briefRow.aiGeneratedAt)}</Text>}
-          </View>
-        )}
-      </FormModal>
     </SafeAreaView>
   );
 };
@@ -455,8 +388,6 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
 
   briefMeta: { fontSize: r.rf(12), fontWeight: '500' },
-  briefBox: { borderRadius: 13, borderWidth: 1, padding: 12 },
-  briefTxt: { fontSize: r.rf(13), fontWeight: '500', lineHeight: 20 },
   blockLabel: { fontSize: r.rf(12.5), fontWeight: '600' },
   textarea: { minHeight: 84, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
   textareaTxt: { fontSize: r.rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },

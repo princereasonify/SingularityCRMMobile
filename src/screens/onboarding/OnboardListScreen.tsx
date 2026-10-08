@@ -100,7 +100,7 @@ const payColor = (T: AppTheme, st?: string) =>
 const daysColor = (T: AppTheme, d?: number) =>
   d == null ? T.text : d <= 30 ? T.danger : d <= 90 ? T.warning : T.success;
 
-export const OnboardListScreen = ({ navigation }: any) => {
+export const OnboardListScreen = ({ navigation, route }: any) => {
   const { user } = useAuth();
   const T = useAppTheme();
   const role = user?.role || 'FO';
@@ -900,7 +900,9 @@ export const OnboardListScreen = ({ navigation }: any) => {
   const selectedSchoolLabel = pf.schoolName || 'Tap to select school…';
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={['top']}>
+    // Stack route 'OnboardList' has no top bar and pays the inset itself; the drawer's
+    // "Onboarding" sits under the AppTopbar, which already did.
+    <SafeAreaView style={[s.safe, { backgroundColor: T.bg }]} edges={route?.name === 'OnboardList' ? ['top'] : []}>
       <View style={[s.header, wide && s.headerWide]}>
         {/* No in-page title or hamburger — the topbar names the screen and carries
             the menu. The tab bar leads the content, consistent across nav screens. */}

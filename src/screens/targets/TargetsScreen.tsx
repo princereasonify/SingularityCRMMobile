@@ -653,7 +653,8 @@ export const TargetsScreen = (_: any) => {
     }
   }, []);
 
-  const load = useCallback(async () => {
+  /** Returns the fresh lists so a caller can re-find the drilled target in them. */
+  const load = useCallback(async (): Promise<{ my: TargetAssignmentDto[]; assigned: TargetAssignmentDto[] }> => {
     setLoadFailed(false);
     try {
       const [myRes, assignedRes, usersRes] = await Promise.all([
@@ -661,12 +662,16 @@ export const TargetsScreen = (_: any) => {
         canAssign ? targetsApi.getAssignedTargets().catch(() => ({ data: [] as any })) : Promise.resolve({ data: [] as any }),
         canAssign ? targetsApi.getAssignableUsers().catch(() => ({ data: [] as any })) : Promise.resolve({ data: [] as any }),
       ]);
-      setMyTargets(Array.isArray(myRes.data) ? myRes.data : []);
-      setAssignedTargets(Array.isArray(assignedRes.data) ? assignedRes.data : []);
+      const my: TargetAssignmentDto[] = Array.isArray(myRes.data) ? myRes.data : [];
+      const assigned: TargetAssignmentDto[] = Array.isArray(assignedRes.data) ? assignedRes.data : [];
+      setMyTargets(my);
+      setAssignedTargets(assigned);
       setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
+      return { my, assigned };
     } catch {
       setMyTargets([]); setAssignedTargets([]); setUsers([]);
       setLoadFailed(true);
+      return { my: [], assigned: [] };
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -675,9 +680,25 @@ export const TargetsScreen = (_: any) => {
 
   useEffect(() => { load(); }, [load]);
 
+  /**
+   * Web parity (Targets.jsx refreshAfterMutation). The drill-down header reads
+   * targetAmount / subTargetTotal / subTargetSchoolsTotal off `drillTarget` itself, so
+   * re-drilling into the SAME captured object after an assign/approve/delete refreshed the
+   * sub-target list but left the header totals — and the "remaining" gate on Assign — stale.
+   * Re-find a fresh copy: from its parent's children when it is itself a sub-target (it is
+   * not in the top-level lists then), else from the my/assigned lists just fetched.
+   */
   const refreshAll = useCallback(async () => {
-    await load();
-    if (drillTarget) await drillInto(drillTarget);
+    const { my, assigned } = await load();
+    if (!drillTarget) return;
+    let fresh: TargetAssignmentDto | undefined;
+    if (drillTarget.parentTargetId) {
+      const res: any = await targetsApi.getSubTargets(drillTarget.parentTargetId).catch(() => ({ data: [] }));
+      fresh = (Array.isArray(res.data) ? res.data : []).find((x: TargetAssignmentDto) => x.id === drillTarget.id);
+    } else {
+      fresh = [...my, ...assigned].find(x => x.id === drillTarget.id);
+    }
+    await drillInto(fresh ?? drillTarget);
   }, [load, drillTarget, drillInto]);
 
   const handleSubmit = async (t: TargetAssignmentDto) => {

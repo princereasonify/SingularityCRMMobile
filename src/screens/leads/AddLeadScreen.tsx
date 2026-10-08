@@ -13,7 +13,10 @@ import { NumField } from '../../components/common/NumField';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { IconBtn, Btn, Field, Input, Trigger, Dropdown } from '../../components/crud';
 import { Card } from '../../components/ui';
-import { BOARDS, SCHOOL_TYPES, LEAD_SOURCES } from '../../utils/constants';
+import {
+  BOARDS, SCHOOL_TYPES, LEAD_SOURCES, editableStages, isClosedStage, stageLabel,
+} from '../../utils/constants';
+import { getErrorMessage } from '../../utils/errorMessage';
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -29,6 +32,12 @@ const SECTIONS: Section[] = [
   { title: '💰 Deal Estimate', key: 'deal' },
   { title: '📝 Additional', key: 'extra' },
 ];
+/** Edit only, and only when the lead is linked to a School row (lead.schoolInfo). */
+const RECORD_SECTION: Section = { title: '🏫 School Record', key: 'record' };
+
+// Web parity (AddLead.jsx / LeadDetail.jsx EditLeadModal).
+const PHONE_RE = /^[+\d][\d\s-]{6,}$/;
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 /**
  * Doubles as Add and Edit. The navigator registers this component under BOTH
@@ -57,11 +66,23 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
     contactName: '', contactDesignation: '', contactPhone: '', contactEmail: '',
     source: 'Field Visit', value: '', closeDate: '',
     notes: '',
-    foId: '' as string | number,
+    // "Add Lead" from a list filtered to one user arrives with { foId } — preselect them
+    // (web: /leads/new?foId=…).
+    foId: (route?.params?.foId ? String(route.params.foId) : '') as string | number,
     // Edit only — carried through to submitLead's expectedUpdatedAt so a concurrent
     // edit elsewhere gets caught as a 409 instead of silently overwritten.
     updatedAt: '' as string | undefined,
+    // Edit only (web EditLeadModal): stage, loss reason and the linked School record.
+    stage: '',
+    lossReason: '',
+    schoolAddress: '', schoolPincode: '', schoolPhone: '', schoolEmail: '', schoolWebsite: '',
+    principalName: '', principalPhone: '', staffCount: '',
   });
+  // Edit only — the lead as loaded: its current stage (drives the stage options and the
+  // loss-reason requirement) and its linked school (drives the School Record section and
+  // expectedSchoolUpdatedAt).
+  const [loaded, setLoaded] = useState<{ stage: string; schoolInfo: any | null } | null>(null);
+  const hasLinkedSchool = !!loaded?.schoolInfo;
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Edit mode: pull the authoritative record and prefill. The list row is not
@@ -72,6 +93,8 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
       .then(r => {
         const l: any = r.data;
         if (!l) return;
+        const si = l.schoolInfo || {};
+        setLoaded({ stage: l.stage || 'NewLead', schoolInfo: l.schoolInfo ?? null });
         setForm({
           school: l.school ?? '', board: l.board ?? 'CBSE', type: l.type ?? 'Private',
           students: l.students != null ? String(l.students) : '',
@@ -86,16 +109,27 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
           notes: l.notes ?? '',
           foId: l.foId ?? '',
           updatedAt: l.updatedAt,
+          stage: l.stage || 'NewLead',
+          lossReason: l.lossReason ?? '',
+          schoolAddress: si.address ?? '',
+          schoolPincode: si.pincode ?? '',
+          schoolPhone: si.phone ?? '',
+          schoolEmail: si.email ?? '',
+          schoolWebsite: si.website ?? '',
+          principalName: si.principalName ?? '',
+          principalPhone: si.principalPhone ?? '',
+          staffCount: si.staffCount != null ? String(si.staffCount) : '',
         });
       })
       .catch(() => Alert.alert('Error', 'Could not load this lead.'));
   }, [editLeadId]);
 
   useEffect(() => {
-    if (role !== 'FO') {
+    // The FO picker is create-only — UpdateLeadRequest has no FoId (reassign is its own action).
+    if (role !== 'FO' && !isEdit) {
       leadsApi.getAssignableFOs().then((r) => setFoList(Array.isArray(r.data) ? r.data : (r.data as any)?.items ?? [])).catch(() => Alert.alert('Error', 'Failed to load Field Officers.'));
     }
-  }, [role]);
+  }, [role, isEdit]);
 
   const set = (key: string, val: any) => {
     setForm((f) => ({ ...f, [key]: val }));
@@ -104,20 +138,40 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
 
   // Section key → which form fields live inside it (for auto-expand on error)
   const SECTION_FIELDS: Record<string, string[]> = {
-    school: ['school', 'board', 'type'],
+    school: ['school', 'board', 'type', 'students'],
     location: ['city', 'state'],
     contact: ['contactName', 'contactPhone', 'contactEmail'],
-    deal: ['value', 'closeDate'],
+    deal: ['value', 'closeDate', 'lossReason'],
     extra: ['notes'],
+    record: ['schoolPincode', 'schoolPhone', 'schoolEmail', 'principalPhone', 'staffCount'],
   };
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.school.trim()) e.school = 'School name is required';
-    if (!form.city.trim()) e.city = 'City is required';
-    if (!form.contactName.trim()) e.contactName = 'Contact name is required';
-    if (!form.contactPhone.trim()) e.contactPhone = 'Phone is required';
-    if (role !== 'FO' && !form.foId) e.foId = 'Please select a Field Officer';
+    const email = form.contactEmail.trim();
+    if (email && !EMAIL_RE.test(email)) e.contactEmail = 'Contact email is invalid';
+    if (!isEdit) {
+      // Create — web AddLead.jsx: city + phone required, contact name optional.
+      if (!form.city.trim()) e.city = 'City is required';
+      const phone = form.contactPhone.trim();
+      if (!phone) e.contactPhone = 'Phone is required';
+      else if (!PHONE_RE.test(phone)) e.contactPhone = 'Contact phone looks invalid. Enter at least 7 digits.';
+      if (role !== 'FO' && !form.foId) e.foId = 'Please select a Field Officer';
+    } else {
+      // Edit — web EditLeadModal's checks.
+      if (loaded?.stage === 'Lost' && !form.lossReason.trim()) e.lossReason = 'Loss reason is required for a lost lead';
+      if (form.contactPhone.trim().length > 30) e.contactPhone = 'Contact phone is too long (max 30)';
+      if (hasLinkedSchool) {
+        const sEmail = form.schoolEmail.trim();
+        if (sEmail && !EMAIL_RE.test(sEmail)) e.schoolEmail = 'School email is invalid';
+        if (form.schoolPincode.trim().length > 10) e.schoolPincode = 'Pincode must be 10 characters or fewer';
+        if (form.schoolPhone.trim().length > 30) e.schoolPhone = 'School phone is too long (max 30)';
+        if (form.principalPhone.trim().length > 30) e.principalPhone = 'Principal phone is too long (max 30)';
+      }
+      if (form.value !== '' && Number(form.value) < 0) e.value = 'Value cannot be negative';
+      if (form.students !== '' && Number(form.students) < 0) e.students = 'Students cannot be negative';
+    }
     setErrors(e);
 
     // Auto-expand any section that contains an error field
@@ -137,6 +191,8 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
   const handleSubmit = async () => {
     if (!validate()) return;
     setLoading(true);
+    // Edit never runs the duplicate check — the lead being edited would match itself.
+    if (isEdit) { await submitLead(); return; }
     try {
       // Check duplicate — wrap in its own try/catch so a backend error never
       // blocks submission (web's AddLead.jsx does not call checkDuplicate at all)
@@ -168,6 +224,48 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
 
   const submitLead = async () => {
     try {
+      if (isEdit) {
+        // Web parity (LeadDetail.jsx EditLeadModal): an emptied box is sent as "" so the
+        // server clears it — null means "leave as is". No foId/source: UpdateLeadRequest
+        // has neither.
+        const text = (v?: string) => (v ?? '').trim();
+        const schoolText = (v?: string) => (hasLinkedSchool ? text(v) : null);
+        const editPayload = {
+          school: form.school.trim(),
+          board: form.board ?? '',
+          city: text(form.city),
+          state: text(form.state),
+          students: form.students !== '' ? Number(form.students) : null,
+          type: form.type ?? '',
+          stage: form.stage,
+          value: form.value !== '' ? Number(form.value) : 0,
+          closeDate: form.closeDate || null,
+          clearCloseDate: !form.closeDate,
+          // The version this form was opened on — the server refuses (409) if someone saved since.
+          expectedUpdatedAt: form.updatedAt,
+          // Same guard for the linked School row the schoolXxx fields write onto.
+          expectedSchoolUpdatedAt: hasLinkedSchool ? loaded?.schoolInfo?.updatedAt : null,
+          notes: form.notes ?? '',
+          lossReason: loaded?.stage === 'Lost' ? (form.lossReason.trim() || null) : null,
+          contactName: text(form.contactName),
+          contactDesignation: text(form.contactDesignation),
+          contactPhone: text(form.contactPhone),
+          contactEmail: text(form.contactEmail),
+          schoolAddress: schoolText(form.schoolAddress),
+          schoolPincode: schoolText(form.schoolPincode),
+          schoolPhone: schoolText(form.schoolPhone),
+          schoolEmail: schoolText(form.schoolEmail),
+          schoolWebsite: schoolText(form.schoolWebsite),
+          principalName: schoolText(form.principalName),
+          principalPhone: schoolText(form.principalPhone),
+          staffCount: hasLinkedSchool && form.staffCount !== '' ? Number(form.staffCount) : null,
+        };
+        await leadsApi.updateLead(editLeadId!, editPayload as any);
+        Alert.alert('Success', 'Lead updated successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+        return;
+      }
       // Match web payload format exactly:
       // - numbers: 0 when empty (not undefined)
       // - text: empty string when empty (not undefined)
@@ -188,17 +286,13 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
         closeDate: (form.closeDate || null) as any,
         notes: form.notes.trim(),
         foId: (role !== 'FO' && form.foId ? Number(form.foId) : null) as any,
-        // The version this form was opened on — the server refuses (409) if someone
-        // saved since (matches web's LeadDetail.jsx). Absent on create.
-        ...(isEdit && form.updatedAt ? { expectedUpdatedAt: form.updatedAt } : {}),
       };
-      if (isEdit) await leadsApi.updateLead(editLeadId!, payload as any);
-      else await leadsApi.createLead(payload as any);
-      Alert.alert('Success', isEdit ? 'Lead updated successfully!' : 'Lead created successfully!', [
+      await leadsApi.createLead(payload as any);
+      Alert.alert('Success', 'Lead created successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || (isEdit ? 'Failed to update lead' : 'Failed to create lead'));
+      Alert.alert('Error', getErrorMessage(err, isEdit ? 'Failed to update lead' : 'Failed to create lead'));
     } finally {
       setLoading(false);
     }
@@ -260,7 +354,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
         {/* FO Assignment (managers) */}
         {/* Render for every manager, even if the FO list failed to load — validate()
             hard-requires foId for non-FO, so hiding it made the form unsubmittable. */}
-          {role !== 'FO' && (
+          {role !== 'FO' && !isEdit && (
           <Card style={styles.sectionCard}>
             <Text style={[styles.sectionTitle, { color: T.text }]}>👤 Assign to FO</Text>
             {renderSelect(
@@ -275,7 +369,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
           </Card>
         )}
 
-        {SECTIONS.map((sec) => (
+        {(hasLinkedSchool ? [...SECTIONS, RECORD_SECTION] : SECTIONS).map((sec) => (
           <Card key={sec.key} style={styles.sectionCard}>
             <TouchableOpacity style={styles.sectionHeader} onPress={() => toggle(sec.key)}>
               <Text style={[styles.sectionTitle, { color: T.text }]}>{sec.title}</Text>
@@ -296,7 +390,7 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
                       {renderSelect('type', 'Type *', SCHOOL_TYPES.map((t) => ({ label: t, value: t })), form.type, (v) => set('type', v), 'Select type', styles.half)}
                     </View>
                     <Field label="Number of Students">
-                      <NumField value={form.students} onChangeText={(v) => set('students', v)} placeholder="e.g. 1200" label="Number of Students" allowDecimal={false} />
+                      <NumField value={form.students} onChangeText={(v) => set('students', v)} placeholder="e.g. 1200" label="Number of Students" allowDecimal={false} error={errors.students} />
                     </Field>
                   </>
                 )}
@@ -308,19 +402,78 @@ export const AddLeadScreen = ({ navigation, route }: any) => {
                 )}
                 {sec.key === 'contact' && (
                   <>
-                    <Input label="Contact Name *" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" />
+                    <Input label="Contact Name" value={form.contactName} onChangeText={(v) => set('contactName', v)} error={errors.contactName} placeholder="e.g. Mrs. Sharma" />
                     <Input label="Designation" value={form.contactDesignation} onChangeText={(v) => set('contactDesignation', v)} placeholder="e.g. Principal" />
-                    <Input label="Phone *" value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" />
-                    <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" />
+                    <Input label={isEdit ? 'Phone' : 'Phone *'} value={form.contactPhone} onChangeText={(v) => set('contactPhone', v)} error={errors.contactPhone} keyboardType="phone-pad" placeholder="+91 98765 43210" />
+                    <Input label="Email" value={form.contactEmail} onChangeText={(v) => set('contactEmail', v)} error={errors.contactEmail} keyboardType="email-address" autoCapitalize="none" placeholder="contact@school.edu" />
                   </>
                 )}
                 {sec.key === 'deal' && (
                   <>
+                    {isEdit && !!loaded && (() => {
+                      // Won comes from an approved deal and Lost from Mark Lost, so neither is
+                      // offered; a closed lead keeps its stage (a manager can still move
+                      // Won → Implementation Started). Same rules as LeadService.UpdateLeadAsync.
+                      const stageOptions = editableStages(loaded.stage, role);
+                      return (
+                        <View>
+                          {stageOptions.length < 2 ? (
+                            <Field label="Stage">
+                              <Trigger label={stageLabel(form.stage)} onPress={() => {}} />
+                            </Field>
+                          ) : renderSelect(
+                            'stage', 'Stage',
+                            stageOptions.map((st) => ({ label: stageLabel(st), value: st })),
+                            form.stage, (v) => set('stage', v), 'Select stage',
+                          )}
+                          {!isClosedStage(loaded.stage) && (
+                            <Text style={[styles.hint, { color: T.dim }]}>Won is set by an approved deal; Lost by Mark Lost.</Text>
+                          )}
+                        </View>
+                      );
+                    })()}
                     <Field label="Estimated Value (₹)">
-                      <NumField value={form.value} onChangeText={(v) => set('value', v)} placeholder="e.g. 500000" label="Estimated Value (₹)" />
+                      <NumField value={form.value} onChangeText={(v) => set('value', v)} placeholder="e.g. 500000" label="Estimated Value (₹)" error={errors.value} />
                     </Field>
                     <DateInput label="Expected Close Date" value={form.closeDate} onChange={(v) => set('closeDate', v)} accentColor={T.accent} />
-                    {renderSelect('source', 'Lead Source', LEAD_SOURCES.map((s) => ({ label: s, value: s })), form.source, (v) => set('source', v), 'Select source')}
+                    {isEdit && loaded?.stage === 'Lost' && (
+                      <Input label="Loss Reason *" value={form.lossReason} onChangeText={(v) => set('lossReason', v)} error={errors.lossReason} maxLength={500} placeholder="Why was this lead lost?" />
+                    )}
+                    {/* Source is set at creation — UpdateLeadRequest has no Source, so an edit could not change it. */}
+                    {!isEdit && renderSelect('source', 'Lead Source', LEAD_SOURCES.map((s) => ({ label: s, value: s })), form.source, (v) => set('source', v), 'Select source')}
+                  </>
+                )}
+                {sec.key === 'record' && (
+                  <>
+                    <Text style={[styles.hint, styles.hintTop, { color: T.accent }]}>Linked School #{loaded?.schoolInfo?.schoolId}</Text>
+                    <Field label="Address">
+                      <View style={[styles.textarea, { backgroundColor: T.card, borderColor: T.line }]}>
+                        <TextInput
+                          value={form.schoolAddress}
+                          onChangeText={(v) => set('schoolAddress', v)}
+                          placeholder="Street, area, landmark..."
+                          placeholderTextColor={T.dim}
+                          multiline
+                          maxLength={500}
+                          style={[styles.textareaTxt, { color: T.text }]}
+                        />
+                      </View>
+                    </Field>
+                    <View style={[styles.row, twoWide && styles.rowTablet]}>
+                      <Input label="Pincode" value={form.schoolPincode} onChangeText={(v) => set('schoolPincode', v)} error={errors.schoolPincode} maxLength={10} keyboardType="number-pad" placeholder="e.g. 400001" containerStyle={styles.half} />
+                      <Input label="Website" value={form.schoolWebsite} onChangeText={(v) => set('schoolWebsite', v)} maxLength={300} autoCapitalize="none" placeholder="https://..." containerStyle={styles.half} />
+                    </View>
+                    <View style={[styles.row, twoWide && styles.rowTablet]}>
+                      <Input label="School Phone" value={form.schoolPhone} onChangeText={(v) => set('schoolPhone', v)} error={errors.schoolPhone} maxLength={30} keyboardType="phone-pad" placeholder="Office phone" containerStyle={styles.half} />
+                      <Input label="School Email" value={form.schoolEmail} onChangeText={(v) => set('schoolEmail', v)} error={errors.schoolEmail} maxLength={150} keyboardType="email-address" autoCapitalize="none" placeholder="office@school.com" containerStyle={styles.half} />
+                    </View>
+                    <View style={[styles.row, twoWide && styles.rowTablet]}>
+                      <Input label="Principal Name" value={form.principalName} onChangeText={(v) => set('principalName', v)} maxLength={150} placeholder="Principal's full name" containerStyle={styles.half} />
+                      <Input label="Principal Phone" value={form.principalPhone} onChangeText={(v) => set('principalPhone', v)} error={errors.principalPhone} maxLength={30} keyboardType="phone-pad" placeholder="Principal's phone" containerStyle={styles.half} />
+                    </View>
+                    <Field label="Staff Count">
+                      <NumField value={form.staffCount} onChangeText={(v) => set('staffCount', v)} placeholder="0" label="Staff Count" allowDecimal={false} />
+                    </Field>
                   </>
                 )}
                 {sec.key === 'extra' && (
@@ -373,6 +526,8 @@ const styles = StyleSheet.create({
   footerActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
   actionBtn: { flex: 1 },
   fieldError: { fontWeight: '400', fontSize: rf(12), marginTop: 4 },
+  hint: { fontWeight: '500', fontSize: rf(11.5), marginTop: 6 },
+  hintTop: { marginTop: 0, marginBottom: 8 },
   textarea: { minHeight: 80, borderRadius: 13, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
   textareaTxt: { fontSize: rf(14), fontWeight: '500', padding: 0, textAlignVertical: 'top', minHeight: 60 },
 });

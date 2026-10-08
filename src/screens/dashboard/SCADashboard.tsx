@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl,
   useWindowDimensions, TouchableOpacity, Alert, ActivityIndicator,
@@ -73,17 +73,25 @@ export const SCADashboard = ({ navigation }: any) => {
   const [loadFailed, setLoadFailed] = useState(false);
   const [generatingAi, setGeneratingAi] = useState<'daily' | 'management' | null>(null);
 
+  // Latest request wins — an earlier period chip's response must not land over a later one.
+  const loadTokenRef = useRef(0);
+
   const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await dashboardApi.getScaDashboard(p);
+      if (loadTokenRef.current !== token) return;
       setData(res.data);
       setLoadFailed(false);
     } catch {
+      if (loadTokenRef.current !== token) return;
       setData(null);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [period]);
 

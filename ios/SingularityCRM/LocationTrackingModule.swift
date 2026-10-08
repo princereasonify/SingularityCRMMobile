@@ -11,7 +11,8 @@ import UIKit   // UIDevice — battery level attached to each fix
 //   requestPermission() → shows iOS "Allow location?" dialog → resolves "granted"/"denied"/"restricted"
 //
 // Background behaviour:
-//   • App alive (FG/BG):  CLLocationManager + Timer → 30 s pings  ✓
+//   • App alive (FG/BG):  CLLocationManager + Timer → 10 s pings while moving, 300 s
+//                         heartbeat while stationary (see movingIntervalSeconds below)  ✓
 //   • System-killed:      startMonitoringSignificantLocationChanges relaunches app  ✓
 //   • User force-quit:    Apple blocks all background execution — best-effort only
 //
@@ -78,6 +79,9 @@ class LocationTrackingModule: NSObject {
     private static let stationaryHeartbeatSeconds: TimeInterval = 300
     /// Cap the offline queue so a device left offline for days can't grow it without bound.
     private static let maxQueuedPings = 500
+    /// End Day must never hang on a dead network: past this the JS flush resolves false and the
+    /// day ends anyway. The in-flight request still completes and trims the queue when it lands.
+    private static let flushTimeoutSeconds: TimeInterval = 10
 
     // MARK: – Permission check (no dialog — just reads current status)
 
@@ -238,6 +242,47 @@ class LocationTrackingModule: NSObject {
 
             NSLog("[LocationTracking] Started. Token present=%@", token.isEmpty ? "NO" : "YES")
             resolve(true)
+        }
+    }
+
+    /// Drains the offline queue to the tier's batch endpoint NOW, through the same
+    /// `flushQueue(token:baseUrl:)` the ping timer uses (identical `acceptedThroughSeq` trimming).
+    /// JS calls this on End Day BEFORE ending the session — the server freezes the day's totals
+    /// at end-day, and `stopTracking` deletes the token/URL, so anything still queued afterwards
+    /// could never be delivered.
+    ///
+    /// Resolves true when nothing is left queued, false on failure or after
+    /// `flushTimeoutSeconds`. Never rejects: End Day must proceed regardless.
+    @objc
+    func flushQueue(_ resolve: @escaping RCTPromiseResolveBlock,
+                    reject: @escaping RCTPromiseRejectBlock) {
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { resolve(false); return }
+
+            // All settling happens on the main queue, so `settled` needs no further locking.
+            var settled = false
+            let finish: (Bool) -> Void = { ok in
+                DispatchQueue.main.async {
+                    guard !settled else { return }
+                    settled = true
+                    resolve(ok)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.flushTimeoutSeconds) {
+                if !settled { NSLog("[LocationTracking] End-day flush timed out") }
+                finish(false)
+            }
+
+            guard let token = self.currentToken, let baseUrl = self.currentBaseUrl else {
+                objc_sync_enter(self)
+                let pending = self.readQueue().count
+                objc_sync_exit(self)
+                NSLog("[LocationTracking] End-day flush: no token/url — %d pings left queued", pending)
+                finish(pending == 0)
+                return
+            }
+            self.flushQueue(token: token, baseUrl: baseUrl, completion: finish)
         }
     }
 
@@ -683,19 +728,26 @@ extension LocationTrackingModule {
     /// clearing the whole queue on a 200 is how a partially-processed batch silently loses its
     /// tail. Anything at or below the acknowledged sequence is durable and safe to drop;
     /// anything above stays for the next cycle, where deduplication makes the re-send free.
-    private func flushQueue(token: String, baseUrl: String) {
+    ///
+    /// `completion` (optional — the ping timer passes none) reports whether nothing is left
+    /// queued afterwards. It is called exactly once on every path.
+    private func flushQueue(token: String, baseUrl: String, completion: ((Bool) -> Void)? = nil) {
         objc_sync_enter(self)
         let queue = readQueue()
         objc_sync_exit(self)
-        guard !queue.isEmpty else { return }
+        guard !queue.isEmpty else { completion?(true); return }
 
         let path = UserDefaults.standard.string(forKey: Self.batchPathKey) ?? "/tracking/ping/batch"
-        guard let url = URL(string: "\(baseUrl)\(path)") else { return }
+        guard let url = URL(string: "\(baseUrl)\(path)") else { completion?(false); return }
 
         postJSONReturningBody(to: url, body: ["pings": queue], token: token) { [weak self] status, data in
-            guard let self else { return }
+            guard let self else { completion?(false); return }
             objc_sync_enter(self)
-            defer { objc_sync_exit(self) }
+            var drained = false
+            defer {
+                objc_sync_exit(self)
+                completion?(drained)
+            }
 
             if (200...299).contains(status) {
                 if let through = Self.acceptedThroughSeq(data) {
@@ -708,14 +760,17 @@ extension LocationTrackingModule {
                         return seq > through
                     }
                     self.writeQueue(remaining)
+                    drained = remaining.isEmpty
                     NSLog("[LocationTracking] Flushed through seq %lld; %d pending", through, remaining.count)
                 } else {
                     self.writeQueue([])
+                    drained = true
                     NSLog("[LocationTracking] Flushed %d queued pings", queue.count)
                 }
             } else if status == 403 {
                 // Session is over — these will never be accepted, so stop carrying them.
                 self.writeQueue([])
+                drained = true
                 NSLog("[LocationTracking] Batch → 403 — discarded %d queued pings", queue.count)
             } else {
                 NSLog("[LocationTracking] Batch → %d — keeping %d pings queued", status, queue.count)

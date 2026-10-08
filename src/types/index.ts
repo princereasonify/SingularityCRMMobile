@@ -37,6 +37,10 @@ export type ApprovalStatus =
   | 'SelfApproved'
   | 'PendingZH'
   | 'PendingRH'
+  // >30% discount deals route here (the "Sales Head" approval tier — see
+  // CreateDealScreen's approval-ladder preview). Previously missing from this
+  // union even though the backend's real ladder produces it.
+  | 'PendingSH'
   | 'Approved'
   | 'Rejected';
 
@@ -203,6 +207,17 @@ export interface DealDto {
   numberOfLicenses?: number;
   paymentStatus?: string;
   contractPdfUrl?: string;
+  // Fields the Deals screen reads (DealDto.cs) — the stored, paise-rounded breakdown.
+  city?: string;
+  leadStage?: string;
+  createdAt?: string;
+  basePrice?: number;
+  totalLogins?: number;
+  subtotal?: number;
+  amountWithoutGst?: number;
+  gstAmount?: number;
+  totalMoney?: number;
+  billingFrequency?: string;
 }
 
 export interface TargetAssignmentDto {
@@ -576,14 +591,22 @@ export interface CreateDealRequest {
   leadId: number;
   contractValue: number;
   discount: number;
+  // basePrice/totalLogins/billingFrequency: the backend DTO accepts these alongside
+  // contractValue/paymentTerms (CreateDealScreen sends both pairs — contractValue is
+  // the computed subtotal, paymentTerms mirrors billingFrequency). Previously missing
+  // from this type, which forced an `as any` cast on every createDeal() call.
+  basePrice?: number;
+  totalLogins?: number;
+  billingFrequency?: string;
   paymentTerms: string;
   duration: string;
   modules: string[];
   notes?: string;
   submitForApproval: boolean;
-  contractStartDate?: string;
-  contractEndDate?: string;
-  numberOfLicenses?: number;
+  contractStartDate?: string | null;
+  contractEndDate?: string | null;
+  /** null = "same as logins" (the server defaults it). */
+  numberOfLicenses?: number | null;
   paymentStatus?: string;
 }
 
@@ -866,15 +889,21 @@ export interface GeofenceEventRequest {
   durationMinutes?: number;
 }
 
+// Verified field-for-field against SchoolVisitLogDto (GeofenceController.cs /
+// SchoolVisitLogDtos.cs). `hasVisitReport` was previously declared here but the
+// real DTO has no such field — it always rendered as undefined/falsy and was
+// removed from both the type and SchoolDetailScreen's row rendering.
 export interface SchoolVisitLog {
   id: number;
+  sessionId: number;
+  userId: number;
+  userName?: string;
   schoolId: number;
   schoolName: string;
   enteredAt: string;
   exitedAt?: string;
   durationMinutes?: number;
   isVerified: boolean;
-  hasVisitReport: boolean;
 }
 
 export interface TimeBreakdown {
@@ -935,7 +964,8 @@ export interface DemoAssignment {
 }
 
 export interface CreateDemoRequest {
-  leadId: number;
+  /** CreateDemoRequest.LeadId is int? — null when the demo isn't tied to a lead. */
+  leadId: number | null;
   schoolId: number;
   assignedToId: number;
   scheduledDate: string;

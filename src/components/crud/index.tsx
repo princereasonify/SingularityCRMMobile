@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
   StyleProp,
   ViewStyle,
   TextInputProps,
@@ -21,6 +22,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme, withAlpha, SOFT_TINT } from '../../theme';
 import { GradientBackground } from '../common/GradientBackground';
 import { KeyField } from '../common/KeyField';
+import { FieldLabelContext } from '../common/fieldLabelContext';
 import { rf } from '../../utils/responsive';
 
 const NUMERIC_KEYBOARD_TYPES = new Set(['phone-pad', 'number-pad', 'decimal-pad', 'numeric']);
@@ -136,7 +138,7 @@ export const Field = ({ label, children, style }: { label?: string; children: Re
   return (
     <View style={[s.field, style]}>
       {!!label && <Text style={[s.flabel, { color: T.text }]}>{label}</Text>}
-      {children}
+      <FieldLabelContext.Provider value={!!label}>{children}</FieldLabelContext.Provider>
     </View>
   );
 };
@@ -438,12 +440,30 @@ export const ListCard = ({ children, onPress, style }: {
 };
 
 /** .av — 36 · radius 10 · 12.5/800 */
+/** Matches an uploaded photo rather than stored initials ("BN"). */
+const PHOTO_URI = /^(https?:|file:|content:|data:)/i;
+
+/**
+ * Initials tile — or the user's photo. The user `avatar` column holds EITHER stored initials or
+ * an uploaded photo's URL, and callers pass it straight through; printing a URL as initials
+ * filled the tile with "HTTP S://ST ORAGE". A photo that fails to load falls back to '?'.
+ */
 export const Avatar = ({ initials, color }: { initials: string; color?: string }) => {
   const T = useAppTheme();
   const c = color || T.accent;
+  const [failed, setFailed] = useState(false);
+  // A new photo (or a recycled list row showing another user) gets its own chance to load.
+  React.useEffect(() => { setFailed(false); }, [initials]);
+  const isPhoto = !!initials && PHOTO_URI.test(initials) && !failed;
   return (
-    <View style={[s.av, { backgroundColor: c + '26' }]}>
-      <Text style={[s.avTxt, { color: c }]}>{initials}</Text>
+    <View style={[s.av, { backgroundColor: c + '26' }, isPhoto && { overflow: 'hidden' }]}>
+      {isPhoto ? (
+        <Image source={{ uri: initials }} style={StyleSheet.absoluteFillObject} onError={() => setFailed(true)} />
+      ) : (
+        <Text style={[s.avTxt, { color: c }]} numberOfLines={1}>
+          {initials && PHOTO_URI.test(initials) ? '?' : initials}
+        </Text>
+      )}
     </View>
   );
 };

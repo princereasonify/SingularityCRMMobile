@@ -1,5 +1,6 @@
 package com.singularitycrm
 
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -18,6 +19,19 @@ class MainActivity : ReactActivity() {
    * rendering of the component.
    */
   override fun getMainComponentName(): String = "SingularityCRM"
+
+  /**
+   * Pass null, never savedInstanceState. Android kills a backgrounded app whenever it needs the
+   * memory (opening the camera for a visit selfie is enough on many phones) and later recreates
+   * this activity from its saved state. That state holds react-native-screens' fragments, which
+   * refuse to be restored ("Screen fragments should never be restored") — a FATAL crash that
+   * throws the user back to the phone's home screen. React Navigation rebuilds every screen from
+   * JS anyway, so there is nothing in that bundle worth restoring. Required by react-native-screens:
+   * https://github.com/software-mansion/react-native-screens#android
+   */
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(null)
+  }
 
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl,
   useWindowDimensions, TouchableOpacity,
@@ -77,19 +77,27 @@ export const SHDashboard = ({ navigation }: any) => {
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [loadFailed, setLoadFailed] = useState(false);
 
+  // Latest request wins — an earlier period chip's response must not land over a later one.
+  const loadTokenRef = useRef(0);
+
   const fetch = useCallback(async (p: 'today' | 'week' | 'month' = period) => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await dashboardApi.getNationalDashboard(p);
+      if (loadTokenRef.current !== token) return;
       setData(res.data);
       setLoadFailed(false);
     } catch {
+      if (loadTokenRef.current !== token) return;
       // No fabricated fallback — invented national figures render identically to real
       // ones. Record the failure and show a real error state (mirrors RH/ZH).
       setData(null);
       setLoadFailed(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [period]);
 

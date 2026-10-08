@@ -142,7 +142,7 @@ export const B2CReportsScreen = () => {
         <SectionLabel>Pipeline Funnel</SectionLabel>
         <Card>
           {pipeline.length > 0
-            ? <View style={{ gap: 10 }}>{pipeline.map(i => <Bar key={i.stage} label={i.stage} count={i.count} max={pipeMax} color={T.accent} w={barLabelW} />)}</View>
+            ? <View style={{ gap: 10 }}>{pipeline.map(i => <Bar key={i.stage} label={String(i.stage).replace(/([a-z])([A-Z])/g, '$1 $2')} count={i.count} max={pipeMax} color={T.accent} w={barLabelW} />)}</View>
             : <Text style={[s.muted, { color: T.dim }]}>No data.</Text>}
         </Card>
 

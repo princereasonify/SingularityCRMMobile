@@ -9,7 +9,7 @@
  */
 import {
   DOC_TYPES, DOC_META, COMPANY, BANK, SAC, CGST_RATE, SGST_RATE, GST_RATE,
-  financialYear, displayDate, money, num, DocType, SalesDocData,
+  financialYear, displayDate, money, num, DocType, SalesDocData, isIntraStateGst, gstTotalsRows,
 } from './salesDocUtils';
 
 const NAVY = '#1F3A5F';
@@ -32,6 +32,10 @@ const qtyText = (q: any): string => (num(q) ? String(num(q)) : '');
 /** "Label: value" line. */
 const line = (label: string, value: any, blank?: string): string =>
   `<div class="line"><b>${esc(label)}:</b> ${v(value, blank)}</div>`;
+/** Same, for a value that is ALREADY escaped HTML (built from v()/dateOrBlank()) — escaping it
+ *  again would print "1 &amp;amp; 2" instead of "1 & 2". */
+const lineRaw = (label: string, html: string): string =>
+  `<div class="line"><b>${esc(label)}:</b> ${html}</div>`;
 
 const box = (title: string, bodyHtml: string, extraStyle = ''): string =>
   `<div class="box" style="${extraStyle}"><div class="box-title">${esc(title)}</div><div class="box-body">${bodyHtml}</div></div>`;
@@ -126,9 +130,9 @@ function quotationBody(doc: SalesDocData): string {
     ${header('QUOTATION', null, esc(COMPANY.name), companyDetails(false))}
     ${twoBoxes(
       'TO (SCHOOL)',
-      `${line('School Name', sc.name)}${line('Address', sc.address1)}<div class="line">${v(sc.address2, '')}</div>${line('Contact Person', sc.contactPerson)}${line('Phone / Email', sc.phoneEmail)}${line('GSTIN (if any)', sc.gstin)}${line('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`, '')}`,
+      `${line('School Name', sc.name)}${line('Address', sc.address1)}<div class="line">${v(sc.address2, '')}</div>${line('Contact Person', sc.contactPerson)}${line('Phone / Email', sc.phoneEmail)}${line('GSTIN (if any)', sc.gstin)}${lineRaw('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`)}`,
       'QUOTATION DETAILS',
-      `${line('Quotation No.', doc.documentNumber)}${line('Quotation Date', dateOrBlank(doc.documentDate))}${line('Valid Until', `${v(doc.validDays, '____')} days from date of issue`, '')}${line('Place of Supply', doc.placeOfSupply)}${line('Academic Year', doc.academicYear || financialYear(doc.documentDate))}${line('Prepared By', doc.preparedBy)}`,
+      `${line('Quotation No.', doc.documentNumber)}${line('Quotation Date', dateOrBlank(doc.documentDate))}${lineRaw('Valid Until', `${v(doc.validDays, '____')} days from date of issue`)}${line('Place of Supply', doc.placeOfSupply)}${line('Academic Year', doc.academicYear || financialYear(doc.documentDate))}${line('Prepared By', doc.preparedBy)}`,
     )}
     ${twoBoxes(
       'SCHOOL CONTACT FOR ACTIVATION',
@@ -144,12 +148,7 @@ function quotationBody(doc: SalesDocData): string {
         `<div><b>SINGULARITY – TEACH Mode</b><div>Teacher Login Subscription (per teacher)</div><div class="italic grey small">Teacher dashboard, classroom teaching tools &amp; content, updates and support for the subscription period.</div></div>`,
         qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal)), `${GST_RATE}%`]],
     )}
-    ${totalsBlock(doc, 'Note: CGST 9% + SGST 9% applies for schools in Gujarat; IGST 18% applies for schools outside Gujarat.', [
-      { label: 'Sub Total', value: money(t.subTotal) },
-      { label: `CGST @ ${CGST_RATE}%`, value: money(t.cgst) },
-      { label: `SGST @ ${SGST_RATE}%`, value: money(t.sgst) },
-      { label: 'TOTAL (₹)', value: money(t.grandTotal), strong: true },
-    ])}
+    ${totalsBlock(doc, 'Note: CGST 9% + SGST 9% applies for schools in Gujarat; IGST 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'TOTAL (₹)'))}
     ${terms([
       'This is a quotation for your consideration and is not a tax invoice or a demand for payment.',
       `Prices are valid for ${v(doc.validDays, '______')} days from the date of this quotation.`,
@@ -186,15 +185,15 @@ function purchaseOrderBody(doc: SalesDocData): string {
     )}
     ${twoBoxes(
       'BILL TO (SCHOOL)',
-      `${line('School Name', sc.name)}${line('Address', sc.address)}${line('GSTIN (if any)', sc.gstin)}${line('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`, '')}`,
+      `${line('School Name', sc.name)}${line('Address', sc.address)}${line('GSTIN (if any)', sc.gstin)}${lineRaw('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`)}`,
       'SCHOOL CONTACT FOR ACTIVATION',
       `${line('Coordinator Name', co.name)}${line('Designation', co.designation)}${line('Phone', co.phone)}${line('Email', co.email)}`,
     )}
     ${table(
       [{ label: 'S.No', flex: 0.5, align: 'center' }, { label: 'Scope of Work / Supply', flex: 4.2 }, { label: 'Quantity / Details', flex: 1.4, align: 'center' }],
       [
-        ['1', 'Creation and activation of Teacher Logins for SINGULARITY – TEACH Mode', esc(`${v(doc.teacherLogins, '______')} teacher logins`)],
-        ['2', 'Access to TEACH Mode teaching tools &amp; content for subscribed classes', esc(`Classes: ${v(doc.classes, '__________')}`)],
+        ['1', 'Creation and activation of Teacher Logins for SINGULARITY – TEACH Mode', `${v(doc.teacherLogins, '______')} teacher logins`],
+        ['2', 'Access to TEACH Mode teaching tools &amp; content for subscribed classes', `Classes: ${v(doc.classes, '__________')}`],
         ['3', 'Platform updates and technical support during the subscription period', 'As per subscription'],
       ],
     )}
@@ -203,12 +202,7 @@ function purchaseOrderBody(doc: SalesDocData): string {
         { label: 'Qty', flex: 0.5, align: 'center' }, { label: 'Rate (₹)', flex: 0.8, align: 'right' }, { label: 'Amount (₹)', flex: 1, align: 'right' }],
       [['1', `<b>SINGULARITY – TEACH Mode</b><span class="grey"> — Teacher Login Subscription (per teacher)</span>`, SAC, qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal))]],
     )}
-    ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', [
-      { label: 'Sub Total', value: money(t.subTotal) },
-      { label: `CGST @ ${CGST_RATE}%`, value: money(t.cgst) },
-      { label: `SGST @ ${SGST_RATE}%`, value: money(t.sgst) },
-      { label: 'TOTAL ORDER VALUE (₹)', value: money(t.grandTotal), strong: true },
-    ])}
+    ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'TOTAL ORDER VALUE (₹)'))}
     ${twoBoxes(
       'TIMELINE',
       `${line('Login Activation By', dateOrBlank(doc.activationBy))}${line('Subscription Period', `${months} months from activation`, '')}${line('Subscription Valid Till', dateOrBlank(doc.validTill))}`,
@@ -251,9 +245,9 @@ function taxInvoiceBody(doc: SalesDocData): string {
     ${header('TAX INVOICE', 'ORIGINAL FOR RECIPIENT', esc(COMPANY.name), companyDetails(true))}
     ${twoBoxes(
       'BILL TO (SCHOOL)',
-      `${line('School Name', sc.name)}${line('Address', sc.address1)}<div class="line">${v(sc.address2, '')}</div>${line('Contact Person', sc.contactPerson)}${line('Phone / Email', sc.phoneEmail)}${line('School GSTIN (if any)', sc.gstin)}${line('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`, '')}`,
+      `${line('School Name', sc.name)}${line('Address', sc.address1)}<div class="line">${v(sc.address2, '')}</div>${line('Contact Person', sc.contactPerson)}${line('Phone / Email', sc.phoneEmail)}${line('School GSTIN (if any)', sc.gstin)}${lineRaw('State / State Code', `${v(sc.state, '______________')} / ${v(sc.stateCode, '____')}`)}`,
       'INVOICE DETAILS',
-      `${line('Invoice No.', doc.documentNumber)}${line('Invoice Date', dateOrBlank(doc.documentDate))}${line('Ref. Order No.', doc.refOrderNumber)}${line('Place of Supply', doc.placeOfSupply)}${line('Reverse Charge', 'No')}${line('Subscription Period', period, '')}${line('Payment Ref. / UTR', doc.paymentRef)}`,
+      `${line('Invoice No.', doc.documentNumber)}${line('Invoice Date', dateOrBlank(doc.documentDate))}${line('Ref. Order No.', doc.refOrderNumber)}${line('Place of Supply', doc.placeOfSupply)}${line('Reverse Charge', 'No')}${lineRaw('Subscription Period', period)}${line('Payment Ref. / UTR', doc.paymentRef)}`,
     )}
     ${table(
       [{ label: 'S.No', flex: 0.5, align: 'center' }, { label: 'Description', flex: 3.2 }, { label: 'SAC', flex: 0.7, align: 'center' },
@@ -262,18 +256,17 @@ function taxInvoiceBody(doc: SalesDocData): string {
         `<div><b>SINGULARITY – TEACH Mode</b><div>Teacher Login Subscription (Annual, per teacher)</div><div class="italic grey small">Includes teacher dashboard access, classroom-ready interactive teaching tools &amp; content, updates and support for the subscription period.</div></div>`,
         SAC, qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal))]],
     )}
-    ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', [
-      { label: 'Sub Total', value: money(t.subTotal) },
-      { label: `CGST @ ${CGST_RATE}%`, value: money(t.cgst) },
-      { label: `SGST @ ${SGST_RATE}%`, value: money(t.sgst) },
-      { label: `IGST @ ${GST_RATE}%`, value: '—' },
-      { label: 'GRAND TOTAL (₹)', value: money(t.grandTotal), strong: true },
-    ])}
+    ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'GRAND TOTAL (₹)'))}
     <div class="section-heading">TAX SUMMARY (SAC-WISE)</div>
-    ${table(
+    ${isIntraStateGst(doc.school) ? table(
       [{ label: 'SAC', flex: 0.8, align: 'center' }, { label: 'Taxable Value', flex: 1.2, align: 'center' }, { label: 'CGST Rate', flex: 1, align: 'center' },
         { label: 'CGST Amt', flex: 1, align: 'center' }, { label: 'SGST Rate', flex: 1, align: 'center' }, { label: 'SGST Amt', flex: 1, align: 'center' }, { label: 'Total Tax', flex: 1, align: 'center' }],
       [[SAC, esc(money(t.subTotal)), `${CGST_RATE}%`, esc(money(t.cgst)), `${SGST_RATE}%`, esc(money(t.sgst)), esc(money(t.totalTax))]],
+      LIGHT, '#000',
+    ) : table(
+      [{ label: 'SAC', flex: 0.8, align: 'center' }, { label: 'Taxable Value', flex: 1.2, align: 'center' }, { label: 'IGST Rate', flex: 1, align: 'center' },
+        { label: 'IGST Amt', flex: 1, align: 'center' }, { label: 'Total Tax', flex: 1, align: 'center' }],
+      [[SAC, esc(money(t.subTotal)), `${GST_RATE}%`, esc(money(t.igst)), esc(money(t.totalTax))]],
       LIGHT, '#000',
     )}
     ${twoBoxes(

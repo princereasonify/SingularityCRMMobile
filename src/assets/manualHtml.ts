@@ -451,7 +451,7 @@ hr.div{border:none;border-top:2px solid #f3f4f6;margin:22px 0}
     <div>
       <div class="sec-label">Section 05</div>
       <h2>Pipeline (Kanban Board)</h2>
-      <p>Visual board with pinch-to-zoom, two-finger pan, and drag-and-drop card movement between stages.</p>
+      <p>Every stage at a glance: stage tiles on a phone (nothing to scroll sideways), a five-column drag-and-drop board on iPad landscape.</p>
     </div>
   </div>
   <div class="sec-body">
@@ -460,13 +460,9 @@ hr.div{border:none;border-top:2px solid #f3f4f6;margin:22px 0}
         <div class="ph-notch"><div class="ph-pill"></div></div>
         <div class="ph-hdr" style="background:#7c3aed;display:flex;justify-content:space-between;align-items:center">
           <div><h4>Pipeline</h4><small>47 leads</small></div>
-          <div style="display:flex;gap:5px">
-            <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff">−</div>
-            <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff">+</div>
-          </div>
         </div>
         <div class="ph-body">
-          <div style="background:#ede9fe;padding:4px 8px;text-align:center;font-size:8px;color:#6d28d9;font-weight:600">🤏 Pinch · ✌ Pan · 👆 Long press card to move</div>
+          <div style="background:#ede9fe;padding:4px 8px;text-align:center;font-size:8px;color:#6d28d9;font-weight:600">👆 Tap a stage · Move stage · or long-press and drop on a stage</div>
           <div class="k-row">
             <div class="k-col"><div class="k-col-hdr"><span class="k-title">NEW</span><div class="k-badge" style="background:#7c3aed">12</div></div><div class="k-body"><div class="k-card"><div class="k-card-t">DPS Dwarka</div><div class="k-card-m">₹2.4L · 82</div></div><div class="k-card"><div class="k-card-t">Bloom Int'l</div><div class="k-card-m">₹1.6L · 45</div></div></div></div>
             <div class="k-col"><div class="k-col-hdr"><span class="k-title">QUALIFIED</span><div class="k-badge" style="background:#7c3aed">8</div></div><div class="k-body"><div class="k-card"><div class="k-card-t">GD Goenka</div><div class="k-card-m">₹2.1L · 61</div></div></div></div>
@@ -478,16 +474,16 @@ hr.div{border:none;border-top:2px solid #f3f4f6;margin:22px 0}
     </div>
 
     <div class="sub">
-      <div class="sub-title"><div class="sub-dot" style="background:#7c3aed"></div>How to Drag &amp; Drop a Card</div>
+      <div class="sub-title"><div class="sub-dot" style="background:#7c3aed"></div>How to Move a Lead</div>
       <div class="steps">
-        <div class="step"><div class="step-n" style="background:#7c3aed">1</div><div class="step-t"><strong>Long press</strong> any lead card for about 0.4 seconds — a ghost copy appears under your finger.</div></div>
-        <div class="step"><div class="step-n" style="background:#7c3aed">2</div><div class="step-t"><strong>Keep finger down and drag</strong> to the target column — it highlights with a dashed "↓ Drop here" zone.</div></div>
-        <div class="step"><div class="step-n" style="background:#7c3aed">3</div><div class="step-t"><strong>Lift your finger</strong> to drop. The card moves instantly (optimistic update).</div></div>
-        <div class="step"><div class="step-n" style="background:#7c3aed">4</div><div class="step-t">The change syncs to server. If the sync fails, the card automatically reverts.</div></div>
+        <div class="step"><div class="step-n" style="background:#7c3aed">1</div><div class="step-t"><strong>Phone:</strong> tap a stage tile to list its leads, then tap <strong>Move stage</strong> on a card and pick the new stage. Stages the lead cannot go to are greyed out with the reason.</div></div>
+        <div class="step"><div class="step-n" style="background:#7c3aed">2</div><div class="step-t"><strong>Or long press</strong> a card (~0.4 s) and drop it on a stage tile (phone) or column (iPad landscape).</div></div>
+        <div class="step"><div class="step-n" style="background:#7c3aed">3</div><div class="step-t">The card moves instantly; if the server refuses the move it reverts automatically.</div></div>
+        <div class="step"><div class="step-n" style="background:#7c3aed">4</div><div class="step-t">Moving to <strong>Won</strong> opens Create Deal — a lead is marked Won once its deal is approved.</div></div>
       </div>
     </div>
 
-    <div class="box info"><span class="box-ico">ℹ️</span><div class="box-body"><strong>Zoom &amp; Pan lock during drag</strong>Pinch-zoom and two-finger pan are disabled while a card is being dragged. A short tap (&lt;0.4 s) opens Lead Detail as usual.</div></div>
+    <div class="box info"><span class="box-ico">ℹ️</span><div class="box-body"><strong>Tap vs long press</strong>A short tap (&lt;0.4 s) opens Lead Detail; scrolling is paused while a card is being dragged.</div></div>
 
     <hr class="div">
     <div class="sub">
@@ -495,12 +491,9 @@ hr.div{border:none;border-top:2px solid #f3f4f6;margin:22px 0}
       <table class="dt">
         <thead><tr><th>Gesture / Button</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td>👌 Pinch in / out</td><td>Zoom the board in or out</td></tr>
-          <tr><td>✌️ Two-finger drag</td><td>Pan the board in any direction</td></tr>
-          <tr><td>− button</td><td>Zoom out by 20%</td></tr>
-          <tr><td>+ button</td><td>Zoom in by 20%</td></tr>
-          <tr><td>⊡ Reset button</td><td>Reset zoom and pan to default</td></tr>
-          <tr><td>☝️ Single-finger scroll</td><td>Scroll cards up/down within a column</td></tr>
+          <tr><td>👆 Stage tile (phone)</td><td>List the leads in that stage</td></tr>
+          <tr><td>⇄ Move stage (phone)</td><td>Pick a new stage for the lead</td></tr>
+          <tr><td>☝️ Single-finger scroll</td><td>Scroll the lead list or a column</td></tr>
           <tr><td>👆 Short tap (&lt; 0.4 s)</td><td>Open Lead Detail screen</td></tr>
           <tr><td>👆 Long press (≥ 0.4 s)</td><td>Activate drag mode</td></tr>
         </tbody>

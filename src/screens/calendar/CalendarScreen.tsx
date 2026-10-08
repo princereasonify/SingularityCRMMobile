@@ -10,6 +10,7 @@ import {
 
 import { calendarApi } from '../../api/calendar';
 import { weeklyPlanApi } from '../../api/weeklyPlan';
+import { demosApi } from '../../api/demos';
 import { CalendarEvent } from '../../types';
 import { useOffline } from '../../context/OfflineContext';
 import { DateInput } from '../../components/common/DateInput';
@@ -23,6 +24,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { AppTheme } from '../../theme/appTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { isoDate } from '../../utils/dates';
 
 /**
  * Types offered by the create form — the `CalendarEventType` C# enum VERBATIM
@@ -133,6 +135,10 @@ const formatDateTime = (iso?: string) => {
 };
 
 const isPlanEvent = (ev: CalendarEvent) => !!(ev as any).isWeeklyPlan;
+/** Demo Management rows merged into the grid — they are completed there, never here. */
+const isDemoEvent = (ev: CalendarEvent) => !!(ev as any).isDemo;
+/** Neither pseudo-event has a calendar row behind it, so neither can be marked complete. */
+const isReadOnlyEvent = (ev: CalendarEvent) => isPlanEvent(ev) || isDemoEvent(ev);
 
 export const CalendarScreen = (_: any) => {
   const T = useAppTheme();
@@ -220,40 +226,67 @@ export const CalendarScreen = (_: any) => {
       const res = await calendarApi.getEvents(from, to);
       const calEvents: CalendarEvent[] = (res.data as any) ?? [];
 
+      // Approved weekly plans for every week touching this month (web parity:
+      // Calendar.jsx). w < 6 so a month whose 1st is late in the week still reaches its
+      // last Monday; the weeks are fetched together, and one failing week only loses itself.
+      const mondays = new Set<string>();
+      const lastDay = new Date(year, month, daysInMonth);
+      for (let w = -1; w < 6; w++) {
+        const monday = new Date(year, month, 1 + w * 7);
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+        if (monday <= lastDay) mondays.add(isoDate(monday));
+      }
+      const plans = await Promise.all(
+        [...mondays].map(m => weeklyPlanApi.getMy(m).then(r => r.data as any).catch(() => null)),
+      );
       const planEvents: CalendarEvent[] = [];
-      try {
-        for (let w = -1; w < 5; w++) {
-          const ws = new Date(year, month, 1 + w * 7);
-          const dow = ws.getDay();
-          const monday = new Date(ws);
-          monday.setDate(monday.getDate() - ((dow + 6) % 7));
-          const weekStart = toDateStr(monday.getFullYear(), monday.getMonth(), monday.getDate());
-          const planRes = await weeklyPlanApi.getMy(weekStart);
-          const p: any = planRes.data;
-          if (p && (p.status === 'Approved' || p.status === 'EditedByManager')) {
-            let days: any[] = [];
-            try {
-              const raw = p.managerEdits || p.planData;
-              days = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
-            } catch {}
-            days.forEach((day: any) => {
-              (day.activities || []).forEach((act: any) => {
-                planEvents.push({
-                  id: `wp-${p.id}-${day.date}-${act.type}`,
-                  title: `${act.type}: ${act.schoolName || act.notes || ''}`,
-                  eventType: act.type,
-                  startTime: `${day.date}T09:00`,
-                  endTime: `${day.date}T10:00`,
-                  isCompleted: false,
-                  isWeeklyPlan: true,
-                } as any);
-              });
-            });
-          }
-        }
-      } catch {}
+      plans.forEach((p: any) => {
+        if (!p || (p.status !== 'Approved' && p.status !== 'EditedByManager')) return;
+        let days: any[] = [];
+        try {
+          const raw = p.managerEdits || p.planData;
+          days = typeof raw === 'string' ? JSON.parse(raw) || [] : Array.isArray(raw) ? raw : [];
+        } catch { /* unreadable plan */ }
+        days.forEach((day: any) => {
+          (day.activities || []).forEach((act: any, i: number) => {
+            planEvents.push({
+              // The index keeps two activities of the same type on one day from sharing a key.
+              id: `wp-${p.id}-${day.date}-${i}`,
+              title: `${act.type}: ${act.schoolName || act.notes || ''}`,
+              eventType: act.type,
+              startTime: `${day.date}T09:00`,
+              endTime: `${day.date}T10:00`,
+              isCompleted: false,
+              isWeeklyPlan: true,
+            } as any);
+          });
+        });
+      });
 
-      setEvents([...calEvents, ...planEvents]);
+      // Demos scheduled in Demo Management (web parity). Cancelled ones are dropped; a
+      // failure here still leaves the calendar's own events and plans on screen.
+      let demoEvents: CalendarEvent[] = [];
+      try {
+        const demoRes = await demosApi.getCalendar(from, to);
+        demoEvents = ((demoRes.data as any[]) || [])
+          .filter((d: any) => d.status !== 'Cancelled')
+          .map((d: any) => {
+            const date = String(d.scheduledDate).slice(0, 10);
+            return {
+              id: `demo-${d.id}`,
+              title: `Demo: ${d.schoolName}`,
+              eventType: 'Demo',
+              startTime: `${date}T${String(d.scheduledStartTime || '09:00').slice(0, 5)}`,
+              endTime: `${date}T${String(d.scheduledEndTime || d.scheduledStartTime || '10:00').slice(0, 5)}`,
+              description: [d.demoMode, d.status, d.assignedToName && `with ${d.assignedToName}`]
+                .filter(Boolean).join(' · '),
+              isDemo: true,
+              isCompleted: d.status === 'Completed',
+            } as any;
+          });
+      } catch { /* the calendar still shows events and plans */ }
+
+      setEvents([...calEvents, ...planEvents, ...demoEvents]);
       setError(null);
     } catch {
       setEvents([]);
@@ -361,7 +394,7 @@ export const CalendarScreen = (_: any) => {
    * (api/calendar.ts is outside this task's file scope — reported to the lead.)
    */
   const handleMarkComplete = async (ev: CalendarEvent) => {
-    if (isPlanEvent(ev)) return; // plan pseudo-events have no calendar row to update
+    if (isReadOnlyEvent(ev)) return; // plan/demo pseudo-events have no calendar row to update
     try {
       await calendarApi.update(ev.id, { isCompleted: true } as any);
       flash('Marked complete');
@@ -529,6 +562,7 @@ export const CalendarScreen = (_: any) => {
       {pagedEvents.map(ev => {
         const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
         const plan = isPlanEvent(ev);
+        const readOnly = isReadOnlyEvent(ev);
         const sub = [ev.schoolName, ev.description].filter(Boolean).join(' • ');
         return (
           <TouchableOpacity
@@ -558,8 +592,8 @@ export const CalendarScreen = (_: any) => {
             <View style={s.cType}>
               <StatusBadge label={ev.eventType} color={c} />
             </View>
-            {/* Plan pseudo-events have no calendar row to update — no control at all. */}
-            <View style={s.cDone}>{plan ? null : doneCtl(ev)}</View>
+            {/* Plan/demo pseudo-events have no calendar row to update — no control at all. */}
+            <View style={s.cDone}>{readOnly ? null : doneCtl(ev)}</View>
           </TouchableOpacity>
         );
       })}
@@ -572,6 +606,7 @@ export const CalendarScreen = (_: any) => {
       {pagedEvents.map(ev => {
         const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
         const plan = isPlanEvent(ev);
+        const demo = isDemoEvent(ev);
         return (
           <ListCard key={String(ev.id)} style={s.evCard} onPress={() => setSelectedEvent(ev)}>
             <View style={[s.evBar, { backgroundColor: c }]} />
@@ -598,9 +633,10 @@ export const CalendarScreen = (_: any) => {
               <View style={s.evBadges}>
                 <StatusBadge label={ev.eventType} color={c} />
                 {plan && <StatusBadge label="Weekly Plan" color={T.info} />}
+                {demo && <StatusBadge label="Demo Management" color={T.accent} />}
               </View>
             </View>
-            {!plan && doneCtl(ev)}
+            {!plan && !demo && doneCtl(ev)}
           </ListCard>
         );
       })}
@@ -703,6 +739,7 @@ export const CalendarScreen = (_: any) => {
         const ev = selectedEvent;
         const c = TYPE_COLORS[ev.eventType] || TYPE_COLORS.Other;
         const plan = isPlanEvent(ev);
+        const demo = isDemoEvent(ev);
         return (
           <FormModal
             visible
@@ -713,7 +750,7 @@ export const CalendarScreen = (_: any) => {
               <>
                 <View style={{ flex: 1 }} />
                 <Btn label="Close" variant="secondary" onPress={() => setSelectedEvent(null)} small />
-                {!plan && !ev.isCompleted && (
+                {!plan && !demo && !ev.isCompleted && (
                   <Btn
                     label="Mark complete"
                     small
@@ -728,6 +765,7 @@ export const CalendarScreen = (_: any) => {
               <View style={s.detailBadges}>
                 <StatusBadge label={ev.eventType} color={c} />
                 {plan && <StatusBadge label="Weekly Plan" color={T.info} />}
+                {demo && <StatusBadge label="Demo Management" color={T.accent} />}
                 {ev.isCompleted && <StatusBadge label="Completed" color={T.success} />}
               </View>
 
@@ -762,6 +800,11 @@ export const CalendarScreen = (_: any) => {
               {plan && (
                 <Text style={[s.detailNote, { color: T.dim }]}>
                   This is a weekly plan activity and cannot be completed from the calendar.
+                </Text>
+              )}
+              {demo && (
+                <Text style={[s.detailNote, { color: T.dim }]}>
+                  Scheduled in Demo Management — complete it there with the demo's feedback.
                 </Text>
               )}
             </View>

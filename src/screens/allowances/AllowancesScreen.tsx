@@ -28,6 +28,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import type { AppTheme } from '../../theme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { isoDate, todayStr } from '../../utils/dates';
 
 /**
  * Allowances — Travel Allowance + Expense Claims.
@@ -59,7 +60,7 @@ const EXPENSE_CATEGORIES = [
 
 type MainTab = 'travel' | 'expense';
 type SubTab = 'my' | 'team';
-type TStatus = 'all' | 'pending' | 'approved';
+type TStatus = 'all' | 'pending' | 'approved' | 'rejected';
 type EStatus = 'all' | 'Pending' | 'Approved' | 'Rejected';
 
 /**
@@ -83,12 +84,24 @@ function statusColor(T: AppTheme, status: string): string {
   return T.warning;
 }
 
+/** Current month as LOCAL dates — toISOString() shifted IST's 1st back to the 31st. */
 function getMonthRange() {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const from = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  const to = isoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   return { from, to };
 }
+
+/**
+ * Web parity (Allowances.jsx): the API reports Pending / Approved / Rejected; older
+ * responses only carry `approved`. Reading `approved` alone painted a REJECTED allowance
+ * as Pending and offered to approve it again.
+ */
+const allowanceStatus = (a: any): string => a.status || (a.approved ? 'Approved' : 'Pending');
+
+/** Server limits (ExpenseClaimService.ValidateClaim), mirrored by web. */
+const EXPENSE_MAX_AMOUNT = 100000;
+const EXPENSE_MAX_AGE_DAYS = 180;
 
 const fmtCurrency = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -301,8 +314,14 @@ function ExpenseFormModal({ onClose, onSubmit, submitting }: {
 
   const handle = () => {
     if (!expenseDate || !amount) { Alert.alert('Validation', 'Date and amount are required.'); return; }
+    // Same limits as the server — caught here instead of as an opaque 400.
     const amt = Number(amount);
-    if (!amt || amt <= 0) { Alert.alert('Validation', 'Enter a valid amount.'); return; }
+    if (!(amt > 0) || amt > EXPENSE_MAX_AMOUNT) {
+      Alert.alert('Validation', 'Amount must be between ₹1 and ₹1,00,000'); return;
+    }
+    const oldest = isoDate(new Date(Date.now() - EXPENSE_MAX_AGE_DAYS * 86400000));
+    if (expenseDate > todayStr()) { Alert.alert('Validation', "The expense date can't be in the future"); return; }
+    if (expenseDate < oldest) { Alert.alert('Validation', "Expenses older than 180 days can't be claimed"); return; }
     onSubmit({ expenseDate, category, amount: amt, description, billUri, billName });
   };
 
@@ -332,7 +351,7 @@ function ExpenseFormModal({ onClose, onSubmit, submitting }: {
       <View style={s.mForm}>
         <View style={wide ? s.row2 : s.col2}>
           <Field label="Expense Date *" style={wide ? { flex: 1 } : undefined}>
-            <DateInput value={expenseDate} onChange={setExpenseDate} accentColor={T.accent} />
+            <DateInput value={expenseDate} onChange={setExpenseDate} accentColor={T.accent} maxDate={todayStr()} />
           </Field>
 
           {/* A Trigger+Dropdown inside a form modal is a field, not a modal-as-picker. */}
@@ -571,15 +590,16 @@ export const AllowancesScreen = () => {
   }, [allowances, isManager, travTab, myUserId]);
 
   const tFiltered = useMemo(() => allowancesForTab.filter(a => {
-    if (tStatus === 'pending') return !a.approved;
-    if (tStatus === 'approved') return a.approved;
+    if (tStatus === 'pending') return allowanceStatus(a) === 'Pending';
+    if (tStatus === 'approved') return allowanceStatus(a) === 'Approved';
+    if (tStatus === 'rejected') return allowanceStatus(a) === 'Rejected';
     return true;
   }), [allowancesForTab, tStatus]);
 
   const tTotal = allowancesForTab.reduce((n: number, a: any) => n + (a.grossAmount || 0), 0);
   const tApproved = allowancesForTab.filter((a: any) => a.approved).reduce((n: number, a: any) => n + (a.grossAmount || 0), 0);
-  const tPendingAmt = allowancesForTab.filter((a: any) => !a.approved).reduce((n: number, a: any) => n + (a.grossAmount || 0), 0);
-  const tPendingRows = tFiltered.filter((a: any) => !a.approved);
+  const tPendingAmt = allowancesForTab.filter((a: any) => allowanceStatus(a) === 'Pending').reduce((n: number, a: any) => n + (a.grossAmount || 0), 0);
+  const tPendingRows = tFiltered.filter((a: any) => allowanceStatus(a) === 'Pending');
 
   const tTotalPages = Math.max(1, Math.ceil(tFiltered.length / PAGE_SIZE));
   const tRows = useMemo(
@@ -751,8 +771,12 @@ export const AllowancesScreen = () => {
     );
 
   // ═══ TRAVEL ═══
+  // Only a still-Pending row on someone else's allowance is actionable (web parity):
+  // a Rejected row is final, and nobody approves their own allowance.
+  const canActOnTravel = (a: any) => allowanceStatus(a) === 'Pending' && a.userId !== myUserId;
+
   const travelActions = (a: any) => {
-    if (a.approved) {
+    if (!canActOnTravel(a)) {
       return <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>{a.approvedByName || ''}</Text>;
     }
     return (
@@ -811,7 +835,7 @@ export const AllowancesScreen = () => {
         >
           {showTravelChecks && (
             <View style={s.cCheck}>
-              {!a.approved ? <Checkbox on={tSelected.has(a.id)} onToggle={() => toggleTSelect(a.id)} /> : <View />}
+              {allowanceStatus(a) === 'Pending' ? <Checkbox on={tSelected.has(a.id)} onToggle={() => toggleTSelect(a.id)} /> : <View />}
             </View>
           )}
           <View style={[s.cName, s.nameCell]}>
@@ -831,7 +855,7 @@ export const AllowancesScreen = () => {
           <Text style={[s.tdAmt, { color: T.text }, s.cAmt]} numberOfLines={1}>{fmtCurrency(a.grossAmount)}</Text>
           <View style={s.cFraud}>{fraudCell(a)}</View>
           <View style={s.cStatus}>
-            <StatusBadge label={a.approved ? 'Approved' : 'Pending'} color={a.approved ? T.success : T.warning} />
+            <StatusBadge label={allowanceStatus(a)} color={statusColor(T, allowanceStatus(a))} />
           </View>
           {isManager && <View style={s.cActions}>{travelActions(a)}</View>}
         </View>
@@ -843,7 +867,7 @@ export const AllowancesScreen = () => {
     <View style={{ gap: 8 }}>
       {tRows.map((a: any) => (
         <ListCard key={a.id} style={[s.rowCard, tSelected.has(a.id) && { borderColor: T.accent }]}>
-          {showTravelChecks && !a.approved && (
+          {showTravelChecks && allowanceStatus(a) === 'Pending' && (
             <Checkbox on={tSelected.has(a.id)} onToggle={() => toggleTSelect(a.id)} />
           )}
           <Avatar initials={initialsOf(a.userName)} />
@@ -859,7 +883,7 @@ export const AllowancesScreen = () => {
               {a.distanceKm != null ? `${Number(a.distanceKm).toFixed(1)} km` : DASH} @ {fmtCurrency(a.ratePerKm)}/km
             </Text>
             <View style={s.rowStats}>
-              <StatusBadge label={a.approved ? 'Approved' : 'Pending'} color={a.approved ? T.success : T.warning} />
+              <StatusBadge label={allowanceStatus(a)} color={statusColor(T, allowanceStatus(a))} />
               {(a.fraudScore > 0 || a.isSuspicious) && (
                 <StatusBadge
                   label={`Fraud ${a.fraudScore || 0}`}
@@ -867,7 +891,7 @@ export const AllowancesScreen = () => {
                 />
               )}
             </View>
-            {isManager && !a.approved && <View style={s.rowActions}>{travelActions(a)}</View>}
+            {isManager && canActOnTravel(a) && <View style={s.rowActions}>{travelActions(a)}</View>}
             {isManager && a.approved && !!a.approvedByName && (
               <Text style={[s.tdSub, { color: T.dim }]} numberOfLines={1}>Approved by {a.approvedByName}</Text>
             )}
@@ -1060,8 +1084,13 @@ export const AllowancesScreen = () => {
                 <Segmented<TStatus>
                   value={tStatus}
                   onChange={setTStatus}
-                  style={wide ? { width: 260 } : { flex: 1 }}
-                  options={[{ label: 'All', value: 'all' }, { label: 'Pending', value: 'pending' }, { label: 'Approved', value: 'approved' }]}
+                  style={wide ? { width: 340 } : { flex: 1 }}
+                  options={[
+                    { label: 'All', value: 'all' },
+                    { label: 'Pending', value: 'pending' },
+                    { label: 'Approved', value: 'approved' },
+                    { label: 'Rejected', value: 'rejected' },
+                  ]}
                 />
                 <Trigger
                   label="Filters"

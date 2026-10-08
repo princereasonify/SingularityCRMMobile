@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Linking, ActivityIndicator, Platform, PermissionsAndroid,
+  Linking, ActivityIndicator, Platform, PermissionsAndroid, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
-import { ArrowLeft, Navigation, CheckCircle, ExternalLink } from 'lucide-react-native';
+import { ArrowLeft, Navigation, CheckCircle, ExternalLink, FileText } from 'lucide-react-native';
 import { schoolAssignmentsApi } from '../../api/schoolAssignments';
 import { SchoolAssignment } from '../../types';
 import { rf } from '../../utils/responsive';
@@ -33,6 +33,14 @@ const hexToRgba = (hex: string, alpha: number): string => {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 };
+
+// ─── Geocoded? ────────────────────────────────────────────────────────────────
+// True only for a school that has real coordinates. The null check comes first because
+// `Number(null)` is 0 (finite); `Number(undefined)` is NaN and would otherwise reach the Maps URL
+// as a literal "undefined,undefined" stop that opens to nowhere.
+const hasSchoolCoords = (s: SchoolAssignment): boolean =>
+  s.schoolLatitude != null && s.schoolLongitude != null &&
+  Number.isFinite(Number(s.schoolLatitude)) && Number.isFinite(Number(s.schoolLongitude));
 
 // ─── Build Google Maps multi-stop URL ────────────────────────────────────────
 // Uses the daddr format with +to: separators — this is the only format that
@@ -133,8 +141,8 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
   useEffect(() => {
     if (assignments.length === 0) return;
     const coords = assignments
-      .filter(a => a.schoolLatitude && a.schoolLongitude)
-      .map(a => ({ latitude: a.schoolLatitude, longitude: a.schoolLongitude }));
+      .filter(hasSchoolCoords)
+      .map(a => ({ latitude: Number(a.schoolLatitude), longitude: Number(a.schoolLongitude) }));
     if (userLocation) coords.push(userLocation); // include the FO's own position in the frame
     setTimeout(() => {
       mapRef.current?.fitToCoordinates(coords, {
@@ -147,6 +155,9 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
   // ── Pan map when a list row is tapped ────────────────────────────────────
   const handleSchoolRowPress = (school: SchoolAssignment) => {
     setSelectedSchool(school);
+    // An ungeocoded school has nowhere to pan to — a null coordinate passed to the native map
+    // can crash it on Android.
+    if (!hasSchoolCoords(school)) return;
     mapRef.current?.animateToRegion(
       {
         latitude: school.schoolLatitude,
@@ -158,9 +169,28 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
     );
   };
 
+  // ── Open the Visit Report form for one school ─────────────────────────────
+  // Same route + param shape LiveTrackingScreen already uses for the manager's
+  // per-stop "Report" action (AppNavigator.tsx "VisitReport") — the backend scopes
+  // the created report to the calling user's own JWT, so no foId/userId is needed
+  // here: this is always filed as the current (FO) user's own visit.
+  const openReport = (school: SchoolAssignment) => {
+    navigation.navigate('VisitReport', { schoolName: school.schoolName, schoolId: school.schoolId });
+  };
+
   // ── Open all schools as a driving route in Google Maps ───────────────────
   const openGoogleMaps = () => {
     if (assignments.length === 0) return;
+    // Refuse rather than silently skip: dropping an ungeocoded stop would send the FO straight
+    // past an assigned school without saying so (web LiveTracking getNavigationUrl).
+    const missing = assignments.filter(a => !hasSchoolCoords(a));
+    if (missing.length > 0) {
+      Alert.alert(
+        'Location missing',
+        `These schools have no map location yet, so a route can't include them:\n\n${missing.map(a => `• ${a.schoolName || 'Unnamed school'}`).join('\n')}\n\nAsk an admin to set their location.`,
+      );
+      return;
+    }
     // Pass GPS coords if available; omit origin if not — Google Maps handles it.
     const url = buildGoogleMapsUrl(
       userLocation?.latitude ?? null,
@@ -175,7 +205,8 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
   const total = assignments.length;
 
   // Polyline coordinates in visitOrder — the blue line connecting schools
-  const routeCoords = assignments.map(a => ({
+  // Ungeocoded schools are left out — a null coordinate would break the line (or the map).
+  const routeCoords = assignments.filter(hasSchoolCoords).map(a => ({
     latitude: a.schoolLatitude,
     longitude: a.schoolLongitude,
   }));
@@ -239,6 +270,9 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
 
           {/* ── School markers ──────────────────────────────────────────── */}
           {assignments.map((school, index) => {
+            // No pin or geofence for a school without coordinates: react-native-maps needs real
+            // numbers, and null here can crash the native map on Android. The list still shows it.
+            if (!hasSchoolCoords(school)) return null;
             const color = pinColor(index, school.isVisited);
             const isSelected = selectedSchool?.id === school.id;
             return (
@@ -346,6 +380,17 @@ export const AssignedSchoolsScreen = ({ navigation }: any) => {
                     {school.isVisited ? 'Visited' : 'Pending'}
                   </Text>
                 </View>
+
+                {/* File a visit report for this school */}
+                <TouchableOpacity
+                  style={[styles.reportBtn, { backgroundColor: T.accent + '18' }]}
+                  onPress={() => openReport(school)}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <FileText size={14} color={T.accent} />
+                  <Text style={[styles.reportBtnText, { color: T.accent }]}>Report</Text>
+                </TouchableOpacity>
               </TouchableOpacity>
             );
           })}
@@ -441,4 +486,9 @@ const styles = StyleSheet.create({
   listCity: { fontWeight: '400', fontSize: rf(11), marginTop: 1 },
   listStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   listStatusText: { fontWeight: '700', fontSize: rf(11) },
+  reportBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9,
+  },
+  reportBtnText: { fontWeight: '700', fontSize: rf(10.5) },
 });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { DateStepper } from '../../components/common/DateStepper';
+import { useNavigation } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -44,8 +45,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import BackgroundFetch from 'react-native-background-fetch';
-import { sendLocationPing } from '../../services/locationPingService';
-import { startNativeTracking, stopNativeTracking, requestIOSLocationPermission, checkIOSPermission } from '../../services/nativeLocationTracking';
+import { sendLocationPing, flushB2BPingQueue } from '../../services/locationPingService';
+import { startNativeTracking, stopNativeTracking, flushNativeQueue, requestIOSLocationPermission, checkIOSPermission, isNativeTrackingAvailable } from '../../services/nativeLocationTracking';
 import { BackgroundLocationDisclosure } from '../../components/common/BackgroundLocationDisclosure';
 import { DateInput } from '../../components/common/DateInput';
 import { trackingApi } from '../../api/tracking';
@@ -77,7 +78,15 @@ import {
 import { rf, isTabletDevice } from '../../utils/responsive';
 
 const PING_QUEUE_KEY = 'tracking_ping_queue';
-const PING_INTERVAL_MS = 30000;
+
+/**
+ * True only for a school that has actually been geocoded. A null coordinate must not count:
+ * `Number(null)` is 0 (finite), so the null check comes first; `Number(undefined)` is NaN and
+ * would otherwise reach a Maps URL as a literal "NaN,NaN" stop.
+ */
+const hasSchoolCoords = (s: { schoolLatitude?: number | null; schoolLongitude?: number | null }): boolean =>
+  s.schoolLatitude != null && s.schoolLongitude != null &&
+  Number.isFinite(Number(s.schoolLatitude)) && Number.isFinite(Number(s.schoolLongitude));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -319,6 +328,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
   const T = useAppTheme();
   const mapRef = useRef<MapView>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const routeTokenRef = useRef(0);
   const days = useMemo(() => getLast7Days(), []);
   const today = days[0];
 
@@ -332,8 +342,12 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
   // ── Load route for selected date ──────────────────────────────────────────
   const loadRoute = useCallback(async (date: string) => {
+    // Stale-response guard: a slow reply for a previously selected date (or an older refresh)
+    // must not overwrite the route of the date now on screen.
+    const token = ++routeTokenRef.current;
     try {
       const res = await trackingApi.getRoute(person.userId, date);
+      if (token !== routeTokenRef.current) return;
       const data = res.data as any;
       const raw: RoutePointDto[] = data?.route ?? data?.points ?? (Array.isArray(data) ? data : []);
       const valid = raw.filter((p: RoutePointDto) => p.lat && p.lon && !p.isFiltered);
@@ -341,7 +355,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
       if (valid.length > 0) {
         const coords = valid.map((p: RoutePointDto) => ({ latitude: p.lat, longitude: p.lon }));
         // If viewing today, include the live marker in the fit
-        if (date === today && liveData.latitude && liveData.longitude) {
+        if (date === today && liveData.latitude != null && liveData.longitude != null) {
           coords.push({ latitude: liveData.latitude, longitude: liveData.longitude });
         }
         setTimeout(() => {
@@ -349,7 +363,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
             edgePadding: { top: 80, right: 50, bottom: 160, left: 50 }, animated: true,
           });
         }, 400);
-      } else if (date === today && liveData.latitude && liveData.longitude) {
+      } else if (date === today && liveData.latitude != null && liveData.longitude != null) {
         // No route yet but person is live — zoom to their location
         mapRef.current?.animateToRegion({
           latitude: liveData.latitude, longitude: liveData.longitude,
@@ -357,6 +371,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
         }, 600);
       }
     } catch {
+      if (token !== routeTokenRef.current) return;
       setRoutePoints([]);
     }
   }, [person.userId, today, liveData.latitude, liveData.longitude]);
@@ -401,7 +416,7 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
   const totalKm = routeKm(routePoints);
   const startTime = routePoints.length ? fmtTime(routePoints[0].recordedAt) : '--';
   const endTime = routePoints.length > 1 ? fmtTime(routePoints[routePoints.length - 1].recordedAt) : '--';
-  const hasLiveLocation = isToday && liveData.latitude && liveData.longitude;
+  const hasLiveLocation = isToday && liveData.latitude != null && liveData.longitude != null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }} edges={['bottom']}>
@@ -446,25 +461,8 @@ const IndividualTrackingView = ({ person, onBack }: IndividualTrackingProps) => 
 
       {/* ── Date picker ────────────────────────────────────────────────── */}
       <View style={[ivStyles.dateBar, { backgroundColor: T.cardAlt, borderBottomColor: T.line }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ivStyles.dateScroll}>
-          {days.map((d, i) => {
-            const active = selectedDate === d;
-            return (
-              <TouchableOpacity
-                key={d}
-                style={[
-                  ivStyles.dateChip,
-                  { backgroundColor: active ? T.accentSoft : T.card, borderColor: active ? T.accent : T.line },
-                ]}
-                onPress={() => setSelectedDate(d)}
-              >
-                <Text style={[ivStyles.dateChipText, { color: active ? T.accent : T.sub }]}>
-                  {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        {/* ‹ Today › stepper, not a sideways strip of chips — see DateStepper. */}
+        <DateStepper dates={days} value={selectedDate} onChange={setSelectedDate} style={ivStyles.dateScroll} />
 
         {isToday && (
           <View style={ivStyles.refreshBadge}>
@@ -640,7 +638,7 @@ const ivStyles = StyleSheet.create({
 
   // Date bar
   dateBar: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
-  dateScroll: { paddingHorizontal: 14, paddingVertical: 10, gap: 8, flexGrow: 1 },
+  dateScroll: { flex: 1, paddingHorizontal: 14, paddingVertical: 8 },
   dateChip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, borderWidth: 1,
   },
@@ -935,10 +933,10 @@ export const LiveTrackingScreen = () => {
   const [locationChecked, setLocationChecked] = useState(false);
   const [showBgDisclosure, setShowBgDisclosure] = useState(false);
   const bgPermissionResolveRef = useRef<((accepted: boolean) => void) | null>(null);
-  const iosPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [historyDate, setHistoryDate] = useState(toISODate(new Date()));
   const [historySession, setHistorySession] = useState<TrackingSessionDto | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const historyTokenRef = useRef(0);
 
   // Start-Day vehicle picker (drives the allowance rate — see VEHICLE_OPTIONS)
   const [showVehiclePicker, setShowVehiclePicker] = useState(false);
@@ -1009,7 +1007,7 @@ export const LiveTrackingScreen = () => {
       setLiveUsers(data);
       if (!didFitMap.current && data.length > 0) {
         didFitMap.current = true;
-        const coords = data.filter(u => u.latitude && u.longitude)
+        const coords = data.filter(u => u.latitude != null && u.longitude != null)
           .map(u => ({ latitude: u.latitude, longitude: u.longitude }));
         if (coords.length > 0) {
           setTimeout(() => {
@@ -1413,36 +1411,50 @@ export const LiveTrackingScreen = () => {
     }
   };
 
+  // Mirrors MyDayTrackingScreen.tsx's startTracking/stopTracking exactly (that screen is
+  // the reference implementation — see its comments for the full rationale). This screen's
+  // own "My Day" tab used to run a second, independent sender on top of native tracking:
+  // on Android an unconditional BackgroundFetch job, and on iOS BOTH an unconditional
+  // BackgroundFetch job AND a JS setInterval ping every 30s — all three running alongside
+  // the native module's own capture at the same time. That meant every ZH/RH/SH tracking
+  // their own day uploaded duplicate, near-identical GPS fixes for the whole shift: doubled
+  // rows and doubled map-matching cost for the distance engine, exactly the bug class
+  // MyDayTrackingScreen.tsx already found and fixed on the FO's screen. Fixed the same way
+  // here: BackgroundFetch is wired ONLY as a last-resort fallback for builds where the
+  // native module is missing (gated on isNativeTrackingAvailable()), and the iOS JS
+  // interval is removed entirely — the native module is always the sender on a real device.
   const startDayTracking = useCallback(async () => {
     if (Platform.OS === 'android') {
       await startNativeTracking();
-      try {
-        BackgroundFetch.configure(
-          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
-          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
-          (taskId) => { BackgroundFetch.finish(taskId); },
-        ).catch(() => {});
-      } catch {}
-    } else {
-      if (!iosPingRef.current) {
-        sendLocationPing();
-        iosPingRef.current = setInterval(() => sendLocationPing(), PING_INTERVAL_MS);
+      if (!isNativeTrackingAvailable()) {
+        try {
+          BackgroundFetch.configure(
+            { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: true, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+            async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+            (taskId) => { BackgroundFetch.finish(taskId); },
+          ).catch(() => {});
+        } catch {}
       }
-      startNativeTracking().catch(() => {});
-      try {
-        BackgroundFetch.configure(
-          { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
-          async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
-          (taskId) => { BackgroundFetch.finish(taskId); },
-        ).catch(() => {});
-      } catch {}
+    } else {
+      // The native module owns capture here too (CLLocationManager + its own send timer,
+      // sequence numbers and offline queue) — no JS interval alongside it.
+      await startNativeTracking();
+      if (!isNativeTrackingAvailable()) {
+        try {
+          BackgroundFetch.configure(
+            { minimumFetchInterval: 15, stopOnTerminate: false, startOnBoot: true, enableHeadless: false, requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY },
+            async (taskId) => { await sendLocationPing(); BackgroundFetch.finish(taskId); },
+            (taskId) => { BackgroundFetch.finish(taskId); },
+          ).catch(() => {});
+        } catch {}
+      }
     }
   }, []);
 
   const stopDayTracking = useCallback(async () => {
-    if (Platform.OS === 'android') { await stopNativeTracking(); }
-    else {
-      if (iosPingRef.current) { clearInterval(iosPingRef.current); iosPingRef.current = null; }
+    if (Platform.OS === 'android') {
+      await stopNativeTracking();
+    } else {
       stopNativeTracking().catch(() => {});
     }
     try { BackgroundFetch.stop(); } catch {}
@@ -1542,7 +1554,17 @@ export const LiveTrackingScreen = () => {
    * device's current position.
    */
   const openRouteNavigation = useCallback((stops: SchoolAssignment[]) => {
-    const pts = stops.filter(s => s.schoolLatitude && s.schoolLongitude);
+    // Refuse rather than silently skip: dropping an ungeocoded stop would send the FO straight
+    // past a school they are assigned to without saying so (web LiveTracking getNavigationUrl).
+    const missing = stops.filter(s => !hasSchoolCoords(s));
+    if (missing.length > 0) {
+      Alert.alert(
+        'Location missing',
+        `These schools have no map location yet, so a route can't include them:\n\n${missing.map(s => `• ${s.schoolName || 'Unnamed school'}`).join('\n')}\n\nAsk an admin to set their location.`,
+      );
+      return;
+    }
+    const pts = stops;
     if (pts.length === 0) { Alert.alert('No route', 'No assigned school has coordinates.'); return; }
     const dest = pts[pts.length - 1];
     const waypoints = pts.slice(0, -1).map(s => `${s.schoolLatitude},${s.schoolLongitude}`).join('|');
@@ -1560,10 +1582,15 @@ export const LiveTrackingScreen = () => {
       { text: 'End Day', style: 'destructive', onPress: async () => {
         setDayActionLoading(true);
         try {
-          await stopDayTracking();
-          const stored = await AsyncStorage.getItem(PING_QUEUE_KEY);
-          if (stored) { try { const q = JSON.parse(stored); if (Array.isArray(q) && q.length > 0) await trackingApi.sendBatchPings(q); } catch {} await AsyncStorage.removeItem(PING_QUEUE_KEY); }
+          // Drain everything queued on the device BEFORE ending the day — the server freezes the
+          // day's distance/allowance at end-day. Native first, while tracking is still running
+          // (iOS stopTracking deletes the stored token/URL); then the JS queue, trimmed against
+          // acceptedThroughSeq and kept on failure; then end-day; only then stop capture. Both
+          // flushes never throw and are time-boxed, so End Day cannot hang on them.
+          await flushNativeQueue();
+          await flushB2BPingQueue();
           const res = await trackingApi.endDay();
+          await stopDayTracking();
           const data = res.data as SessionResponseDto;
           setDaySession(data?.session ?? null); setStartEnabled(true); setEndEnabled(false);
           await AsyncStorage.removeItem(PING_QUEUE_KEY);
@@ -1576,12 +1603,15 @@ export const LiveTrackingScreen = () => {
   const handleHistoryDate = async (date: string) => {
     if (!user) return;
     setHistoryDate(date); setHistoryLoading(true);
+    // A slow reply for an earlier pick must not overwrite the date now selected.
+    const token = ++historyTokenRef.current;
     try {
       const res = await trackingApi.getRoute(user.id, date);
+      if (token !== historyTokenRef.current) return;
       const data = res.data as any;
       setHistorySession(data?.session ?? null);
-    } catch { setHistorySession(null); }
-    finally { setHistoryLoading(false); }
+    } catch { if (token === historyTokenRef.current) setHistorySession(null); }
+    finally { if (token === historyTokenRef.current) setHistoryLoading(false); }
   };
 
   const getSessionDuration = (s: TrackingSessionDto): string => {
@@ -1664,7 +1694,7 @@ export const LiveTrackingScreen = () => {
         : { label: 'Not Started', color: T.warning };
 
   const hasCoords = (u: LiveLocationDto) =>
-    !!u.latitude && !!u.longitude && (u.latitude !== 0 || u.longitude !== 0);
+    u.latitude != null && u.longitude != null && (u.latitude !== 0 || u.longitude !== 0);
 
   // ── Client-side paging (see PAGE_SIZE: neither endpoint binds page/limit) ──
   const teamPageCount = Math.max(1, Math.ceil(scopedUsers.length / PAGE_SIZE));
@@ -1983,16 +2013,24 @@ export const LiveTrackingScreen = () => {
   const visitedCount = myAssignments.filter(a => a.isVisited).length;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top']}>
+    // No top edge: this screen only lives inside the drawer, whose AppTopbar already pays the
+    // status-bar inset — a second one here left an empty band above the content.
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={[]}>
       {/* ScreenHeader paints white text on `color`, so it takes the Sunstone gradient's
           deep start (T.accentFrom) rather than T.accent — in dark mode T.accent is the
           light gold and white-on-gold is unreadable. */}
-      <ScreenHeader
-        title="Live Tracking"
-        subtitle={subtitle}
-        color={T.accentFrom}
-        onMenu={() => nav.dispatch(DrawerActions.toggleDrawer())}
-      />
+      {/* Phone: the top bar already says "Live Tracking", so the big coloured hero (title again,
+          plus a second status-bar inset) only pushed the map down a quarter of the screen. A
+          one-line scope caption keeps the information; iPad keeps the hero. */}
+      {isTabletDevice ? (
+        <ScreenHeader
+          title="Live Tracking"
+          subtitle={subtitle}
+          color={T.accentFrom}
+        />
+      ) : (
+        <Text style={[styles.scopeCaption, { color: T.sub }]} numberOfLines={1}>{subtitle}</Text>
+      )}
 
       {/* Tab bar — the kit's .seg idiom (cardAlt track, accent-tinted active cell),
           extended with the live counts web shows on each tab. */}
@@ -2160,25 +2198,7 @@ export const LiveTrackingScreen = () => {
               <Text style={[nStyles.cardTitle, { color: T.text }]}>My Tracking History</Text>
               <View style={mdStyles.dateRow}>
                 <Calendar size={14} color={T.dim} strokeWidth={ICON_STROKE} />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {last30Days.map((d, i) => {
-                    const on = historyDate === d;
-                    return (
-                      <TouchableOpacity
-                        key={d}
-                        style={[
-                          mdStyles.dateChip,
-                          { backgroundColor: on ? T.accentSoft : T.cardAlt, borderColor: on ? T.accent : T.line },
-                        ]}
-                        onPress={() => handleHistoryDate(d)}
-                      >
-                        <Text style={[mdStyles.dateChipText, { color: on ? T.accent : T.sub }]}>
-                          {i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatDate(d)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                <DateStepper dates={last30Days} value={historyDate} onChange={handleHistoryDate} style={{ flex: 1 }} />
               </View>
             </View>
 
@@ -2332,7 +2352,7 @@ export const LiveTrackingScreen = () => {
                     pointerEvents="none"
                   >
                     {displayStops
-                      .filter(a => a.schoolLatitude && a.schoolLongitude)
+                      .filter(hasSchoolCoords)
                       .map(a => (
                         <Marker
                           key={a.id}
@@ -2343,7 +2363,7 @@ export const LiveTrackingScreen = () => {
                       ))}
                     <Polyline
                       coordinates={displayStops
-                        .filter(a => a.schoolLatitude && a.schoolLongitude)
+                        .filter(hasSchoolCoords)
                         .map(a => ({ latitude: a.schoolLatitude, longitude: a.schoolLongitude }))}
                       strokeColor={T.accent}
                       strokeWidth={3}
@@ -2755,7 +2775,8 @@ export const LiveTrackingScreen = () => {
                   {shList.length > 0 && (
                     <View style={[styles.scaSHFilterBlock, { backgroundColor: T.card, borderColor: T.line }]}>
                       <Text style={[styles.scaSHFilterLabel, { color: T.dim }]}>Filter by Head</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scaSHFilterRow}>
+                      {/* Wraps onto more lines instead of scrolling sideways, so every head is visible. */}
+                      <View style={styles.scaSHFilterRow}>
                         {/* All chip */}
                         <TouchableOpacity
                           style={[
@@ -2797,7 +2818,7 @@ export const LiveTrackingScreen = () => {
                             </TouchableOpacity>
                           );
                         })}
-                      </ScrollView>
+                      </View>
                       {/* Selected SH summary */}
                       {selectedSHId !== null && (
                         <View style={[styles.scaSHSelectedBanner, { borderTopColor: T.line }]}>
@@ -3160,6 +3181,7 @@ export const LiveTrackingScreen = () => {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  scopeCaption: { fontSize: rf(12.5), fontWeight: '600', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 2 },
   safe: { flex: 1 },
   scroll: { flex: 1 },
   content: { padding: 14, gap: 12 },
@@ -3279,7 +3301,7 @@ const styles = StyleSheet.create({
     fontSize: rf(11), fontWeight: '700', letterSpacing: 0.4,
     marginBottom: 8, textTransform: 'uppercase',
   },
-  scaSHFilterRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  scaSHFilterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 2 },
   scaSHChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, height: 28, borderRadius: 14, borderWidth: 1,

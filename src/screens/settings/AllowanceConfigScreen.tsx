@@ -15,6 +15,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { rf } from '../../utils/responsive';
+import { isoDate } from '../../utils/dates';
 
 const ROLES = ['FO', 'ZH', 'RH', 'SH', 'SCA'];
 const SCOPES = ['Global', 'User'] as const;
@@ -40,8 +41,9 @@ const blankForm = {
   vehicleType: '',
   ratePerKm: '10',
   maxDailyAllowance: '',
-  minDistanceKm: '',
-  effectiveFrom: new Date().toISOString().split('T')[0],
+  // Backend field is MinDistanceForAllowance — `minDistanceKm` was never bound and dropped.
+  minDistanceForAllowance: '',
+  effectiveFrom: isoDate(),
   effectiveTo: '',
 };
 
@@ -101,9 +103,12 @@ export const AllowanceConfigScreen = ({ route }: any) => {
     });
   };
 
-  const openCreate = () => { setEditConfigId(null); setForm(blankForm); setOpenDd(null); setShowForm(true); };
+  // Fresh blank each time so Effective From is today even if the screen stayed mounted overnight.
+  const freshForm = () => ({ ...blankForm, effectiveFrom: isoDate() });
 
-  const closeForm = () => { setShowForm(false); setEditConfigId(null); setForm(blankForm); setOpenDd(null); };
+  const openCreate = () => { setEditConfigId(null); setForm(freshForm()); setOpenDd(null); setShowForm(true); };
+
+  const closeForm = () => { setShowForm(false); setEditConfigId(null); setForm(freshForm()); setOpenDd(null); };
 
   const startFullEdit = (c: any) => {
     setEditConfigId(c.id);
@@ -114,41 +119,58 @@ export const AllowanceConfigScreen = ({ route }: any) => {
       vehicleType: c.vehicleType || '',
       ratePerKm: String(c.ratePerKm),
       maxDailyAllowance: c.maxDailyAllowance != null ? String(c.maxDailyAllowance) : '',
-      minDistanceKm: c.minDistanceKm != null ? String(c.minDistanceKm) : '',
-      effectiveFrom: c.effectiveFrom ? new Date(c.effectiveFrom).toISOString().split('T')[0] : '',
-      effectiveTo: c.effectiveTo ? new Date(c.effectiveTo).toISOString().split('T')[0] : '',
+      minDistanceForAllowance: c.minDistanceForAllowance != null ? String(c.minDistanceForAllowance) : '',
+      effectiveFrom: c.effectiveFrom ? isoDate(c.effectiveFrom) : '',
+      effectiveTo: c.effectiveTo ? isoDate(c.effectiveTo) : '',
     });
     setOpenDd(null);
     setShowForm(true);
   };
 
   const handleSubmit = async () => {
+    // Same checks as web (sh/AllowanceSettings.jsx) — caught here, not as an opaque 400.
     if (!form.ratePerKm.trim() || isNaN(parseFloat(form.ratePerKm))) { Alert.alert('Error', 'Rate per km is required'); return; }
+    if (!(parseFloat(form.ratePerKm) > 0)) { Alert.alert('Error', 'Rate per km must be more than ₹0'); return; }
+    if (form.maxDailyAllowance !== '' && !(parseFloat(form.maxDailyAllowance) > 0)) {
+      Alert.alert('Error', 'Max daily must be more than ₹0, or empty for no cap'); return;
+    }
+    if (form.minDistanceForAllowance !== '' && parseFloat(form.minDistanceForAllowance) < 0) {
+      Alert.alert('Error', "Min distance can't be negative"); return;
+    }
+    if (form.effectiveTo && form.effectiveFrom && form.effectiveTo < form.effectiveFrom) {
+      Alert.alert('Error', 'Effective To is before Effective From'); return;
+    }
     setSubmitting(true);
     try {
       if (editConfigId != null) {
         await allowanceConfigApi.update(editConfigId, {
           ratePerKm: parseFloat(form.ratePerKm),
-          maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : undefined,
-          minDistanceKm: form.minDistanceKm ? parseFloat(form.minDistanceKm) : undefined,
-          vehicleType: form.vehicleType || undefined,
-          effectiveFrom: form.effectiveFrom || undefined,
-          effectiveTo: form.effectiveTo || undefined,
+          maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : null,
+          minDistanceForAllowance: form.minDistanceForAllowance ? parseFloat(form.minDistanceForAllowance) : null,
+          vehicleType: form.vehicleType || null,
+          effectiveFrom: form.effectiveFrom || null,
+          effectiveTo: form.effectiveTo || null,
+          // An emptied box removes the value — without these, null means "unchanged" to
+          // the server and a cap, min distance, end date or vehicle could never be taken off.
+          clearMaxDailyAllowance: !form.maxDailyAllowance,
+          clearMinDistanceForAllowance: !form.minDistanceForAllowance,
+          clearEffectiveTo: !form.effectiveTo,
+          clearVehicleType: !form.vehicleType,
         });
       } else {
         if (form.scope === 'User' && !form.scopeId) { Alert.alert('Error', 'Select a user'); setSubmitting(false); return; }
-        const resolvedScopeId = form.scope === 'User' && form.scopeId ? parseInt(form.scopeId) : undefined;
+        const resolvedScopeId = form.scope === 'User' && form.scopeId ? parseInt(form.scopeId, 10) : null;
         await allowanceConfigApi.create({
           scope: form.scope,
           scopeId: resolvedScopeId,
-          targetRole: form.scope === 'User' ? (form.targetRole || undefined) : undefined,
-          vehicleType: form.vehicleType || undefined,
+          targetRole: form.scope === 'User' ? (form.targetRole || null) : null,
+          vehicleType: form.vehicleType || null,
           ratePerKm: parseFloat(form.ratePerKm),
-          maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : undefined,
-          minDistanceKm: form.minDistanceKm ? parseFloat(form.minDistanceKm) : undefined,
+          maxDailyAllowance: form.maxDailyAllowance ? parseFloat(form.maxDailyAllowance) : null,
+          minDistanceForAllowance: form.minDistanceForAllowance ? parseFloat(form.minDistanceForAllowance) : null,
           effectiveFrom: form.effectiveFrom,
-          effectiveTo: form.effectiveTo || undefined,
-        } as any);
+          effectiveTo: form.effectiveTo || null,
+        });
       }
       closeForm();
       fetchConfigs();
@@ -203,9 +225,9 @@ export const AllowanceConfigScreen = ({ route }: any) => {
               <Text style={[s.metricVal, { color: T.warning }]}>Max {fmtCurrency(c.maxDailyAllowance)}/day</Text>
             </View>
           )}
-          {c.minDistanceKm != null && (
+          {c.minDistanceForAllowance != null && (
             <View style={[s.metricChip, { backgroundColor: withAlpha(T.success, SOFT_TINT) }]}>
-              <Text style={[s.metricVal, { color: T.success }]}>Min {c.minDistanceKm} km</Text>
+              <Text style={[s.metricVal, { color: T.success }]}>Min {c.minDistanceForAllowance} km</Text>
             </View>
           )}
         </View>
@@ -343,7 +365,7 @@ export const AllowanceConfigScreen = ({ route }: any) => {
           <NumField value={form.maxDailyAllowance} onChangeText={v => setField('maxDailyAllowance', v)} placeholder="No limit" label="Max Daily Allowance (₹)" />
         </Field>
         <Field label="Min Distance (km)">
-          <NumField value={form.minDistanceKm} onChangeText={v => setField('minDistanceKm', v)} placeholder="0" label="Min Distance (km)" />
+          <NumField value={form.minDistanceForAllowance} onChangeText={v => setField('minDistanceForAllowance', v)} placeholder="0" label="Min Distance (km)" />
         </Field>
 
         <Field label="Effective From *">

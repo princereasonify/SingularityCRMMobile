@@ -26,6 +26,7 @@ import {
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
+import { todayStr } from '../../utils/dates';
 
 /** Web parity: the list pages 10 at a time and reports the server's real totalCount.
  *  Schools.jsx `const limit = 10` — both platforms now match the house page size. */
@@ -139,7 +140,7 @@ function AssignModal({ onClose }: { onClose: () => void }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
+  const [assignDate, setAssignDate] = useState(todayStr);
   const [notes, setNotes] = useState('');
   const [allSchools, setAllSchools] = useState<AnySchool[]>([]);
   const [search, setSearch] = useState('');
@@ -356,7 +357,7 @@ function ReassignModal({ school, onClose, onSaved }: {
     school.assignedToId ? Number(school.assignedToId) : null,
   );
   const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
+  const [assignDate, setAssignDate] = useState(todayStr);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -482,7 +483,13 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
    */
   const deepLinkAssignedTo = route?.params?.assignedTo;
 
+  // What's typed, and (300 ms later) what's searched — every keystroke used to fire a request.
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   /** Web keeps the map's school filter separate from the list's (Schools.jsx `mapSearch`). */
   const [mapSearch, setMapSearch] = useState('');
   const [showFilters, setShowFilters] = useState(!!deepLinkAssignedTo);
@@ -526,7 +533,11 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
 
   const effectiveAssignedTo = onlyMine ? myUserId : (foFilter ? Number(foFilter) : undefined);
 
+  // Web parity (Schools.jsx fetchTokenRef): only the latest request may write the list, so
+  // an earlier, slower response can't land after a later one and show stale results.
+  const fetchTokenRef = useRef(0);
   const fetchSchools = useCallback(async (pg: number) => {
+    const token = ++fetchTokenRef.current;
     try {
       // GET /schools takes `limit` (not pageSize) and returns
       // { schools, total, page, limit } — see SchoolsController.GetSchools,
@@ -541,6 +552,7 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
         assignedTo: effectiveAssignedTo,
       };
       const res = await schoolsApi.getAll(params);
+      if (fetchTokenRef.current !== token) return;
       const d: any = res.data;
       const list = d?.schools ?? d?.items ?? [];
       const total = d?.total ?? d?.totalCount ?? 0;
@@ -548,12 +560,15 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
       setTotalCount(total);
       setTotalPages(Math.max(1, Math.ceil(total / PAGE_SIZE)));
     } catch {
+      if (fetchTokenRef.current !== token) return;
       setSchools([]);
       setTotalCount(0);
       setTotalPages(1);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (fetchTokenRef.current === token) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [search, city, stateFilter, board, effectiveAssignedTo]);
 
@@ -847,8 +862,8 @@ export const SchoolsListScreen = ({ navigation, route }: any) => {
               />
             ) : (
               <SearchBar
-                value={search}
-                onChangeText={setSearch}
+                value={searchInput}
+                onChangeText={setSearchInput}
                 placeholder="Search schools by name or city…"
                 style={{ flex: 1, minWidth: 180 }}
               />

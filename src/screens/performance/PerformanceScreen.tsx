@@ -120,6 +120,7 @@ const fmtDay = (d?: string) =>
 const photoSrc = (url: string) =>
   url.startsWith('http') ? url : `${String(API_BASE_URL || '').replace(/\/api\/?$/, '')}${url}`;
 
+// `avatar` is stored initials or an uploaded photo URL — the crud Avatar renders either.
 const initialsOf = (name?: string, avatar?: string) =>
   avatar || (name || '?').trim().charAt(0).toUpperCase() || '?';
 
@@ -472,7 +473,6 @@ export const PerformanceScreen = (_: any) => {
       >
         {ownHeader ? (
           <View style={s.headerLeft}>
-            <DrawerMenuButton color={T.text} />
             <View style={{ flex: 1 }}>
               <Text style={[s.title, { color: T.text }]}>Performance Tracking</Text>
               <Text style={[s.subtitle, { color: T.sub }]}>{subtitle}</Text>

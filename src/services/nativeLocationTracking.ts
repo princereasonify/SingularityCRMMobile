@@ -104,6 +104,48 @@ export const startNativeTracking = async (tier: TrackingTier = 'b2b'): Promise<v
   }
 };
 
+/** JS-side ceiling on the End Day flush. The native method has its own ~10 s guard; this is the
+ *  belt-and-braces so End Day can never hang even on a native build that predates flushQueue's
+ *  timeout or a token refresh that stalls. */
+const NATIVE_FLUSH_TIMEOUT_MS = 12_000;
+
+/**
+ * End Day: drains the native engine's offline queue to the tier's batch endpoint NOW.
+ *
+ * Must be awaited BEFORE the end-day call — the server freezes the day's totals when the session
+ * ends, and on iOS stopTracking also deletes the stored token/URL, so a fix still queued on the
+ * device after either would never count. Uses the native module's own flush (same
+ * acceptedThroughSeq trimming as the ping loop).
+ *
+ * Resolves true when nothing is left queued (or there is no native module), false on failure or
+ * timeout. Never throws.
+ */
+export const flushNativeQueue = async (): Promise<boolean> => {
+  if (!LocationTrackingModule?.flushQueue) return true;
+  const attempt = (async (): Promise<boolean> => {
+    try {
+      // Hand native a live token first so the batch is not wasted on a 401 (the same push the
+      // app makes on every refresh). Never called with null — that would wipe the credentials.
+      const fresh = await ensureFreshToken().catch(() => null);
+      if (fresh) await updateNativeAuthToken(fresh);
+      const ok: boolean = await LocationTrackingModule.flushQueue();
+      return ok === true;
+    } catch (e: any) {
+      console.warn('[NativeTracking] flushQueue error:', e?.message);
+      return false;
+    }
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>(resolve => {
+    timer = setTimeout(() => resolve(false), NATIVE_FLUSH_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([attempt, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 export const stopNativeTracking = async (): Promise<void> => {
   if (!LocationTrackingModule) return;
   try {

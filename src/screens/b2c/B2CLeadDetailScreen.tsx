@@ -4,7 +4,7 @@ import {
 import {
   ArrowLeft, Phone, Mail, MapPin, User, Calendar, CalendarClock, Edit2, CheckCircle2,
   UserCheck, UserPlus, Clock, Trash2, AlertTriangle, GraduationCap, School, Users,
-  Sparkles, GitBranch, History, Eye, RefreshCw, Globe, Camera, Coins} from 'lucide-react-native';
+  GitBranch, History, Eye, RefreshCw, Globe, Camera, Coins} from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
   Btn, Field, Input, Trigger, Dropdown, StatusBadge, FormModal, ConfirmModal,
@@ -140,6 +140,10 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const isAgent = role === 'Agent';
   const isCounselor = role === 'Counselor';
   const canAssignCounselor = isAdmin;
+  // The student's and parent's real Reasonify passwords. Needed by whoever logs in AS them
+  // during a house visit — never by a caller on the phone, and GET /leads/{id}/credentials
+  // refuses them, so showing the card would offer a button that can only ever fail.
+  const canSeeCredentials = isAdmin || isAgent || isCounselor;
 
   const [lead, setLead] = useState<B2CLeadDetailDto | null>(null);
   const [activities, setActivities] = useState<B2CActivityListDto[]>([]);
@@ -150,7 +154,6 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [briefBusy, setBriefBusy] = useState<number | null>(null);
   const [openDd, setOpenDd] = useState<string | null>(null);
 
   // Reasonify login, fetched on demand rather than preloaded — the credentials endpoint
@@ -606,9 +609,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   const editEmailClash = !!editForm.email.trim() && !!editForm.parentEmail.trim()
     && editForm.email.trim().toLowerCase() === editForm.parentEmail.trim().toLowerCase();
 
-  // This student joined a parent account a sibling already had. It keeps its own password, so
-  // the server refuses a reset from here — read off the lead, which is always loaded, rather
-  // than off the credentials card the user may never have opened.
+  // This student joined a parent account a sibling already had. A reset from here is allowed —
+  // it is one family login, so it changes the parent password for every sibling — and the hint
+  // says so. Read off the lead, which is always loaded, rather than off the credentials card.
   const parentAccountShared = !!lead?.reasonifyParentLinked || !!credentials?.parentAccountLinked;
 
   /**
@@ -701,6 +704,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         // sending "" would fail the server's length rule and reject the whole save.
         ...(editForm.studentPassword ? { studentPassword: editForm.studentPassword } : {}),
         ...(editForm.parentPassword ? { parentPassword: editForm.parentPassword } : {}),
+        // The version this form was opened on — the server refuses (409) if someone (another
+        // agent, or a counselor re-scoped onto the same lead) saved since.
+        expectedUpdatedAt: lead?.updatedAt,
       };
       const res = await b2cLeadService.updateLead(leadId, payload);
       setModal(null);
@@ -732,12 +738,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     } finally { setDeleting(false); }
   };
 
-  const regenerateBrief = async (objId: number) => {
-    setBriefBusy(objId);
-    try { await b2cObjectionService.generateBrief(objId); await load(); }
-    catch (err: any) { toast.error(err?.response?.data?.message || 'Could not generate brief'); }
-    finally { setBriefBusy(null); }
-  };
+  // AI Prep Brief generation is turned off server-side (the /brief endpoint is commented out
+  // pending a proper re-scoping), so the web removed its Generate/Regenerate control and so
+  // does this screen. The post-session "Suggested next step" is a separate feature and stays.
 
   const setEdit = (k: keyof typeof emptyEdit, v: string) => {
     setEditForm(f => ({ ...f, [k]: v }));
@@ -1024,12 +1027,34 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                   <Text style={[s.metaVal, { color: T.text }]}>{m.value}</Text>
                 </View>
               ))}
+              {/* The server has always sent the actual sibling records (name, stage, agent) —
+                 only the Yes/No flag above was ever shown, so an admin flagged "Sibling: Yes"
+                 had no way to see who the sibling was without a separate search. */}
+              {lead.siblingLeads?.length > 0 && (
+                <View style={[s.notesBox, { borderTopColor: T.line }]}>
+                  <Text style={[s.infoLabel, { color: T.dim }]}>Linked siblings</Text>
+                  {lead.siblingLeads.map(sib => (
+                    <TouchableOpacity
+                      key={sib.id}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.push('B2CLeadDetail', { leadId: sib.id })}
+                      style={[s.metaRow, { minHeight: MIN_TAP }]}
+                    >
+                      <Text style={[s.metaVal, { color: T.text, textAlign: 'left', flex: 1 }]} numberOfLines={1}>{sib.studentName}</Text>
+                      {!!sib.agentName && <Text style={[s.metaKey, { color: T.sub }]} numberOfLines={1}>{sib.agentName}</Text>}
+                      <StatusBadge label={spaced(sib.stage)} color={T.dim} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </Card>
           )}
 
           {/* Reasonify Login — the student/parent account is provisioned when the lead is
              created, so an agent standing in the house can log in as the student. Credentials
-             are decrypted on demand, not preloaded. */}
+             are decrypted on demand, not preloaded. Only roles that can actually log in as the
+             family see it (see canSeeCredentials). */}
+          {canSeeCredentials && (
           <Card style={{ marginTop: 12 }}>
             <View style={s.rowBetween}>
               <SectionLabel style={{ marginBottom: 0 }}>Reasonify Login</SectionLabel>
@@ -1077,10 +1102,10 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                   <Text style={[s.credVal, { color: T.text }]} selectable>{credentials.parentEmail || DASH}</Text>
                   <Text style={[s.credPwd, { color: T.text }]} selectable>{credentials.parentPassword || DASH}</Text>
                   {/* The student joined a parent account that already existed (a sibling is
-                     enrolled). That account kept its own password, so there is nothing here to
-                     show and saying so beats an unexplained dash. */}
+                     enrolled) and nobody has reset it since, so the password above may not be
+                     the live one. A reset from Edit makes it so for every sibling. */}
                   {!!credentials.parentAccountLinked && (
-                    <Text style={[s.credHint, { color: T.dim }]}>Added to an existing parent account — it keeps its own password.</Text>
+                    <Text style={[s.credHint, { color: T.dim }]}>Added to an existing parent account — it keeps its own password until you set a new one via Edit.</Text>
                   )}
                 </View>
 
@@ -1132,6 +1157,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
               </View>
             )}
           </Card>
+          )}
 
           {/* Stage history — every stage move with the note recorded at the time, so the whole
              story is readable without opening the update dialog. */}
@@ -1219,30 +1245,14 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                     </Text>
                     {!!o.resolution && <Text style={[s.objTxt, { color: T.success }]}>Resolution: {o.resolution}</Text>}
 
-                    <View style={[s.objBrief, { borderTopColor: T.line }]}>
-                      <View style={s.rowBetween}>
-                        <View style={s.rowIcon}>
-                          <Sparkles size={12} color={T.accent} strokeWidth={ICON_STROKE} />
-                          <Text style={[s.objBriefLbl, { color: T.accent }]}>AI Prep Brief</Text>
-                        </View>
-                        <TouchableOpacity
-                          disabled={briefBusy === o.id}
-                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                          onPress={() => regenerateBrief(o.id)}
-                        >
-                          <Text style={[s.objRegen, { color: T.sub }]}>
-                            {briefBusy === o.id ? 'Generating…' : (o.aiBrief ? 'Regenerate' : 'Generate')}
-                          </Text>
-                        </TouchableOpacity>
+                    {/* AI Prep Brief removed — see the note where regenerateBrief used to be.
+                        Suggested-next-step (post-session, a separate feature) stays. */}
+                    {!!o.aiPostSession && (
+                      <View style={[s.objBrief, { borderTopColor: T.line }]}>
+                        <Text style={[s.objBriefLbl, { color: T.success }]}>Suggested next step</Text>
+                        <Text style={[s.objTxt, { color: T.text }]}>{o.aiPostSession}</Text>
                       </View>
-                      <Text style={[s.objTxt, { color: o.aiBrief ? T.text : T.dim }]}>{o.aiBrief || 'Not generated yet.'}</Text>
-                      {!!o.aiPostSession && (
-                        <View style={[s.objBrief, { borderTopColor: T.line }]}>
-                          <Text style={[s.objBriefLbl, { color: T.success }]}>Suggested next step</Text>
-                          <Text style={[s.objTxt, { color: T.text }]}>{o.aiPostSession}</Text>
-                        </View>
-                      )}
-                    </View>
+                    )}
                   </View>
                 ))}
               </View>
@@ -1672,14 +1682,13 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
                 onChangeText={v => setEdit('parentPassword', v)}
                 secureTextEntry
                 autoCapitalize="none"
-                editable={!parentAccountShared}
-                placeholder={parentAccountShared ? 'Shared account — not editable' : 'Leave blank to keep current'}
+                placeholder="Leave blank to keep current"
               />
             </View>
           </View>
           <Text style={[s.hintSmall, { color: T.dim }]}>
             {parentAccountShared
-              ? `${PASSWORD_HINT}. This parent account is shared with a sibling — it keeps its own password and cannot be reset from here.`
+              ? `Shared with a sibling — a new password changes the parent login for every child. ${PASSWORD_HINT}.`
               : `${PASSWORD_HINT}.`}
           </Text>
 
@@ -1857,7 +1866,6 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   objMeta: { fontSize: r.rf(11), fontWeight: '500' },
   objBrief: { marginTop: 4, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, gap: 4 },
   objBriefLbl: { fontSize: r.rf(11.5), fontWeight: '800' },
-  objRegen: { fontSize: r.rf(11.5), fontWeight: '600' },
 
   empty: { fontSize: r.rf(13), fontWeight: '500', textAlign: 'center', paddingVertical: 18 },
   hint: { fontSize: r.rf(12), fontWeight: '500', lineHeight: r.rf(17) },

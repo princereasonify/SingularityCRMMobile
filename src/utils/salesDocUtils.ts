@@ -91,16 +91,49 @@ export interface Totals {
   subTotal: number;
   cgst: number;
   sgst: number;
+  igst: number;
   totalTax: number;
   grandTotal: number;
 }
 
-/** Qty × Rate → amount, CGST 9% + SGST 9% on it, and the grand total. */
-export function computeTotals(qty?: string | number | null, rate?: string | number | null): Totals {
+/**
+ * GST place-of-supply rule (mirrors web salesDocUtils.isIntraStateGst): a school in the company's
+ * own state (Gujarat) is charged CGST+SGST, anywhere else IGST. Older/manually-typed records may
+ * carry a state name with no code, so the name is matched as a fallback.
+ */
+export function isIntraStateGst(school?: Partial<SalesDocSchool> | null): boolean {
+  const code = (school?.stateCode || '').trim();
+  if (code) return code === COMPANY.stateCode;
+  const state = (school?.state || '').trim().toLowerCase();
+  return state === COMPANY.state.toLowerCase() || state.startsWith(`${COMPANY.state.toLowerCase()} (`);
+}
+
+/** Qty × Rate → amount, then CGST 9% + SGST 9% (intra-state) or IGST 18% (inter-state), and the grand total. */
+export function computeTotals(qty?: string | number | null, rate?: string | number | null, intraState = true): Totals {
   const subTotal = round2(num(qty) * num(rate));
-  const cgst = round2((subTotal * CGST_RATE) / 100);
-  const sgst = round2((subTotal * SGST_RATE) / 100);
-  return { subTotal, cgst, sgst, totalTax: round2(cgst + sgst), grandTotal: round2(subTotal + cgst + sgst) };
+  if (intraState) {
+    const cgst = round2((subTotal * CGST_RATE) / 100);
+    const sgst = round2((subTotal * SGST_RATE) / 100);
+    return { subTotal, cgst, sgst, igst: 0, totalTax: round2(cgst + sgst), grandTotal: round2(subTotal + cgst + sgst) };
+  }
+  const igst = round2((subTotal * GST_RATE) / 100);
+  return { subTotal, cgst: 0, sgst: 0, igst, totalTax: igst, grandTotal: round2(subTotal + igst) };
+}
+
+/**
+ * Sub Total / tax / grand-total rows under a document's line items — shared by the editor and
+ * the PDF so the two can never show different tax heads. CGST+SGST OR IGST, never both.
+ */
+export function gstTotalsRows(t: Totals, intraState: boolean, finalLabel: string) {
+  const rows: { label: string; value: string; strong?: boolean }[] = [{ label: 'Sub Total', value: money(t.subTotal) }];
+  if (intraState) {
+    rows.push({ label: `CGST @ ${CGST_RATE}%`, value: money(t.cgst) });
+    rows.push({ label: `SGST @ ${SGST_RATE}%`, value: money(t.sgst) });
+  } else {
+    rows.push({ label: `IGST @ ${GST_RATE}%`, value: money(t.igst) });
+  }
+  rows.push({ label: finalLabel, value: money(t.grandTotal), strong: true });
+  return rows;
 }
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -279,7 +312,7 @@ export function fullNumber(type: DocType, doc: SalesDocData): string {
 
 /** Fills the derived fields (number, totals, words, school name for the list) before save/print. */
 export function finalizeDocument(type: DocType, doc: SalesDocData): SalesDocData {
-  const totals = computeTotals(doc.qty, doc.rate);
+  const totals = computeTotals(doc.qty, doc.rate, isIntraStateGst(doc.school));
   const schoolName = type === DOC_TYPES.PURCHASE_ORDER
     ? (doc.school?.name || doc.letterhead?.schoolName || '')
     : (doc.school?.name || '');

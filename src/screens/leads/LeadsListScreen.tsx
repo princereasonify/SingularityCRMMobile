@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
   useWindowDimensions, Alert, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, X, Download, UserCheck, Filter, MapPin, Users } from 'lucide-react-native';
+import { Bell, X, Download, UserCheck, Filter, MapPin, Users, Plus } from 'lucide-react-native';
 import messaging from '@react-native-firebase/messaging';
 import RNShare from 'react-native-share';
 
@@ -12,6 +12,8 @@ import { requestFCMPermission } from '../../services/pushNotificationService';
 import { leadsApi } from '../../api/leads';
 import { LeadListDto, UserDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { getErrorMessage } from '../../utils/errorMessage';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { Icon, ICON_STROKE } from '../../components/common/Icon';
 import {
@@ -31,7 +33,8 @@ const PAGE_SIZE = 10;
 /** Web's overdue row tint is `bg-red-50/30` — a very light danger wash. */
 const OVERDUE_TINT = 0.07;
 
-const FILTERS = ['All', 'Active', 'Hot', 'Won', 'Unassigned'] as const;
+// "Unassigned" is gone (web parity): every lead has an owner (FoId is required), so it was always empty.
+const FILTERS = ['All', 'Active', 'Hot', 'Won'] as const;
 type LeadFilter = typeof FILTERS[number];
 
 /** Web parity: the list/kanban toggle — kanban is the Pipeline screen, not a card grid. */
@@ -46,6 +49,17 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const DASH = '—';
+
+/**
+ * A CSV cell (web LeadsList.jsx csvCell): values Excel would run as a formula get a leading
+ * apostrophe — a school named "=HYPERLINK(...)" must not execute when the export is opened.
+ * Plain signed numbers / phone numbers are left alone.
+ */
+const csvCell = (v: unknown) => {
+  let str = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(str) && !/^[+-]?[\d\s()-]+$/.test(str)) str = `'${str}`;
+  return `"${str.replace(/"/g, '""')}"`;
+};
 
 /**
  * Web groups every user picker by role with <optgroup> + role labels
@@ -84,6 +98,7 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
   const T = useAppTheme();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const toast = useToast();
   const role = user?.role || 'FO';
   const isManager = role !== 'FO';
   const { width, height } = useWindowDimensions();
@@ -112,7 +127,13 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
   const [leads, setLeads] = useState<LeadListDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // What's typed, and (300 ms later) what's searched — every keystroke used to fire a request.
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   const [filter, setFilter] = useState<LeadFilter>('All');
   const [openFilter, setOpenFilter] = useState(false);
   const [page, setPage] = useState(1);
@@ -198,7 +219,6 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
       const stage = filter === 'Won' ? 'Won' : undefined;
       const named = filter === 'Active' ? 'active'
         : filter === 'Hot' ? 'hot'
-        : filter === 'Unassigned' ? 'unassigned'
         : undefined;
       const res = await leadsApi.getLeads({ page: pg, pageSize: PAGE_SIZE, search: search || undefined, stage, filter: named, userId: userIdFilter });
       setLeads(res.data?.items ?? []);
@@ -220,6 +240,19 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
     fetchLeads(1);
   }, [fetchLeads]);
 
+  // Coming back from Add Lead / a lead's detail should show the change without a manual
+  // pull. The first focus is the mount itself, already fetched above.
+  const seenFocus = useRef(false);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  useEffect(() => {
+    const unsub = navigation.addListener?.('focus', () => {
+      if (!seenFocus.current) { seenFocus.current = true; return; }
+      fetchLeads(pageRef.current);
+    });
+    return unsub;
+  }, [navigation, fetchLeads]);
+
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
     setPage(p);
@@ -233,9 +266,10 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
     try {
       await leadsApi.assignLead(assignModal.leadId, Number(selectedFoId));
       setAssignModal(null);
+      toast.success('Lead reassigned.');
       fetchLeads(page);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to assign lead');
+      toast.error(getErrorMessage(err, 'Failed to assign lead'));
     } finally {
       setAssigning(false);
     }
@@ -243,7 +277,7 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
 
   const handleExport = async () => {
     if (leads.length === 0) return;
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const esc = csvCell;
     const head = ['School Name', 'City', 'Board', 'Assigned FO', 'Assigned By', 'Stage', 'Lead Score', 'Est. Value', 'Last Activity'];
     const rows = leads.map(l => [
       l.school, l.city, l.board, l.foName || '', l.assignedByName || '',
@@ -455,6 +489,16 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
             options={[{ label: 'List', value: 'list' }, { label: 'Pipeline', value: 'pipeline' }]}
           />
           <View style={s.headerBtns}>
+            {/* Web parity: Add Lead; filtered to one user, the new lead is preset to them. */}
+            <Btn
+              label="Add Lead"
+              small
+              onPress={() => navigation.navigate(
+                'AddLead',
+                userFilter && userFilter !== 'mine' ? { foId: Number(userFilter) } : undefined,
+              )}
+              icon={<Plus size={14} color="#FFF" strokeWidth={ICON_STROKE} />}
+            />
             <Btn
               label="Export"
               variant="secondary"
@@ -469,8 +513,8 @@ export const LeadsListScreen = ({ navigation, route }: any) => {
         <View style={[s.card, { backgroundColor: T.card, borderColor: T.line }]}>
           <View style={s.searchRow}>
             <SearchBar
-              value={search}
-              onChangeText={setSearch}
+              value={searchInput}
+              onChangeText={setSearchInput}
               placeholder="Search by school, city, board, or contact..."
               style={{ flex: 1, minWidth: 180 }}
             />

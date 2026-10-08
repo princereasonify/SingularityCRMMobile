@@ -11,7 +11,7 @@ import { CoinBalance } from '../../components/b2c/CoinBalance';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
-import { useResponsive } from '../../hooks/useResponsive';
+import { useResponsive, tileFill } from '../../hooks/useResponsive';
 import { b2cCallingService, CallDashboard } from '../../api/b2c/b2cCallingService';
 
 const spaced = (v?: string | null) => (v ? v.replace(/([A-Z])/g, ' $1').trim() : '');
@@ -38,7 +38,8 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
     return () => { alive = false; };
   }, []);
 
-  const kpiW = r.isTablet ? '24%' : '48.5%';
+  // Grow-to-fill tiles (see tileFill) — '48.5%' + the gap overflowed and wrapped on a phone.
+  const kpiW = tileFill(r.isTablet ? 4 : 2);
   const connectLine = data && data.callsToday > 0
     ? `${data.connectedToday} of ${data.callsToday} reached someone`
     : 'No calls logged yet today';
@@ -58,10 +59,10 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
         ) : (
           <>
             <View style={styles.kpiGrid}>
-              <StatTile style={{ width: kpiW }} label="Calls today" value={data.callsToday} icon={<PhoneCall size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub={connectLine} />
-              <StatTile style={{ width: kpiW }} label="Overdue" value={data.overdue} icon={<AlertTriangle size={17} color={T.danger} strokeWidth={ICON_STROKE} />} tint={T.danger} sub="Promised a call that never happened" />
-              <StatTile style={{ width: kpiW }} label="Due today" value={data.dueToday} icon={<Clock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} sub="Callbacks you agreed for today" />
-              <StatTile style={{ width: kpiW }} label="Handed over" value={data.handoffsToday} icon={<UserCheck size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Sent to an agent or counsellor" />
+              <StatTile style={kpiW} label="Calls today" value={data.callsToday} icon={<PhoneCall size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub={connectLine} />
+              <StatTile style={kpiW} label="Overdue" value={data.overdue} icon={<AlertTriangle size={17} color={T.danger} strokeWidth={ICON_STROKE} />} tint={T.danger} sub="Promised a call that never happened" />
+              <StatTile style={kpiW} label="Due today" value={data.dueToday} icon={<Clock size={17} color={T.warning} strokeWidth={ICON_STROKE} />} tint={T.warning} sub="Callbacks you agreed for today" />
+              <StatTile style={kpiW} label="Handed over" value={data.handoffsToday} icon={<UserCheck size={17} color={T.text} strokeWidth={ICON_STROKE} />} sub="Sent to an agent or counsellor" />
             </View>
 
             <Card>
@@ -118,7 +119,15 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
               ) : (
                 <View style={{ gap: 8 }}>
                   {data.recentCalls.map((c) => (
-                    <View key={c.id} style={[styles.row, { backgroundColor: T.cardAlt, alignItems: 'flex-start' }]}>
+                    // Opens the lead, as web's row does — the natural next step after
+                    // seeing what you logged is reviewing (or correcting) that lead.
+                    <TouchableOpacity
+                      key={c.id}
+                      onPress={() => navigation.navigate('B2CLeadDetail', { leadId: c.leadId })}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      style={[styles.row, { backgroundColor: T.cardAlt, alignItems: 'flex-start' }]}
+                    >
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.rowMain, { color: T.text }]} numberOfLines={1}>{c.studentName}</Text>
                         <Text style={[styles.rowSub, { color: T.sub }]} numberOfLines={1}>{c.discussion || c.notes || 'no note'}</Text>
@@ -127,7 +136,7 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
                         <StatusBadge label={c.outcome ? spaced(c.outcome) : '—'} color={c.outcome ? T.accent : T.dim} />
                         <Text style={[styles.rowSub, { color: T.dim, marginTop: 4 }]}>{fmtTime(c.calledAt)}</Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
               )}

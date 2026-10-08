@@ -45,13 +45,16 @@ import { LeadDetailScreen } from '../screens/leads/LeadDetailScreen';
 import { AddLeadScreen } from '../screens/leads/AddLeadScreen';
 import { ActivityLogScreen } from '../screens/activities/ActivityLogScreen';
 import { CreateDealScreen } from '../screens/deals/CreateDealScreen';
+import { DealsScreen } from '../screens/deals/DealsScreen';
 import { SalesDocumentsListScreen } from '../screens/salesDocs/SalesDocumentsListScreen';
+import { SalesRegisterScreen } from '../screens/salesDocs/SalesRegisterScreen';
 import { SalesDocumentEditorScreen } from '../screens/salesDocs/SalesDocumentEditorScreen';
 import { DealEstimateScreen } from '../screens/deals/DealEstimateScreen';
 import { PipelineScreen } from '../screens/pipeline/PipelineScreen';
 import { TargetsScreen } from '../screens/targets/TargetsScreen';
 import { PerformanceScreen } from '../screens/performance/PerformanceScreen';
 import { ReportsScreen } from '../screens/reports/ReportsScreen';
+import { ReportsLibraryScreen } from '../screens/reports/ReportsLibraryScreen';
 import { UserManagementScreen } from '../screens/users/UserManagementScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { MyDayTrackingScreen } from '../screens/tracking/MyDayTrackingScreen';
@@ -135,6 +138,7 @@ import { B2CUserManagementScreen } from '../screens/b2c/B2CUserManagementScreen'
 import { B2CCreateUserScreen } from '../screens/b2c/B2CCreateUserScreen';
 import { B2CCreateCounselorScreen } from '../screens/b2c/B2CCreateCounselorScreen';
 import { B2CAllowanceConfigScreen } from '../screens/b2c/B2CAllowanceConfigScreen';
+import { B2CAllowanceApprovalsScreen } from '../screens/b2c/B2CAllowanceApprovalsScreen';
 import { B2CApprovalCenterScreen } from '../screens/b2c/B2CApprovalCenterScreen';
 import { B2CLiveTrackingScreen } from '../screens/b2c/B2CLiveTrackingScreen';
 import { B2CGeoComplianceScreen } from '../screens/b2c/B2CGeoComplianceScreen';
@@ -216,6 +220,7 @@ function FODrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Deals" component={DealsScreen} />
       <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
       <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Activity Log" component={ActivityLogScreen} />
@@ -288,6 +293,7 @@ function ZHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Deals" component={DealsScreen} />
       <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
       <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
@@ -302,6 +308,7 @@ function ZHDrawer() {
       <Drawer.Screen name="Allowances" component={AllowancesScreen} />
       <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
       <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} />
       <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
 
       {/* Reached from the topbar profile menu, not the sidebar — same as FO. */}
@@ -358,6 +365,7 @@ function RHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Deals" component={DealsScreen} />
       <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
       <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
@@ -372,6 +380,7 @@ function RHDrawer() {
       <Drawer.Screen name="Allowances" component={AllowancesScreen} />
       <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
       <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} />
       <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} />
       <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
 
@@ -428,7 +437,9 @@ function SHDrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Deals" component={DealsScreen} />
       <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="Sales Register" component={SalesRegisterScreen} />
       <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
@@ -442,6 +453,7 @@ function SHDrawer() {
       <Drawer.Screen name="Allowances" component={AllowancesScreen} />
       <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
       <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} />
       <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} />
       <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} />
       <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} />
@@ -500,7 +512,9 @@ function SCADrawer() {
       <Drawer.Screen name="Pipeline" component={PipelineScreen} />
       <Drawer.Screen name="Deal Estimate" component={DealEstimateScreen} />
       <Drawer.Screen name="Create Deal" component={CreateDealScreen} />
+      <Drawer.Screen name="Deals" component={DealsScreen} />
       <Drawer.Screen name="Purchase Order & Invoice" component={SalesDocumentsListScreen} />
+      <Drawer.Screen name="Sales Register" component={SalesRegisterScreen} />
       <Drawer.Screen name="SalesDocumentEditor" component={SalesDocumentEditorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Demo Management" component={DemoListScreen} />
       <Drawer.Screen name="Record Demo" component={RecordDemoScreen} />
@@ -515,7 +529,12 @@ function SCADrawer() {
       <Drawer.Screen name="Allowances" component={AllowancesScreen} />
       <Drawer.Screen name="Leaves" component={LeaveManagementScreen} />
       <Drawer.Screen name="Reports" component={ReportsScreen} />
+      <Drawer.Screen name="Reports Library" component={ReportsLibraryScreen} />
       <Drawer.Screen name="Allowance Config" component={AllowanceConfigScreen} />
+      {/* SCA outranks SH (VisitReportsController.IsFieldConfigAdmin allows both) but had no
+          sidebar entry at all for this — only reachable via a generic Settings push to the
+          "VisitFieldConfig" stack route. SH already has this as a drawer item; SCA gets it too. */}
+      <Drawer.Screen name="Visit Fields" component={VisitFieldConfigScreen} />
       <Drawer.Screen name="Regions & Zones" component={RegionsZonesScreen} />
       <Drawer.Screen name="Manage Users" component={UserManagementScreen} />
 
@@ -578,6 +597,7 @@ function B2CAdminDrawer() {
       <Drawer.Screen name="Add Counselor" component={B2CCreateCounselorScreen} options={{ drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="Approval Center" component={B2CApprovalCenterScreen} />
       <Drawer.Screen name="Allowance Config" component={B2CAllowanceConfigScreen} />
+      <Drawer.Screen name="Allowances" component={B2CAllowanceApprovalsScreen} />
       <Drawer.Screen name="Live Tracking" component={B2CLiveTrackingScreen} />
       <Drawer.Screen name="Calendar" component={B2CCalendarScreen} />
       <Drawer.Screen name="Geo Compliance" component={B2CGeoComplianceScreen} />

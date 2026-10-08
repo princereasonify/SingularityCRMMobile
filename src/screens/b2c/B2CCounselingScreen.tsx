@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertTriangle, Clock, Sparkles, RefreshCw, CalendarClock, Phone, ExternalLink, Filter, Users } from 'lucide-react-native';
+import { AlertTriangle, Clock, CalendarClock, Phone, ExternalLink, Filter, Users } from 'lucide-react-native';
 import { ICON_STROKE } from '../../components/common/Icon';
 import {
-  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge, FormModal,
+  Btn, SearchBar, Trigger, Dropdown, FilterChip, Pagination, ListCard, Avatar, StatusBadge,
 } from '../../components/crud';
 import { StatTile, Chip } from '../../components/ui';
 import { b2cObjectionService, OBJECTION_TYPES } from '../../api/b2c/b2cObjectionService';
 import { useFieldStaff, buildPersonFilterOptions, resolvePersonSelection, FieldPersonSelection } from '../../components/b2c/useFieldStaff';
-import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, Responsive, gridCardWidth} from '../../hooks/useResponsive';
 
@@ -57,7 +56,6 @@ interface Objection {
 export const B2CCounselingScreen = ({ navigation }: any) => {
   const T = useAppTheme();
   const r = useResponsive();
-  const toast = useToast();
 
   const statusMeta = (st: string) =>
     st === 'Open' ? { label: 'Open', color: T.warning }
@@ -89,14 +87,19 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
     [personVal, agents, counselors],
   );
 
-  // AI brief modal
-  const [briefRow, setBriefRow] = useState<Objection | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [briefErr, setBriefErr] = useState('');
+  // The AI brief view/regenerate modal is gone: the /brief endpoint is commented out
+  // (B2CObjectionsController.cs) — it let a CallingAgent pull any lead's brief regardless of
+  // assignment — so the web dropped it pending a proper re-scoping, and so does this screen.
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  // A fast run through the filter chips (status, then type, then a person) fires one request
+  // per tap with nothing to stop an earlier one landing after a later one — whichever resolved
+  // last won, regardless of which filters were still selected. The token discards any
+  // response that isn't from the most recent request.
+  const loadTokenRef = useRef(0);
   const fetchQueue = useCallback(async (pg = 1) => {
+    const token = ++loadTokenRef.current;
     try {
       const res = await b2cObjectionService.getQueue({
         page: pg, pageSize: PAGE_SIZE,
@@ -105,13 +108,15 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
         agentId: person?.kind === 'agent' ? person.agentId : undefined,
         counselorId: person?.kind === 'counselor' ? person.counselorId : undefined,
       });
+      if (loadTokenRef.current !== token) return;
       setRows(res.data?.items ?? []);
       setTotalCount(res.data?.totalCount ?? 0);
       setSummary(res.data?.summary ?? {});
     } catch {
+      if (loadTokenRef.current !== token) return;
       setRows([]); setTotalCount(0); setSummary({});
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (loadTokenRef.current === token) { setLoading(false); setRefreshing(false); }
     }
   }, [status, type, person]);
 
@@ -122,24 +127,6 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages || p === page) return;
     setPage(p); setLoading(true); fetchQueue(p);
-  };
-
-  const openBrief = (o: Objection) => { setBriefRow(o); setBriefErr(''); };
-
-  const regenerate = async () => {
-    if (!briefRow) return;
-    setBusy(true); setBriefErr('');
-    try {
-      const res = await b2cObjectionService.generateBrief(briefRow.id);
-      setBriefRow(res.data ?? briefRow);
-      toast.success('Brief generated');
-      fetchQueue(page);
-    } catch (e: any) {
-      setBriefErr(e?.response?.data?.message || 'Could not generate the brief');
-      toast.error(e?.response?.data?.message || 'Could not generate the brief');
-    } finally {
-      setBusy(false);
-    }
   };
 
   const q = search.trim().toLowerCase();
@@ -282,12 +269,6 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
 
                       <View style={s.actions}>
                         <Btn
-                          variant={o.aiBrief ? 'secondary' : 'soft'}
-                          label={o.aiBrief ? 'Brief' : 'No brief'}
-                          icon={<Sparkles size={13} color={o.aiBrief ? T.text : T.accent} strokeWidth={ICON_STROKE} />}
-                          onPress={() => openBrief(o)}
-                        />
-                        <Btn
                           variant="secondary"
                           label="Open lead"
                           icon={<ExternalLink size={13} color={T.text} strokeWidth={ICON_STROKE} />}
@@ -311,51 +292,6 @@ export const B2CCounselingScreen = ({ navigation }: any) => {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      {/* AI brief modal — read-only oversight + regenerate */}
-      <FormModal
-        wide={r.isTablet}
-        visible={!!briefRow}
-        title="AI Counseling Brief"
-        onClose={() => setBriefRow(null)}
-        footer={
-          <>
-            <Btn label="Close" variant="secondary" onPress={() => setBriefRow(null)} disabled={busy} style={{ flex: 1 }} />
-            <Btn label={busy ? 'Generating…' : 'Regenerate'} onPress={regenerate} loading={busy} disabled={busy} icon={!busy ? <RefreshCw size={14} color="#FFF" strokeWidth={ICON_STROKE} /> : undefined} style={{ flex: 1 }} />
-          </>
-        }
-      >
-        {briefRow && (
-          <View style={{ gap: 12 }}>
-            {!!briefErr && (
-              <View style={[s.errBox, { backgroundColor: T.danger + '1A', borderColor: T.danger }]}>
-                <Text style={[s.errTxt, { color: T.danger }]}>{briefErr}</Text>
-              </View>
-            )}
-            <Text style={[s.briefMeta, { color: T.sub }]}>
-              {briefRow.studentName} · {typeLabel(briefRow.type)} · {briefRow.counselorName || 'Unassigned'}
-            </Text>
-
-            {briefRow.aiBrief ? (
-              <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
-                <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiBrief}</Text>
-              </View>
-            ) : (
-              <Text style={[s.sub, { color: T.dim }]}>No brief yet — tap Regenerate to create one.</Text>
-            )}
-
-            {!!briefRow.aiPostSession && (
-              <View style={{ gap: 6 }}>
-                <Text style={[s.blockLabel, { color: T.sub }]}>Post-session next step</Text>
-                <View style={[s.briefBox, { backgroundColor: T.cardAlt, borderColor: T.line }]}>
-                  <Text style={[s.briefTxt, { color: T.text }]}>{briefRow.aiPostSession}</Text>
-                </View>
-              </View>
-            )}
-
-            {!!briefRow.aiGeneratedAt && <Text style={[s.sub, { color: T.dim }]}>Generated {fmtDateTime(briefRow.aiGeneratedAt)}</Text>}
-          </View>
-        )}
-      </FormModal>
     </SafeAreaView>
   );
 };
@@ -398,11 +334,4 @@ const makeStyles = (r: Responsive) => StyleSheet.create({
   empty: { borderRadius: 16, borderWidth: 1, paddingVertical: 46, alignItems: 'center', gap: 8 },
   emptyTitle: { fontSize: r.rf(14), fontWeight: '700' },
   emptyTxt: { fontSize: r.rf(12.5), fontWeight: '500', textAlign: 'center' },
-
-  briefMeta: { fontSize: r.rf(12), fontWeight: '500' },
-  briefBox: { borderRadius: 13, borderWidth: 1, padding: 12 },
-  briefTxt: { fontSize: r.rf(13), fontWeight: '500', lineHeight: 20 },
-  blockLabel: { fontSize: r.rf(11.5), fontWeight: '700' },
-  errBox: { borderRadius: 11, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
-  errTxt: { fontSize: r.rf(12), fontWeight: '600' },
 });
