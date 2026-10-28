@@ -10,10 +10,12 @@ import {
   useWindowDimensions,
   StatusBar,
   Platform,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Eye, EyeOff, ArrowRight, ChevronLeft, Check, Info } from 'lucide-react-native';
+import { PRIVACY_POLICY_URL } from '../../utils/constants';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
@@ -455,6 +457,11 @@ export const LoginScreen = ({ navigation, route }: any) => {
           <Text style={[styles.deleteLink, { color: T.danger }]}>Delete Account</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Privacy Policy — Play's User Data policy requires it to be reachable inside the app */}
+      <TouchableOpacity style={styles.deleteRow} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+        <Text style={[styles.deleteLink, { color: T.accentText }]}>Privacy Policy</Text>
+      </TouchableOpacity>
 
       {/* About Us — who builds this product, and the Reasonify link */}
       <TouchableOpacity

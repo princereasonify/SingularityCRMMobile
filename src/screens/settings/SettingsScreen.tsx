@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
-  useWindowDimensions,
+  useWindowDimensions, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Globe, Bell, Wifi, WifiOff, Database,
   RefreshCw, LifeBuoy, LogOut, ChevronRight, Settings, ArrowLeft,
-  BookOpen, Wallet, ClipboardList, Trash2,
+  BookOpen, Wallet, ClipboardList, Trash2, Shield,
 } from 'lucide-react-native';
+import { PRIVACY_POLICY_URL } from '../../utils/constants';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useOffline } from '../../context/OfflineContext';
@@ -225,6 +226,11 @@ export const SettingsScreen = ({ navigation }: any) => {
               icon={<BookOpen size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
               label="User Manual"
               onPress={() => navigation.navigate('UserManual')}
+            />
+            <NavRow
+              icon={<Shield size={16} color={T.accent} strokeWidth={ICON_STROKE} />}
+              label="Privacy Policy"
+              onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
               last
             />
           </Card>

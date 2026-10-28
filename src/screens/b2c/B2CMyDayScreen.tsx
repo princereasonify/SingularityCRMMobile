@@ -179,6 +179,14 @@ export const B2CMyDayScreen = () => {
     try {
       const perm = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
       if (await PermissionsAndroid.check(perm)) return true;
+      // Google Play requires the prominent disclosure BEFORE the first location prompt, not
+      // only before the background one (Play rejected 10 (1.8) for this). Below Android 10 the
+      // fine grant already covers background, so the disclosure must precede it there too.
+      // A plain Alert.alert() does not comply — hence the shared full-screen component.
+      const accepted = await new Promise<boolean>(resolve => {
+        bgPermissionResolve.current = resolve;
+        setShowBgDisclosure(true);
+      });
       const result = await PermissionsAndroid.request(perm, {
         title: 'Location Permission Required',
         message: 'The app needs your location to track your day.',
@@ -199,26 +207,17 @@ export const B2CMyDayScreen = () => {
       // restart with the app backgrounded — the exact case this exists for — gets throttled.
       // B2B has always asked for this; B2C never did, so its background tracking was the
       // weaker of the two for no reason.
-      //
-      // Google Play REQUIRES a prominent disclosure BEFORE the request, and a plain
-      // Alert.alert() does not comply — hence the shared full-screen component.
-      if (Platform.Version >= 29) {
+      if (Platform.Version >= 29 && accepted) {
         const bgOk = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
         );
         if (!bgOk) {
-          const accepted = await new Promise<boolean>(resolve => {
-            bgPermissionResolve.current = resolve;
-            setShowBgDisclosure(true);
-          });
-          if (accepted) {
-            await PermissionsAndroid.request(
-              PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-            );
-          }
-          // Declining is not fatal: foreground capture still works, so the day is not blocked.
+          await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+          );
         }
       }
+      // Declining is not fatal: foreground capture still works, so the day is not blocked.
       return true;
     } catch {
       return false;

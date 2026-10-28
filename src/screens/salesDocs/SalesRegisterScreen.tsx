@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, RefreshControl, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, RefreshControl, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import RNShare from 'react-native-share';
-import { Download } from 'lucide-react-native';
+import { Download, Eye, Share2 } from 'lucide-react-native';
+import { ShareSheet, ShareTarget, openStoredPdf } from '../../components/salesDocs/ShareSheet';
+import { useToast } from '../../context/ToastContext';
 import { salesDocumentService, SalesRegisterRow, fileShareOptions } from '../../api/salesDocumentService';
 import { Btn, SearchBar, Segmented, StatusBadge } from '../../components/crud';
 import { Card, StatTile } from '../../components/ui';
 import { ICON_STROKE } from '../../components/common/Icon';
 import { LoadingSpinner, EmptyState } from '../../components/common/LoadingSpinner';
 import { formatDateTime } from '../../utils/formatting';
-import { DOC_TYPES, displayDate, money } from '../../utils/salesDocUtils';
+import { DOC_TYPES, DocType, displayDate, money, billingPeriod } from '../../utils/salesDocUtils';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
 import { AdminFilters, applyFilters, creatorLine, DocFilters, EMPTY_FILTERS } from './SalesDocumentsListScreen';
@@ -59,6 +61,9 @@ const linkCell = (r: SalesRegisterRow) => {
 
 export const SalesRegisterScreen = () => {
   const T = useAppTheme();
+  const toast = useToast();
+  const [viewingKey, setViewingKey] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [search, setSearch] = useState('');
@@ -118,6 +123,19 @@ export const SalesRegisterScreen = () => {
       await RNShare.open({ title: 'Export Sales Register', subject: 'Sales Register Export', message: csv, failOnCancel: false });
     } catch (err: any) {
       if (err?.message !== 'User did not share') Alert.alert('Error', 'Failed to export register.');
+    }
+  };
+
+  // SH/SCA can open or share any generated document straight from the register.
+  const viewDoc = async (r: SalesRegisterRow) => {
+    const key = `${r.type}-${r.id}`;
+    setViewingKey(key);
+    try {
+      await openStoredPdf(r.type as DocType, r.id);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'Could not open the PDF.');
+    } finally {
+      setViewingKey(null);
     }
   };
 
@@ -246,14 +264,38 @@ export const SalesRegisterScreen = () => {
                     Balance to invoice: ₹{money(r.balanceToInvoice)}
                   </Text>
                 )}
-                <Text numberOfLines={1} style={[s.rowMeta, { color: T.dim }]}>
-                  {creatorLine(r) || DASH}{r.createdAt ? ` · Created ${formatDateTime(r.createdAt)}` : ''}
-                </Text>
+                {r.type === DOC_TYPES.QUOTATION && (
+                  <Text numberOfLines={1} style={[s.linkRow, { color: r.approvalStatus === 'approved' ? T.success : T.sub }]}>
+                    {r.approvalStatus === 'approved' ? '✓ Approved' : 'Pending approval'} · {billingPeriod(r.billingPeriod).label}
+                  </Text>
+                )}
+                <View style={s.rowBetween}>
+                  <Text numberOfLines={1} style={[s.rowMeta, s.flexMin, { color: T.dim }]}>
+                    {creatorLine(r) || DASH}{r.createdAt ? ` · Created ${formatDateTime(r.createdAt)}` : ''}
+                  </Text>
+                  {r.hasPdf && (
+                    <View style={s.actions}>
+                      {viewingKey === `${r.type}-${r.id}` ? <ActivityIndicator size="small" color={T.dim} /> : (
+                        <>
+                          <TouchableOpacity onPress={() => viewDoc(r)} hitSlop={8} accessibilityLabel="View PDF" style={[s.iconBtn, { backgroundColor: T.accentSoft }]}>
+                            <Eye size={15} color={T.accent} strokeWidth={ICON_STROKE} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setShareTarget({ type: r.type as DocType, id: r.id, documentNumber: r.documentNumber, schoolName: r.schoolName })}
+                            hitSlop={8} accessibilityLabel="Share PDF" style={[s.iconBtn, { backgroundColor: T.accentSoft }]}>
+                            <Share2 size={15} color={T.accent} strokeWidth={ICON_STROKE} />
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </View>
               </Card>
             );
           })
         )}
       </ScrollView>
+      <ShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
     </SafeAreaView>
   );
 };
@@ -277,4 +319,6 @@ const s = StyleSheet.create({
   rowVal: { fontSize: rf(14), fontWeight: '700' },
   rowMeta: { fontSize: rf(11), fontWeight: '500' },
   linkRow: { fontSize: rf(11.5), fontWeight: '600' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBtn: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
 });

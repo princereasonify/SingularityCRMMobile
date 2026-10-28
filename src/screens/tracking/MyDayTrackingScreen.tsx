@@ -239,10 +239,27 @@ export const MyDayTrackingScreen = () => {
   const requestLocationPermission = async (): Promise<boolean> => {
     if (Platform.OS === 'android') {
       try {
-        // Step 1: Fine location
         const fineStatus = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         );
+        const needBg = Platform.Version >= 29 && !(await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+        ));
+
+        // Step 0: Prominent Disclosure. Google Play requires it BEFORE the FIRST location
+        // prompt, not just before the background one — Play rejected 10 (1.8) because the
+        // OS fine-location dialog appeared first. Below Android 10 the fine grant already
+        // covers background, so the disclosure must precede it there too.
+        // A simple Alert.alert() does NOT comply.
+        let accepted = true;
+        if (!fineStatus || needBg) {
+          accepted = await new Promise<boolean>((resolve) => {
+            bgPermissionResolveRef.current = resolve;
+            setShowBgDisclosure(true);
+          });
+        }
+
+        // Step 1: Fine location
         if (!fineStatus) {
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -261,25 +278,11 @@ export const MyDayTrackingScreen = () => {
           }
         }
 
-        // Step 2: Background location (Android 10+)
-        // Google Play REQUIRES a Prominent Disclosure dialog BEFORE requesting
-        // ACCESS_BACKGROUND_LOCATION. A simple Alert.alert() does NOT comply.
-        if (Platform.Version >= 29) {
-          const bgStatus = await PermissionsAndroid.check(
+        // Step 2: Background location (Android 10+), only after the disclosure was accepted
+        if (needBg && accepted) {
+          await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
           );
-          if (!bgStatus) {
-            // Show the full-screen Prominent Disclosure and wait for user's choice
-            const accepted = await new Promise<boolean>((resolve) => {
-              bgPermissionResolveRef.current = resolve;
-              setShowBgDisclosure(true);
-            });
-            if (accepted) {
-              await PermissionsAndroid.request(
-                PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-              );
-            }
-          }
         }
 
         setLocationGranted(true);

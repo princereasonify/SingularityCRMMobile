@@ -1387,6 +1387,12 @@ export const LiveTrackingScreen = () => {
     if (Platform.OS === 'android') {
       try {
         const fineOk = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        const needBg = Platform.Version >= 29 && !(await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION));
+        // Play's Prominent Disclosure must come BEFORE the first location prompt (see MyDayTrackingScreen).
+        let accepted = true;
+        if (!fineOk || needBg) {
+          accepted = await new Promise<boolean>(resolve => { bgPermissionResolveRef.current = resolve; setShowBgDisclosure(true); });
+        }
         if (!fineOk) {
           const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, {
             title: 'Location Permission', message: 'Needed for daily tracking.',
@@ -1394,13 +1400,7 @@ export const LiveTrackingScreen = () => {
           });
           if (result !== PermissionsAndroid.RESULTS.GRANTED) { setLocationGranted(false); showPermissionDeniedAlert(); return false; }
         }
-        if (Platform.Version >= 29) {
-          const bgOk = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
-          if (!bgOk) {
-            const accepted = await new Promise<boolean>(resolve => { bgPermissionResolveRef.current = resolve; setShowBgDisclosure(true); });
-            if (accepted) await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
-          }
-        }
+        if (needBg && accepted) await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
         setLocationGranted(true); return true;
       } catch { setLocationGranted(false); return false; }
     } else {

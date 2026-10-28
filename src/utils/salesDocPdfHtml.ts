@@ -10,7 +10,9 @@
 import {
   DOC_TYPES, DOC_META, COMPANY, BANK, SAC, CGST_RATE, SGST_RATE, GST_RATE,
   financialYear, displayDate, money, num, DocType, SalesDocData, isIntraStateGst, gstTotalsRows,
+  instalmentRows, billingPeriod, billingLine, INSTALMENT_NOTE,
 } from './salesDocUtils';
+import { ANNEXURE_A, annexureValues, fillAnnexure, boldRuns, hasAnnexure } from './annexureA';
 
 const NAVY = '#1F3A5F';
 const BLUE = '#2E75B6';
@@ -78,6 +80,26 @@ const totalsBlock = (doc: SalesDocData, note: string, rows: TotalsRow[]): string
       }).join('')}
     </table>
   </div>`;
+
+/** The annual quotation split into monthly / quarterly / half-yearly / annual amounts (GST included). */
+const instalmentPlan = (doc: SalesDocData): string => {
+  const rows = instalmentRows(doc.qty, doc.rate, isIntraStateGst(doc.school));
+  const chosen = billingPeriod(doc.billingPeriod).key;
+  const bold = (on: boolean, text: string) => (on ? `<b>${esc(text)}</b>` : esc(text));
+  return `
+    <div style="margin-top:9pt;page-break-inside:avoid;">
+      <div style="font-weight:700;color:${BLUE};font-size:9.5pt;">BILLING PLAN — AMOUNT PER INSTALMENT (INCLUDING GST)</div>
+      ${table(
+        [{ label: 'Plan', flex: 1.3 },
+          { label: 'Amount per instalment (₹)', flex: 1.6, align: 'right' }, { label: 'Selected', flex: 0.9, align: 'center' }],
+        rows.map((r) => {
+          const on = r.key === chosen;
+          return [bold(on, r.label), bold(on, money(r.total)), on ? '<b>Selected</b>' : ''];
+        }),
+      )}
+      <div class="totals-note-sub">${esc(INSTALMENT_NOTE)}</div>
+    </div>`;
+};
 
 const terms = (lines: string[]): string =>
   box('TERMS & CONDITIONS', `<ol class="terms">${lines.map((l) => `<li>${l}</li>`).join('')}</ol>`, 'margin-top:9pt;');
@@ -149,6 +171,7 @@ function quotationBody(doc: SalesDocData): string {
         qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal)), `${GST_RATE}%`]],
     )}
     ${totalsBlock(doc, 'Note: CGST 9% + SGST 9% applies for schools in Gujarat; IGST 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'TOTAL (₹)'))}
+    ${instalmentPlan(doc)}
     ${terms([
       'This is a quotation for your consideration and is not a tax invoice or a demand for payment.',
       `Prices are valid for ${v(doc.validDays, '______')} days from the date of this quotation.`,
@@ -200,7 +223,7 @@ function purchaseOrderBody(doc: SalesDocData): string {
     ${table(
       [{ label: 'S.No', flex: 0.5, align: 'center' }, { label: 'Description', flex: 3.2 }, { label: 'SAC', flex: 0.7, align: 'center' },
         { label: 'Qty', flex: 0.5, align: 'center' }, { label: 'Rate (₹)', flex: 0.8, align: 'right' }, { label: 'Amount (₹)', flex: 1, align: 'right' }],
-      [['1', `<b>SINGULARITY – TEACH Mode</b><span class="grey"> — Teacher Login Subscription (per teacher)</span>`, SAC, qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal))]],
+      [['1', `<b>SINGULARITY – TEACH Mode</b><span class="grey"> — Teacher Login Subscription (per teacher)</span>${billingLine(doc) ? `<div><b>${esc(billingLine(doc))}</b></div>` : ''}`, SAC, qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal))]],
     )}
     ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'TOTAL ORDER VALUE (₹)'))}
     ${twoBoxes(
@@ -253,7 +276,7 @@ function taxInvoiceBody(doc: SalesDocData): string {
       [{ label: 'S.No', flex: 0.5, align: 'center' }, { label: 'Description', flex: 3.2 }, { label: 'SAC', flex: 0.7, align: 'center' },
         { label: 'Qty', flex: 0.5, align: 'center' }, { label: 'Rate (₹)', flex: 0.8, align: 'right' }, { label: 'Amount (₹)', flex: 1, align: 'right' }],
       [['1',
-        `<div><b>SINGULARITY – TEACH Mode</b><div>Teacher Login Subscription (Annual, per teacher)</div><div class="italic grey small">Includes teacher dashboard access, classroom-ready interactive teaching tools &amp; content, updates and support for the subscription period.</div></div>`,
+        `<div><b>SINGULARITY – TEACH Mode</b><div>${billingLine(doc) ? `Teacher Login Subscription — ${esc(billingLine(doc))}` : 'Teacher Login Subscription (Annual, per teacher)'}</div><div class="italic grey small">Includes teacher dashboard access, classroom-ready interactive teaching tools &amp; content, updates and support for the subscription period.</div></div>`,
         SAC, qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal))]],
     )}
     ${totalsBlock(doc, 'Note: CGST + SGST applies for schools located in Gujarat; IGST @ 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'GRAND TOTAL (₹)'))}
@@ -296,9 +319,88 @@ const BODIES: Record<DocType, (doc: SalesDocData) => string> = {
   [DOC_TYPES.TAX_INVOICE]: taxInvoiceBody,
 };
 
+/** One watermark per page: the print engine only paints `position: fixed` on the first page. */
+const watermarkImg = (uri: string | null | undefined, strength: 'main' | 'ann'): string =>
+  uri ? `<img class="wm wm-${strength}" src="${uri}" />` : '';
+
+/**
+ * Annexure A on two explicit A4 pages (the split follows the signed-off PDF: clause 4 ends page one),
+ * each with its own margins and logo — the print engine gives later pages no margin of their own.
+ */
+function annexureHtml(type: DocType, doc: SalesDocData, watermarkUri?: string | null): string {
+  const A = ANNEXURE_A;
+  const values = annexureValues(type, doc);
+  const rich = (text: string) =>
+    boldRuns(fillAnnexure(text, values)).map((r) => (r.bold ? `<b>${esc(r.text)}</b>` : esc(r.text))).join('');
+  const table = (header: string[], rows: string[][], firstWidth: string) => `
+    <table class="ann-table">
+      <thead><tr><th style="width:${firstWidth}">${esc(header[0])}</th><th>${esc(header[1])}</th></tr></thead>
+      <tbody>${rows.map(([a, b]) => `<tr><td class="ann-first" style="width:${firstWidth}">${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</tbody>
+    </table>`;
+  const clause = ([title, body]: string[]) =>
+    `<div class="ann-clause"><b>${esc(title)}</b> ${esc(fillAnnexure(body, values))}</div>`;
+  const clausesPageOne = A.clauses.slice(0, 4);
+  const clausesPageTwo = A.clauses.slice(4);
+  return `
+  <div class="sheet ann-sheet">
+    ${watermarkImg(watermarkUri, 'ann')}
+    <div class="ann-title">${esc(A.title)}</div>
+    <div class="ann-sub">${esc(fillAnnexure(A.subtitle, values))}</div>
+
+    <div class="ann-heading">${esc(A.partAHeading)}</div>
+    <div>${rich(A.partAIntro)}</div>
+    ${table(A.stageHeader, A.stages, '96pt')}
+    ${A.paragraphs.map((p) => `<div class="ann-para">${rich(p)}</div>`).join('')}
+
+    <div class="ann-heading">${esc(A.partABenefitsHeading)}</div>
+    ${table(A.benefitsHeader, A.benefits, '128pt')}
+    <div class="ann-para italic grey" style="font-size:7.6pt">${esc(A.aiNote)}</div>
+
+    <div class="ann-heading">${esc(A.partBHeading)}</div>
+    ${clausesPageOne.map(clause).join('')}
+  </div>
+  <div class="sheet ann-sheet">
+    ${watermarkImg(watermarkUri, 'ann')}
+    ${clausesPageTwo.map(clause).join('')}
+
+    <div class="ann-keep">
+      <div class="ann-para">${rich(A.acceptance)}</div>
+      <table class="ann-table ann-sign">
+        <thead><tr><th>${esc(A.signHeader[0])}</th><th>${esc(A.signHeader[1])}</th></tr></thead>
+        <tbody>
+          <tr><td style="height:34pt">${esc(A.signName)}</td><td>${esc(A.signName)}</td></tr>
+          <tr><td>${esc(A.signDate)}</td><td>${esc(A.signDate)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 const STYLE = `
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; margin: 0; padding: 20pt 36pt 16pt; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; margin: 0; padding: 0; }
+  /* One printed page (or the start of one). Each sheet carries its own margins and its own logo. */
+  .sheet { position: relative; isolation: isolate; box-sizing: border-box; padding: 20pt 36pt 16pt; }
+  .wm { position: absolute; top: 256pt; left: 132pt; width: 330pt; height: 330pt; z-index: -1; }
+  .wm-main { opacity: 0.07; }
+  .wm-ann { opacity: 0.13; }
+  /* All three documents trim spacing so each stays on one page (the Quotation also carries the billing-plan table). */
+  .sheet.compact { font-size: 8.1pt; padding-top: 10pt; padding-bottom: 0; }
+  .compact .box-title { padding: 2pt 6pt; }
+  .compact .terms li { margin-bottom: 0.8pt; }
+  .compact .section-heading { margin-top: 6pt; }
+  .compact .terms { font-size: 7.8pt; }
+  .compact .header { padding-bottom: 3pt; }
+  .compact .company-name { margin-top: 3pt; }
+  .compact .doc-table td, .compact .doc-table th { padding: 2pt 4pt; }
+  .compact .totals-table td { padding: 2pt 6pt; }
+  .compact .box-row, .compact .doc-table, .compact .totals-wrap { margin-top: 6pt; }
+  .compact .box-body { padding: 3pt 6pt; }
+  .compact .line { margin-bottom: 1.2pt; }
+  .compact .sign-row { margin-top: 5pt; }
+  .compact .sign-cell { min-height: 28pt; padding: 3pt 6pt; }
+  .compact .sign-space { height: 8pt; }
+  .compact .footer { margin-top: 3pt; }
   .line { margin-bottom: 1.8pt; }
   .grey { color: ${GREY}; }
   .italic { font-style: italic; }
@@ -346,7 +448,19 @@ const STYLE = `
   .section-heading { color: ${BLUE}; font-weight: 700; margin-top: 10pt; font-size: 9.5pt; }
   .footer { margin-top: 8pt; text-align: center; font-size: 7.5pt; font-style: italic; color: ${GREY}; }
 
-  .watermark { position: fixed; top: 256pt; left: 132pt; width: 330pt; height: 330pt; opacity: 0.07; z-index: -1; }
+  .ann-sheet { page-break-before: always; padding: 30pt 36pt 0; font-size: 8.1pt; line-height: 1.2; }
+  .ann-title { font-size: 15pt; font-weight: 700; margin-bottom: 4pt; }
+  .ann-sub { font-size: 7.6pt; color: ${GREY}; padding-bottom: 6pt; border-bottom: 1.5pt solid #000; }
+  .ann-heading { font-size: 9pt; font-weight: 700; margin: 9pt 0 4pt; padding-bottom: 2pt; border-bottom: 1pt solid #999; }
+  .ann-table { width: 100%; border-collapse: collapse; border: 0.8pt solid #999; margin-top: 4pt; }
+  .ann-table th { background: #EEEEEE; text-align: left; font-weight: 700; padding: 4pt; border: 0.8pt solid #999; }
+  .ann-table td { padding: 4pt; border: 0.8pt solid #999; vertical-align: top; }
+  .ann-table tr { page-break-inside: avoid; }
+  .ann-first { font-weight: 700; }
+  .ann-para { margin-top: 5pt; }
+  .ann-clause { margin-top: 5pt; text-align: justify; }
+  .ann-keep { page-break-inside: avoid; }
+  .ann-sign th, .ann-sign td { width: 50%; }
 `;
 
 /** Renders the finished document (see finalizeDocument) to an HTML string ready for
@@ -368,8 +482,11 @@ export function renderSalesDocumentHtml(
   <style>${STYLE}</style>
 </head>
 <body>
-  ${watermarkDataUri ? `<img class="watermark" src="${watermarkDataUri}" />` : ''}
-  ${body}
+  <div class="sheet compact">
+    ${watermarkImg(watermarkDataUri, 'main')}
+    ${body}
+  </div>
+  ${hasAnnexure(type) ? annexureHtml(type, doc, watermarkDataUri) : ''}
 </body>
 </html>`;
 }

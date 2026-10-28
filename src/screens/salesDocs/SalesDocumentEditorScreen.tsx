@@ -6,7 +6,7 @@
  * Signatures are upload-only here (see components/salesDocs/SignatureField) — web also
  * supports drawing on a canvas, which mobile doesn't have yet.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RNShare from 'react-native-share';
@@ -20,6 +20,7 @@ import { AddressAutocomplete } from '../../components/salesDocs/AddressAutocompl
 import { StatePicker } from '../../components/salesDocs/StatePicker';
 import { SignatureField } from '../../components/salesDocs/SignatureField';
 import { DocumentRefPicker } from '../../components/salesDocs/DocumentRefPicker';
+import { openStoredPdf } from '../../components/salesDocs/ShareSheet';
 import { salesDocumentService, SalesDocumentSummary } from '../../api/salesDocumentService';
 import { renderSalesDocumentPdf } from '../../utils/salesDocPdf';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -29,6 +30,7 @@ import {
   DOC_TYPES, DOC_META, COMPANY, DocType, SalesDocData,
   emptyDocument, financialYear, computeTotals, money, finalizeDocument, validateDocument,
   isIntraStateGst, gstTotalsRows, amountInWords,
+  instalmentRows, billingPeriod, billingLine, INSTALMENT_NOTE,
   isLegacyNumber, invoiceFieldsFromOrder, orderFieldsFromQuotation, setPath,
 } from '../../utils/salesDocUtils';
 
@@ -46,8 +48,27 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [busy, setBusy] = useState<Busy>(null);
   const [loadingInitial, setLoadingInitial] = useState(!!docId);
+  // An approved quotation's plan, qty and rate are locked (the server enforces it too).
+  const [approved, setApproved] = useState(false);
   const [nextSuffix, setNextSuffix] = useState('');
   const suffixTouched = useRef(!!docId);
+
+  // The editor is a hidden drawer screen: it stays mounted between visits, so without a reset a
+  // second visit (a Purchase Order after a Quotation, or a new document after a saved one) would
+  // still hold the previous form. Start clean every time it is opened.
+  const [resetKey, setResetKey] = useState(0);
+  const resetForm = useCallback(() => {
+    setDoc(emptyDocument(type));
+    setErrors({});
+    setApproved(false);
+    setNextSuffix('');
+    suffixTouched.current = !!docId;
+    setLoadingInitial(!!docId);
+    setBusy(null);
+    setResetKey((k) => k + 1);
+  }, [type, docId]);
+  useEffect(() => { resetForm(); }, [resetForm]);
+  useEffect(() => navigation.addListener('focus', resetForm), [navigation, resetForm]);
 
   const set = (path: string, value: any) => {
     if (path === 'numberSuffix') suffixTouched.current = true;
@@ -67,6 +88,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         if (!alive) return;
         const initial = res.data?.data;
         if (!initial) return;
+        setApproved(res.data?.approvalStatus === 'approved');
         const blank = emptyDocument(type);
         const merged: SalesDocData = { ...blank, ...initial };
         Object.keys(blank).forEach((k) => {
@@ -81,7 +103,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
       .catch((err) => Alert.alert('Error', err?.response?.data?.message || 'Could not open the document.'))
       .finally(() => { if (alive) setLoadingInitial(false); });
     return () => { alive = false; };
-  }, [type, docId]);
+  }, [type, docId, resetKey]);
 
   // The next free number for the financial year, shown as the field's placeholder only.
   const fy = financialYear(doc.documentDate);
@@ -99,7 +121,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
       .catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, fy]);
+  }, [type, fy, resetKey]);
 
   // Tax invoice: picking a Ref. Order No. copies that purchase order's details onto the invoice.
   const [orderBusy, setOrderBusy] = useState(false);
@@ -181,29 +203,26 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
     }
   };
 
-  const save = async (andShare: boolean) => {
+  // `andDownload`: after saving, open the stored PDF so the phone downloads it directly (no share
+  // sheet, which brings up the Print option). Sharing lives on the document list and register.
+  const save = async (andDownload: boolean) => {
     let final = build();
     if (!final) return;
-    setBusy(andShare ? 'download' : 'save');
+    setBusy(andDownload ? 'download' : 'save');
+    // Everything up to and including the upload is "saving". What follows it must never turn a
+    // saved document into a "Could not save" error, so it has its own handling.
     const attempt = async (f: SalesDocData) => {
       const file = await renderSalesDocumentPdf(type, f);
       const res = docId
         ? await salesDocumentService.update(type, docId, f, file)
         : await salesDocumentService.create(type, f, file);
       toast.success(`${meta.label} ${f.documentNumber} ${docId ? 'updated' : 'saved'}.`);
-      if (andShare) {
-        try {
-          await RNShare.open({ url: file.uri, type: 'application/pdf', filename: file.name, failOnCancel: false });
-        } catch (shareErr: any) {
-          if (shareErr?.message !== 'User did not share') throw shareErr;
-        }
-      }
-      navigation.goBack();
-      return res;
+      return res.data?.id || docId;
     };
+    let savedId: string | undefined;
     try {
       try {
-        await attempt(final);
+        savedId = await attempt(final);
       } catch (err: any) {
         // Everyone in the sales team numbers from the same series, so the suggested number can
         // be taken by someone else between opening the form and saving it. A number the user
@@ -217,26 +236,39 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         setNextSuffix(suffix);
         final = finalizeDocument(type, retried);
         toast.info(`That number was just used by someone else — saving as ${final.documentNumber}.`);
-        await attempt(final);
+        savedId = await attempt(final);
       }
     } catch (err: any) {
       const msg = err?.response?.data?.message || `Could not save the ${meta.label.toLowerCase()}.`;
       toast.error(err?.response?.status === 409 ? `${msg} Choose another number.` : msg);
-    } finally {
       setBusy(null);
+      return;
     }
+
+    if (andDownload && savedId) {
+      try {
+        await openStoredPdf(type, savedId);
+      } catch (err: any) {
+        toast.info(`${meta.label} saved, but the PDF could not be opened — use View on the list.`);
+      }
+    }
+    setBusy(null);
+    // The editor is a hidden drawer screen, so goBack() would land on the first drawer screen
+    // (the dashboard) — go straight to the document list instead.
+    navigation.navigate('Purchase Order & Invoice');
   };
 
   const Fields = FIELD_SECTIONS[type];
 
-  if (loadingInitial) {
+  // One render with the previous visit's form can slip in before the reset above lands.
+  if (loadingInitial || doc.type !== type) {
     return <Screen><View style={styles.loading}><Text style={{ color: T.sub }}>Loading…</Text></View></Screen>;
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
       <View style={[styles.header, { borderBottomColor: T.line, paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} disabled={!!busy} style={[styles.back, { backgroundColor: T.card, borderColor: T.line }]}>
+        <TouchableOpacity onPress={() => navigation.navigate('Purchase Order & Invoice')} disabled={!!busy} style={[styles.back, { backgroundColor: T.card, borderColor: T.line }]}>
           <ArrowLeft size={18} color={T.text} strokeWidth={ICON_STROKE} />
         </TouchableOpacity>
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -246,6 +278,14 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
       </View>
 
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]} keyboardShouldPersistTaps="handled">
+        {approved && (
+          <View style={[styles.errBanner, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
+            <Text style={{ color: T.text, fontSize: rf(12), fontWeight: '600' }}>
+              Approved for the {billingPeriod(doc.billingPeriod).label} plan — quantity, rate and plan are locked. The purchase order and invoice are raised for one instalment.
+            </Text>
+          </View>
+        )}
+
         {hasErrors && (
           <View style={[styles.errBanner, { backgroundColor: T.danger + '18', borderColor: T.danger + '40' }]}>
             <Text style={{ color: T.danger, fontSize: rf(12), fontWeight: '600' }}>
@@ -258,6 +298,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
           doc={doc} set={set} errors={errors} nextSuffix={nextSuffix}
           pickOrder={pickOrder} orderBusy={orderBusy}
           pickQuotation={pickQuotation} quotationBusy={quotationBusy}
+          approved={approved}
         />
 
         <Card style={{ marginTop: 12 }}>
@@ -278,12 +319,32 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
             <Text style={{ fontStyle: 'italic' }}>{amountInWords(totals.grandTotal)}</Text>
           </Text>
         </Card>
+
+        {type === DOC_TYPES.QUOTATION && (
+          <Card style={{ marginTop: 12 }}>
+            <SectionLabel>Billing plan — amount per instalment (incl. GST)</SectionLabel>
+            {instalmentRows(doc.qty, doc.rate, intraState).map((r) => {
+              const on = r.key === billingPeriod(doc.billingPeriod).key;
+              return (
+                <TouchableOpacity key={r.key} activeOpacity={0.7} disabled={approved} onPress={() => set('billingPeriod', r.key)}
+                  style={[styles.planRow, { borderColor: on ? T.accent : T.line, backgroundColor: on ? T.accentSoft : 'transparent', opacity: approved && !on ? 0.5 : 1 }]}>
+                  <View style={[styles.radio, { borderColor: on ? T.accent : T.dim }]}>{on && <View style={[styles.radioDot, { backgroundColor: T.accent }]} />}</View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ color: T.text, fontWeight: on ? '800' : '600', fontSize: rf(13.5) }}>{r.label}</Text>
+                  </View>
+                  <Text style={{ color: on ? T.accent : T.text, fontWeight: '800', fontSize: rf(14) }}>₹{money(r.total)}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <Text style={{ color: T.sub, fontSize: rf(11.5), fontStyle: 'italic', marginTop: 8 }}>{INSTALMENT_NOTE}</Text>
+          </Card>
+        )}
       </ScrollView>
 
       <View style={[styles.footer, { backgroundColor: T.bg, borderTopColor: T.line, paddingBottom: insets.bottom + 10 }]}>
         <Btn label="Preview" variant="secondary" small onPress={preview} loading={busy === 'preview'} disabled={!!busy} icon={<Eye size={14} color={T.text} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} />
         <Btn label="Save" variant="secondary" small onPress={() => save(false)} loading={busy === 'save'} disabled={!!busy} icon={<Save size={14} color={T.text} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} />
-        <Btn label="Save & Share" small onPress={() => save(true)} loading={busy === 'download'} disabled={!!busy} icon={<Download size={14} color="#FFF" strokeWidth={ICON_STROKE} />} style={{ flex: 1.3 }} />
+        <Btn label="Save & Download" small onPress={() => save(true)} loading={busy === 'download'} disabled={!!busy} icon={<Download size={14} color="#FFF" strokeWidth={ICON_STROKE} />} style={{ flex: 1.3 }} />
       </View>
     </View>
   );
@@ -300,16 +361,20 @@ interface FieldsProps {
   orderBusy: boolean;
   pickQuotation: (number: string, quotation: SalesDocumentSummary | null) => void;
   quotationBusy: boolean;
+  approved?: boolean;
 }
 
-const QtyRateRow = ({ doc, set, errors }: FieldsProps) => (
+const QtyRateRow = ({ doc, set, errors, approved }: FieldsProps) => (
+  <>
   <View style={styles.row2}>
-    <NumField label="Qty *" value={doc.qty} onChangeText={(x) => set('qty', x)} allowDecimal={false} error={errors.qty} style={{ flex: 1 }} />
-    <NumField label="Rate (₹) *" value={doc.rate} onChangeText={(x) => set('rate', x)} error={errors.rate} style={{ flex: 1 }} />
+    <NumField label="Qty *" value={doc.qty} onChangeText={(x) => set('qty', x)} allowDecimal={false} error={errors.qty} style={{ flex: 1 }} disabled={approved} />
+    <NumField label="Rate (₹) *" value={doc.rate} onChangeText={(x) => set('rate', x)} error={errors.rate} style={{ flex: 1 }} disabled={approved} />
   </View>
+  {!!billingLine(doc) && <Text style={{ fontSize: rf(12), fontWeight: '700', marginTop: -4 }}>{billingLine(doc)} — qty × rate is one instalment (GST added below).</Text>}
+  </>
 );
 
-const QuotationFields = ({ doc, set, errors, nextSuffix }: FieldsProps) => {
+const QuotationFields = ({ doc, set, errors, nextSuffix, approved }: FieldsProps) => {
   const sc = doc.school!;
   const co = doc.coordinator!;
   return (
@@ -367,7 +432,7 @@ const QuotationFields = ({ doc, set, errors, nextSuffix }: FieldsProps) => {
 
       <Card style={{ marginTop: 12 }}>
         <SectionLabel>Teacher Login Subscription</SectionLabel>
-        <QtyRateRow doc={doc} set={set} errors={errors} nextSuffix="" pickOrder={() => {}} orderBusy={false} pickQuotation={() => {}} quotationBusy={false} />
+        <QtyRateRow doc={doc} set={set} errors={errors} nextSuffix="" pickOrder={() => {}} orderBusy={false} pickQuotation={() => {}} quotationBusy={false} approved={approved} />
       </Card>
 
       <Card style={{ marginTop: 12 }}>
@@ -411,7 +476,8 @@ const PurchaseOrderFields = ({ doc, set, errors, nextSuffix, pickQuotation, quot
         <DateInput label="Order Date *" value={doc.documentDate} onChange={(x) => set('documentDate', x)} error={errors.date} />
         <DocumentRefPicker
           type={DOC_TYPES.QUOTATION} label="Ref. Quotation No." value={doc.refQuotationNumber || ''} onChange={pickQuotation}
-          busy={quotationBusy} busyLabel="Filling from quotation…" emptyLabel="No quotations saved yet" placeholder="Select quotation"
+          busy={quotationBusy} busyLabel="Filling from quotation…" emptyLabel="No approved quotations yet — approve one first" placeholder="Select approved quotation"
+          filter={(q) => q.approvalStatus === 'approved'} describe={(q) => ` · ${billingPeriod(q.billingPeriod).label}`}
         />
         <StatePicker label="Place of Supply" value={doc.placeOfSupply || ''} onChange={(x) => set('placeOfSupply', x)} />
         <Input label="Academic Year *" value={doc.academicYearOverride} onChangeText={(x: string) => set('academicYearOverride', x.replace(/[^\d\-/–\s]/g, ''))} placeholder="e.g. 2026-27" error={errors.academicYearOverride} />
@@ -545,6 +611,9 @@ const styles = StyleSheet.create({
   h2: { fontWeight: '500', fontSize: rf(11.5), marginTop: 1 },
   scroll: { padding: 16 },
   errBanner: { borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 4 },
+  planRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
   row2: { flexDirection: 'row', gap: 10 },
   numberRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   numberPrefix: { fontSize: rf(12.5), fontWeight: '600' },

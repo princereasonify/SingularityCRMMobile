@@ -5,11 +5,10 @@
  * SalesRegisterScreen, which reuses the filters exported from here.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import RNShare from 'react-native-share';
-import { FileText, Plus, Eye, Share2, Trash2, SlidersHorizontal, X } from 'lucide-react-native';
+import { FileText, Plus, Eye, Share2, Trash2, SlidersHorizontal, X, CheckCircle2 } from 'lucide-react-native';
 import { Btn, SearchBar, ListCard, IconBtn, Segmented, ConfirmModal } from '../../components/crud';
 import { Screen } from '../../components/ui';
 import { ICON_STROKE } from '../../components/common/Icon';
@@ -19,9 +18,23 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
-import { salesDocumentService, SalesDocumentSummary, fileShareOptions } from '../../api/salesDocumentService';
-import { DOC_TYPES, DOC_META, DocType, displayDate, money, pdfFileName } from '../../utils/salesDocUtils';
+import { salesDocumentService, SalesDocumentSummary } from '../../api/salesDocumentService';
+import { ShareSheet, ShareTarget, openStoredPdf } from '../../components/salesDocs/ShareSheet';
+import { DOC_TYPES, DOC_META, DocType, displayDate, money, billingPeriod, instalmentTotals } from '../../utils/salesDocUtils';
 import { formatDateTime } from '../../utils/formatting';
+
+/** Quotation approval state: the plan it is approved for, or "Pending". */
+export const planLabel = (r: SalesDocumentSummary) =>
+  `${r.approvalStatus === 'approved' ? 'Approved' : 'Pending'} · ${billingPeriod(r.billingPeriod).label}`;
+
+/** What approving locks in: the plan, and the amount (GST included) of one instalment of it. */
+export function approveMessage(q: SalesDocumentSummary): string {
+  const plan = billingPeriod(q.billingPeriod);
+  const each = instalmentTotals(q.subTotal, plan.count, !((q.igst || 0) > 0)).grandTotal;
+  const per = plan.count === 1 ? 'for the full year' : `per ${plan.each}`;
+  return `${q.documentNumber} will be approved for the ${plan.label} plan — ₹${money(each)} ${per} including GST. `
+    + 'The plan and amount can’t be changed afterwards, and the purchase order and invoice will be raised for this amount.';
+}
 
 const ADMIN_ROLES = ['SH', 'SCA'];
 
@@ -133,6 +146,9 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<SalesDocumentSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [toApprove, setToApprove] = useState<SalesDocumentSummary | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
 
   const meta = DOC_META[type];
 
@@ -166,54 +182,35 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
     if (!row.hasPdf) return;
     setBusyId(row.id);
     try {
-      const res = await salesDocumentService.shareLink(type, row.id);
-      if (res.data?.url) Linking.openURL(res.data.url);
+      await openStoredPdf(type, row.id);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Could not open the PDF.');
+      toast.error(err?.response?.data?.message || err?.message || 'Could not open the PDF.');
     } finally {
       setBusyId(null);
     }
   };
 
-  const subjectOf = (row: SalesDocumentSummary) =>
-    `${meta.label} ${row.documentNumber}${row.schoolName ? ` – ${row.schoolName}` : ''}`;
-
-  // Web's ShareModal offers both: a 7-day signed link, or the PDF file itself.
   const share = (row: SalesDocumentSummary) => {
     if (!row.hasPdf) return;
-    Alert.alert(`Share ${meta.label}`, row.documentNumber, [
-      { text: 'Share link', onPress: () => shareLink(row) },
-      { text: 'Share PDF file', onPress: () => shareFile(row) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setShareTarget({ type, id: row.id, documentNumber: row.documentNumber, schoolName: row.schoolName });
   };
 
-  const shareLink = async (row: SalesDocumentSummary) => {
-    setBusyId(row.id);
-    try {
-      const res = await salesDocumentService.shareLink(type, row.id);
-      const link = res.data;
-      if (!link) return;
-      const subject = subjectOf(row);
-      toast.info(`Anyone with this link can open the PDF until ${formatDateTime(link.expiresAt)} (7 days).`);
-      await RNShare.open({ url: link.url, title: subject, message: subject, failOnCancel: false });
-    } catch (err: any) {
-      if (err?.message !== 'User did not share') toast.error(err?.response?.data?.message || 'Could not create a share link.');
-    } finally {
-      setBusyId(null);
-    }
-  };
+  // Only the person who created a quotation approves it, and only once it has its PDF.
+  const canApprove = (row: SalesDocumentSummary) =>
+    type === DOC_TYPES.QUOTATION && row.approvalStatus !== 'approved' && row.hasPdf && String(row.createdById) === myId;
 
-  const shareFile = async (row: SalesDocumentSummary) => {
-    setBusyId(row.id);
+  const confirmApprove = async () => {
+    if (!toApprove) return;
+    setApproving(true);
     try {
-      const file = await salesDocumentService.downloadPdf(type, row.id, pdfFileName(type, row.documentNumber));
-      const subject = subjectOf(row);
-      await RNShare.open({ ...fileShareOptions(file), title: subject, subject, failOnCancel: false });
+      await salesDocumentService.approveQuotation(toApprove.id);
+      toast.success(`Quotation ${toApprove.documentNumber} approved for the ${billingPeriod(toApprove.billingPeriod).label} plan.`);
+      setToApprove(null);
+      load();
     } catch (err: any) {
-      if (err?.message !== 'User did not share') toast.error(err?.response?.data?.message || 'Could not share the PDF file.');
+      toast.error(err?.response?.data?.message || 'Could not approve the quotation.');
     } finally {
-      setBusyId(null);
+      setApproving(false);
     }
   };
 
@@ -279,6 +276,11 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
                   <Text style={[styles.school, { color: T.sub }]} numberOfLines={1}>
                     {row.schoolName || '—'}{row.documentDate ? ` · ${displayDate(row.documentDate)}` : ''}
                   </Text>
+                  {type === DOC_TYPES.QUOTATION && (
+                    <Text style={[styles.badge, { color: row.approvalStatus === 'approved' ? T.success : T.sub }]} numberOfLines={1}>
+                      {row.approvalStatus === 'approved' ? '✓ ' : ''}{planLabel(row)}
+                    </Text>
+                  )}
                   <View style={styles.rowBottom}>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.meta, { color: T.dim }]} numberOfLines={1}>{creatorLine(row) || '—'}</Text>
@@ -294,7 +296,12 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
                         <ActivityIndicator size="small" color={T.dim} />
                       ) : (
                         <>
-                          <IconBtn kind="view" label="View" onPress={() => view(row)}><Eye size={15} color={T.text} strokeWidth={ICON_STROKE} /></IconBtn>
+                          <IconBtn kind="view" label="View / download PDF" onPress={() => view(row)}><Eye size={15} color={T.text} strokeWidth={ICON_STROKE} /></IconBtn>
+                          {canApprove(row) && (
+                            <TouchableOpacity onPress={() => setToApprove(row)} hitSlop={8} accessibilityLabel="Approve" style={[styles.iconBtn, { backgroundColor: T.success + '1F' }]}>
+                              <CheckCircle2 size={15} color={T.success} strokeWidth={ICON_STROKE} />
+                            </TouchableOpacity>
+                          )}
                           <TouchableOpacity onPress={() => share(row)} disabled={!row.hasPdf} hitSlop={8} style={[styles.iconBtn, { backgroundColor: T.accentSoft }]}>
                             <Share2 size={15} color={T.accent} strokeWidth={ICON_STROKE} />
                           </TouchableOpacity>
@@ -323,6 +330,20 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
         icon={<Plus size={16} color="#FFF" strokeWidth={ICON_STROKE} />}
         style={[styles.fab, { bottom: insets.bottom + 16 }]}
       />
+
+      <ConfirmModal
+        visible={!!toApprove}
+        onCancel={() => !approving && setToApprove(null)}
+        onConfirm={confirmApprove}
+        title="Approve quotation?"
+        message={toApprove ? approveMessage(toApprove) : ''}
+        confirmLabel="Approve"
+        tone="success"
+        icon={<CheckCircle2 size={22} color={T.success} strokeWidth={ICON_STROKE} />}
+        loading={approving}
+      />
+
+      <ShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
 
       <ConfirmModal
         visible={!!toDelete}
@@ -357,6 +378,7 @@ const styles = StyleSheet.create({
   school: { fontSize: 12.5, fontWeight: '500' },
   rowBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 8 },
   meta: { fontSize: 11, fontWeight: '500' },
+  badge: { fontSize: 11.5, fontWeight: '700' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   iconBtn: { width: MIN_TAP, height: MIN_TAP, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   fab: { position: 'absolute', left: 16, right: 16 },

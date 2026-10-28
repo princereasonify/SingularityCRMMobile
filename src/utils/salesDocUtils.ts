@@ -110,7 +110,11 @@ export function isIntraStateGst(school?: Partial<SalesDocSchool> | null): boolea
 
 /** Qty × Rate → amount, then CGST 9% + SGST 9% (intra-state) or IGST 18% (inter-state), and the grand total. */
 export function computeTotals(qty?: string | number | null, rate?: string | number | null, intraState = true): Totals {
-  const subTotal = round2(num(qty) * num(rate));
+  return totalsForSubTotal(round2(num(qty) * num(rate)), intraState);
+}
+
+/** Tax and grand total on an already-known taxable amount (see computeTotals). */
+export function totalsForSubTotal(subTotal: number, intraState = true): Totals {
   if (intraState) {
     const cgst = round2((subTotal * CGST_RATE) / 100);
     const sgst = round2((subTotal * SGST_RATE) / 100);
@@ -134,6 +138,41 @@ export function gstTotalsRows(t: Totals, intraState: boolean, finalLabel: string
   }
   rows.push({ label: finalLabel, value: money(t.grandTotal), strong: true });
   return rows;
+}
+
+// ── billing plans (mirrors web salesDocUtils) ────────────────────────────────
+
+/**
+ * A quotation is always generated for the ANNUAL amount. The plan says how that amount is billed:
+ * `count` equal instalments a year. Once the quotation is approved for a plan, the purchase order
+ * and invoice are raised for one instalment only.
+ */
+export type BillingKey = 'monthly' | 'quarterly' | 'half-yearly' | 'annual';
+export interface BillingPlan { key: BillingKey; label: string; count: number; each: string; }
+export const BILLING_PERIODS: BillingPlan[] = [
+  { key: 'monthly', label: 'Monthly', count: 12, each: 'month' },
+  { key: 'quarterly', label: 'Quarterly', count: 4, each: 'quarter' },
+  { key: 'half-yearly', label: 'Half-Yearly', count: 2, each: 'half-year' },
+  { key: 'annual', label: 'Annual', count: 1, each: 'year' },
+];
+
+export const billingPeriod = (key?: string | null): BillingPlan =>
+  BILLING_PERIODS.find((p) => p.key === key) || BILLING_PERIODS[BILLING_PERIODS.length - 1];
+
+export const INSTALMENT_NOTE = 'Note: All instalment amounts include GST (CGST 9% + SGST 9% for schools in Gujarat, IGST 18% otherwise) and are worked out from the annual total above.';
+
+/** One instalment of the annual taxable amount, with its own GST — every figure a bill for it prints. */
+export function instalmentTotals(annualSubTotal: number, count: number, intraState = true): Totals {
+  return totalsForSubTotal(round2(Number(annualSubTotal || 0) / count), intraState);
+}
+
+/** The four plans for an annual amount: instalments, and what each costs including GST. */
+export function instalmentRows(qty?: string | number | null, rate?: string | number | null, intraState = true) {
+  const annual = round2(num(qty) * num(rate));
+  return BILLING_PERIODS.map((p) => {
+    const t = instalmentTotals(annual, p.count, intraState);
+    return { ...p, subTotal: t.subTotal, gst: t.totalTax, total: t.grandTotal };
+  });
 }
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -249,6 +288,8 @@ export function emptyDocument(type: DocType): SalesDocData {
       // Quotation validity in days (printed in Valid Until and in terms 2) and an optional
       // academic year; empty academic year prints the one worked out from the quotation date.
       validDays: '30',
+      // monthly | quarterly | half-yearly | annual — what the quotation is approved (and later billed) for.
+      billingPeriod: 'annual',
       academicYearOverride: '',
       classes: '',
       activationBy: '',
@@ -269,6 +310,8 @@ export function emptyDocument(type: DocType): SalesDocData {
       academicYearOverride: '',
       school: { name: '', address: '', gstin: '', state: '', stateCode: '' },
       refQuotationNumber: '',
+      // Set when the order is raised against an approved instalment plan (see orderFieldsFromQuotation).
+      billing: { period: '', logins: '' },
       coordinator: { name: '', designation: '', phone: '', email: '' },
       teacherLogins: '',
       classes: '',
@@ -287,6 +330,7 @@ export function emptyDocument(type: DocType): SalesDocData {
     numberSuffix: '',
     school: { name: '', address1: '', address2: '', contactPerson: '', phoneEmail: '', gstin: '', state: '', stateCode: '' },
     refOrderNumber: '',
+    billing: { period: '', logins: '' },
     placeOfSupply: '',
     periodFrom: '',
     periodTo: '',
@@ -387,6 +431,9 @@ export function invoiceFieldsFromOrder(po?: SalesDocData | null): Record<string,
   };
   const out: Record<string, string> = {};
   Object.entries(patch).forEach(([k, val]) => { if (val !== '') out[k] = val; });
+  // Always set (even empty) so picking an annual order after an instalment one clears the plan.
+  out['billing.period'] = first(po.billing?.period);
+  out['billing.logins'] = first(po.billing?.logins, po.teacherLogins);
   // The order has one address line; the invoice has two. When line 1 is replaced, line 2 must be
   // cleared too or the old second line would sit under the order's address.
   if (out['school.address1']) out['school.address2'] = '';
@@ -440,7 +487,32 @@ export function orderFieldsFromQuotation(quotation?: SalesDocData | null): Recor
   };
   const out: Record<string, string> = {};
   Object.entries(patch).forEach(([k, val]) => { if (val !== '') out[k] = val; });
+
+  // Approved for an instalment plan: the order is for ONE instalment, so it carries that
+  // instalment's taxable amount (GST is then added on top, as for any order) instead of the annual
+  // qty × rate. One line, qty 1 — the login count stays in teacherLogins and the description.
+  const plan = billingPeriod(quotation.billingPeriod);
+  if (plan.count > 1) {
+    const each = instalmentTotals(num(quotation.qty) * num(quotation.rate), plan.count, isIntraStateGst(sc)).subTotal;
+    if (each > 0) {
+      out.qty = '1';
+      out.rate = String(each);
+      out['billing.period'] = plan.key;
+      out['billing.logins'] = first(quotation.qty);
+      return out;
+    }
+  }
+  out['billing.period'] = '';
+  out['billing.logins'] = '';
   return out;
+}
+
+/** "Quarterly instalment (1 of 4) — 45 teacher logins" for a document raised against an instalment plan, else ''. */
+export function billingLine(doc?: SalesDocData | null): string {
+  const plan = billingPeriod(doc?.billing?.period);
+  if (!doc?.billing?.period || plan.count === 1) return '';
+  const logins = String(doc.billing.logins ?? '').trim();
+  return `${plan.label} instalment (1 of ${plan.count})${logins ? ` — ${logins} teacher logins` : ''}`;
 }
 
 /** Immutable set of a dotted path ("school.name"). */

@@ -26,6 +26,13 @@ const resolveBaseUrl = (raw: string): string => {
 
 export const API_BASE_URL = resolveBaseUrl(ENV_API_BASE_URL);
 
+/**
+ * Public privacy policy. Google Play requires a live policy linked in the store listing AND
+ * inside the app. It is a static page in Sales_CRM_Web/public, served from the live portal —
+ * singularitycrm.com is a parked domain and must never be linked again.
+ */
+export const PRIVACY_POLICY_URL = 'https://sales.singularity-learn.com/privacy-policy.html';
+
 /** True when pointed at a local backend — handy for a debug badge or logging. */
 export const IS_LOCAL_API = /\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(
   API_BASE_URL,

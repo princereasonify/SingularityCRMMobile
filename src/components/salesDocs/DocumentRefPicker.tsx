@@ -27,9 +27,13 @@ interface Props {
   busyLabel: string;
   emptyLabel: string;
   placeholder: string;
+  /** Which saved documents may be picked (e.g. approved quotations only). */
+  filter?: (d: SalesDocumentSummary) => boolean;
+  /** Extra text after the school name in each row (e.g. the billing plan). */
+  describe?: (d: SalesDocumentSummary) => string;
 }
 
-export const DocumentRefPicker = ({ type, label, value, onChange, busy, busyLabel, emptyLabel, placeholder }: Props) => {
+export const DocumentRefPicker = ({ type, label, value, onChange, busy, busyLabel, emptyLabel, placeholder, filter, describe }: Props) => {
   const T = useAppTheme();
   const [docs, setDocs] = useState<SalesDocumentSummary[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -37,9 +41,10 @@ export const DocumentRefPicker = ({ type, label, value, onChange, busy, busyLabe
   useEffect(() => {
     let alive = true;
     salesDocumentService.list(type)
-      .then((res) => { if (alive) setDocs(res.data || []); })
+      .then((res) => { if (alive) setDocs((res.data || []).filter(filter || (() => true))); })
       .catch(() => { if (alive) setDocs([]); });
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
 
   // Openable once loaded if there is anything to pick — or a saved value to clear.
@@ -87,7 +92,7 @@ export const DocumentRefPicker = ({ type, label, value, onChange, busy, busyLabe
                   style={[styles.item, { borderBottomColor: T.line }, on && { backgroundColor: T.accentSoft }]}
                 >
                   <Text style={[styles.itemMain, { color: on ? T.accent : T.text }]} numberOfLines={1}>{d.documentNumber}</Text>
-                  <Text style={[styles.itemSub, { color: T.sub }]} numberOfLines={1}>{d.schoolName || 'School'}</Text>
+                  <Text style={[styles.itemSub, { color: T.sub }]} numberOfLines={1}>{d.schoolName || 'School'}{describe ? describe(d) : ''}</Text>
                 </TouchableOpacity>
               );
             })}

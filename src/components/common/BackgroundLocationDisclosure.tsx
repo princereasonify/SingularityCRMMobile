@@ -26,6 +26,7 @@ import { MapPin, Navigation, Clock, Shield, AlertCircle } from 'lucide-react-nat
 import { rf } from '../../utils/responsive';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { withAlpha, SOFT_TINT } from '../../theme';
+import { PRIVACY_POLICY_URL } from '../../utils/constants';
 
 /**
  * Google Play requires this prominent disclosure before requesting background
@@ -105,12 +106,12 @@ export const BackgroundLocationDisclosure = ({ visible, onAccept, onDecline }: P
           <View style={[s.noteBox, { backgroundColor: withAlpha(T.warning, SOFT_TINT), borderColor: withAlpha(T.warning, 0.35) }]}>
             <AlertCircle size={16} color={T.warning} />
             <Text style={[s.noteText, { color: T.warning }]}>
-              On the next screen, select <Text style={[s.bold, { color: T.text }]}>"Allow all the time"</Text> to enable background location. Without this, travel distance and geofence check-ins will not be recorded when the app is minimised.
+              On the next screens, allow location access and then select <Text style={[s.bold, { color: T.text }]}>"Allow all the time"</Text> to enable background location. Without this, travel distance and geofence check-ins will not be recorded when the app is minimised.
             </Text>
           </View>
 
           {/* Privacy policy link */}
-          <TouchableOpacity onPress={() => Linking.openURL('https://singularitycrm.com/privacy-policy')}>
+          <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
             <Text style={[s.privacyLink, { color: T.accent }]}>View full Privacy Policy →</Text>
           </TouchableOpacity>
 

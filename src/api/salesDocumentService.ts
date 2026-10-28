@@ -35,6 +35,12 @@ export interface SalesDocumentSummary {
   placeOfSupply?: string;
   /** Tax invoice: the purchase order it bills (Ref. Order No.). */
   refOrderNumber?: string;
+  /** Quotation: monthly | quarterly | half-yearly | annual — the plan chosen on the form. */
+  billingPeriod?: string;
+  /** Quotation: 'approved' once its creator approved it (plan + amount are then locked). */
+  approvalStatus?: string | null;
+  approvedAt?: string;
+  approvedByName?: string;
 }
 
 export interface SalesRegisterRow extends SalesDocumentSummary {
@@ -175,6 +181,10 @@ export const salesDocumentService = {
   /** A signed GCS link valid 7 days — View opens it; Share sends it (or the file, above). */
   shareLink: (type: DocType, id: string) =>
     apiClient.get<SalesDocumentShareLink>(`/sales-documents/${type}/${id}/share-link`),
+
+  /** Quotation only — approves it for the plan on it (creator only); locks the plan and amount. */
+  approveQuotation: (id: string) =>
+    apiClient.post<SalesDocumentSummary>(`/sales-documents/quotation/${id}/approve`),
 
   remove: (type: DocType, id: string) =>
     apiClient.delete(`/sales-documents/${type}/${id}`),
