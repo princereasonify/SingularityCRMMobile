@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Delete, ArrowBigUp, Check } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
+import { ClipChips } from './ClipChips';
 
 /**
  * KeyField — a full alphanumeric text field that opens the app's OWN keyboard instead of
@@ -139,6 +140,21 @@ export const KeyField = ({
     return { value: v.slice(0, at.start - 1) + v.slice(at.start), caret: at.start - 1 };
   });
 
+  // The OS keyboard (and its paste menu) never shows over this field, so the sheet offers
+  // Paste / Copy itself. Paste replaces the selection like typing does, cut to maxLength.
+  const pasteText = (raw: string) => edit((v, at) => {
+    let ins = raw;
+    if (typeof maxLength === 'number') ins = ins.slice(0, Math.max(0, maxLength - (v.length - (at.end - at.start))));
+    return { value: v.slice(0, at.start) + ins + v.slice(at.end), caret: at.start + ins.length };
+  });
+
+  // Copies the highlighted text when there is some, otherwise the whole value.
+  const copyText = () => {
+    const v = valueRef.current;
+    const c = clampCaret(caret.current, v.length);
+    return c.start !== c.end ? v.slice(c.start, c.end) : v;
+  };
+
   const rows = mode === 'letters' ? LETTERS : SYMBOLS;
   const shown = secureTextEntry ? '•'.repeat(value.length) : value;
 
@@ -174,7 +190,11 @@ export const KeyField = ({
             style={[s.sheet, { backgroundColor: T.card, borderColor: T.line, paddingBottom: insets.bottom + 10 }]}
           >
             <View style={s.display}>
-              {!!label && <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label}</Text>}
+              <View style={s.dispHead}>
+                <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label || ''}</Text>
+                {/* A password is never offered for copying. */}
+                <ClipChips onPaste={pasteText} getCopyText={secureTextEntry ? undefined : copyText} />
+              </View>
               {/* A REAL TextInput, focused, with the OS keyboard suppressed rather than the
                   field blurred. Blurring is what costs a field its caret and its tap/drag —
                   an unfocused input draws no cursor and ignores touches on the text. */}
@@ -286,7 +306,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 8, paddingTop: 12,
   },
   display: { paddingHorizontal: 10, paddingBottom: 10, alignItems: 'flex-start' },
-  dispLabel: { fontSize: rf(11), fontWeight: '600', marginBottom: 2 },
+  dispHead: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', gap: 8, marginBottom: 4 },
+  dispLabel: { flex: 1, fontSize: rf(11), fontWeight: '600' },
   dispValue: { fontSize: rf(20), fontWeight: '700' },
   below: { paddingHorizontal: 10, marginBottom: 10 },
 

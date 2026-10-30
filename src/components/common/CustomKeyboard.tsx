@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Delete, ArrowBigUp, X, ArrowRight } from 'lucide-react-native';
+import { Delete, ArrowBigUp, X, ArrowRight, ClipboardPaste } from 'lucide-react-native';
 import { AuthTheme } from '../../theme';
 import { isTabletDevice } from '../../utils/responsive';
 import { useKeyPress } from './useKeyPress';
+import { readClipboardLine } from '../../utils/clipboard';
 
 interface Props {
   visible: boolean;
@@ -15,6 +16,9 @@ interface Props {
   onSubmit: () => void;
   onHide: () => void;
   submitLabel?: string;
+  /** Shows a Paste button; receives the clipboard text as one line. The OS paste menu can't
+   *  appear over this keyboard, so without it nothing could be pasted. */
+  onPaste?: (text: string) => void;
 }
 
 const LETTERS = [
@@ -34,7 +38,7 @@ const SYMBOLS = [
  * toolbar and a close button — kept clear of the screen edge so no row is ever clipped.
  */
 export const CustomKeyboard = ({
-  visible, theme, accent, onKey, onBackspace, onSubmit, onHide, submitLabel = 'Go',
+  visible, theme, accent, onKey, onBackspace, onSubmit, onHide, submitLabel = 'Go', onPaste,
 }: Props) => {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<'letters' | 'symbols'>('letters');
@@ -129,6 +133,15 @@ export const CustomKeyboard = ({
             );
           })}
         </View>
+        {!!onPaste && (
+          <TouchableOpacity
+            onPress={async () => { const t = await readClipboardLine(); if (t) onPaste(t); }}
+            style={[styles.pasteBtn, { backgroundColor: specialBg }]}
+          >
+            <ClipboardPaste size={16} color={txt} />
+            <Text style={[styles.pasteTxt, { color: txt }]}>Paste</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onHide} style={[styles.closeBtn, { backgroundColor: specialBg }]}>
           <X size={18} color={txt} />
         </TouchableOpacity>
@@ -243,6 +256,8 @@ const styles = StyleSheet.create({
   segment: { flexDirection: 'row', borderRadius: 10, padding: 3, gap: 3 },
   segBtn: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 8, alignItems: 'center' },
   segTxt: { fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
+  pasteBtn: { height: 38, borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pasteTxt: { fontWeight: '700', fontSize: 13 },
   closeBtn: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', justifyContent: 'center', marginVertical: 3.5, paddingHorizontal: 2 },
   key: {

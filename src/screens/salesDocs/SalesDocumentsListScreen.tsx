@@ -20,7 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { useResponsive, MIN_TAP } from '../../hooks/useResponsive';
 import { salesDocumentService, SalesDocumentSummary } from '../../api/salesDocumentService';
 import { ShareSheet, ShareTarget, openStoredPdf } from '../../components/salesDocs/ShareSheet';
-import { DOC_TYPES, DOC_META, DocType, displayDate, money, billingPeriod, instalmentTotals } from '../../utils/salesDocUtils';
+import { DOC_TYPES, DOC_META, DocType, displayDate, money, billingPeriod, instalmentTotals, amountBasis } from '../../utils/salesDocUtils';
 import { formatDateTime } from '../../utils/formatting';
 
 /** Quotation approval state: the plan it is approved for, or "Pending". */
@@ -30,7 +30,7 @@ export const planLabel = (r: SalesDocumentSummary) =>
 /** What approving locks in: the plan, and the amount (GST included) of one instalment of it. */
 export function approveMessage(q: SalesDocumentSummary): string {
   const plan = billingPeriod(q.billingPeriod);
-  const each = instalmentTotals(q.subTotal, plan.count, !((q.igst || 0) > 0)).grandTotal;
+  const each = instalmentTotals(q.subTotal, plan, !((q.igst || 0) > 0), amountBasis(q)).grandTotal;
   const per = plan.count === 1 ? 'for the full year' : `per ${plan.each}`;
   return `${q.documentNumber} will be approved for the ${plan.label} plan — ₹${money(each)} ${per} including GST. `
     + 'The plan and amount can’t be changed afterwards, and the purchase order and invoice will be raised for this amount.';

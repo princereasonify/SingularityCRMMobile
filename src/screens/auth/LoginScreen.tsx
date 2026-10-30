@@ -493,6 +493,7 @@ export const LoginScreen = ({ navigation, route }: any) => {
       visible={activeField !== null}
       theme={T}
       onKey={handleKey}
+      onPaste={handleKey}
       onBackspace={handleBackspace}
       onSubmit={handleKbSubmit}
       onHide={hideKeyboard}

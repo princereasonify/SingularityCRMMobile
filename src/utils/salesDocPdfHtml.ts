@@ -10,7 +10,7 @@
 import {
   DOC_TYPES, DOC_META, COMPANY, BANK, SAC, CGST_RATE, SGST_RATE, GST_RATE,
   financialYear, displayDate, money, num, DocType, SalesDocData, isIntraStateGst, gstTotalsRows,
-  instalmentRows, billingPeriod, billingLine, INSTALMENT_NOTE,
+  instalmentRows, billingPeriod, billingLine, instalmentNote, amountBasis, quotationTotalLabel,
 } from './salesDocUtils';
 import { ANNEXURE_A, annexureValues, fillAnnexure, boldRuns, hasAnnexure } from './annexureA';
 
@@ -81,9 +81,9 @@ const totalsBlock = (doc: SalesDocData, note: string, rows: TotalsRow[]): string
     </table>
   </div>`;
 
-/** The annual quotation split into monthly / quarterly / half-yearly / annual amounts (GST included). */
+/** The quotation's monthly amount scaled to each plan (older quotations: the annual amount split), GST included. */
 const instalmentPlan = (doc: SalesDocData): string => {
-  const rows = instalmentRows(doc.qty, doc.rate, isIntraStateGst(doc.school));
+  const rows = instalmentRows(doc.qty, doc.rate, isIntraStateGst(doc.school), amountBasis(doc));
   const chosen = billingPeriod(doc.billingPeriod).key;
   const bold = (on: boolean, text: string) => (on ? `<b>${esc(text)}</b>` : esc(text));
   return `
@@ -97,7 +97,7 @@ const instalmentPlan = (doc: SalesDocData): string => {
           return [bold(on, r.label), bold(on, money(r.total)), on ? '<b>Selected</b>' : ''];
         }),
       )}
-      <div class="totals-note-sub">${esc(INSTALMENT_NOTE)}</div>
+      <div class="totals-note-sub">${esc(instalmentNote(doc))}</div>
     </div>`;
 };
 
@@ -170,7 +170,7 @@ function quotationBody(doc: SalesDocData): string {
         `<div><b>SINGULARITY – TEACH Mode</b><div>Teacher Login Subscription (per teacher)</div><div class="italic grey small">Teacher dashboard, classroom teaching tools &amp; content, updates and support for the subscription period.</div></div>`,
         qtyText(doc.qty), esc(money(doc.rate)), esc(money(t.subTotal)), `${GST_RATE}%`]],
     )}
-    ${totalsBlock(doc, 'Note: CGST 9% + SGST 9% applies for schools in Gujarat; IGST 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), 'TOTAL (₹)'))}
+    ${totalsBlock(doc, 'Note: CGST 9% + SGST 9% applies for schools in Gujarat; IGST 18% applies for schools outside Gujarat.', gstTotalsRows(t, isIntraStateGst(doc.school), quotationTotalLabel(doc)))}
     ${instalmentPlan(doc)}
     ${terms([
       'This is a quotation for your consideration and is not a tax invoice or a demand for payment.',

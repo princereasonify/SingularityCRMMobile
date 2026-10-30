@@ -37,6 +37,8 @@ export interface SalesDocumentSummary {
   refOrderNumber?: string;
   /** Quotation: monthly | quarterly | half-yearly | annual — the plan chosen on the form. */
   billingPeriod?: string;
+  /** Quotation: 'monthly' when the form's total is one month's amount; absent/'annual' on older quotations. */
+  amountBasis?: string;
   /** Quotation: 'approved' once its creator approved it (plan + amount are then locked). */
   approvalStatus?: string | null;
   approvedAt?: string;

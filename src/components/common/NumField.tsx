@@ -8,6 +8,7 @@ import { Delete, Check } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
 import { useKeyPress } from './useKeyPress';
+import { ClipChips } from './ClipChips';
 
 /**
  * NumField — a numeric input that opens the app's OWN keypad instead of the OS numpad,
@@ -88,6 +89,30 @@ export const NumField = ({
     return { value: v.slice(0, at.start - 1) + v.slice(at.start), caret: at.start - 1 };
   });
 
+  // The OS keyboard's paste menu never shows over this keypad, so the sheet offers Paste /
+  // Copy itself. Pasted text goes through the same per-key rules as typing, so "₹1,25,000.50"
+  // lands as 125000.50 and anything the field would refuse (a second point, a sign when
+  // negatives are off, digits past maxLength) is dropped rather than inserted.
+  const pasteText = (raw: string) => edit((v, at) => {
+    const body = raw.replace(/[^\d.-]/g, '');
+    let cur = v;
+    let pos: Caret = at;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === '-' && i !== 0) continue; // only a leading minus is a sign
+      const r = applyKeyAt(cur, pos, ch, { allowDecimal, allowNegative, maxLength });
+      cur = r.value;
+      pos = { start: r.caret, end: r.caret };
+    }
+    return { value: cur, caret: pos.start };
+  });
+
+  const copyText = () => {
+    const v = valueRef.current;
+    const c = clampCaret(caret.current, v.length);
+    return c.start !== c.end ? v.slice(c.start, c.end) : v;
+  };
+
   const keys = [
     ['1', '2', '3'],
     ['4', '5', '6'],
@@ -130,7 +155,10 @@ export const NumField = ({
           >
             {/* Value display */}
             <View style={s.display}>
-              {!!label && <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label}</Text>}
+              <View style={s.dispHead}>
+                <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label || ''}</Text>
+                <ClipChips onPaste={pasteText} getCopyText={copyText} />
+              </View>
               {/* Focused, with the OS numpad suppressed — a blurred input shows no caret and
                   cannot be tapped into, which is what limited edits to the end of the number. */}
               <TextInput
@@ -277,7 +305,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingTop: 12,
   },
   display: { paddingHorizontal: 6, paddingBottom: 12, alignItems: 'flex-end' },
-  dispLabel: { fontSize: rf(11.5), fontWeight: '600', marginBottom: 2 },
+  dispHead: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', gap: 8, marginBottom: 4 },
+  dispLabel: { flex: 1, fontSize: rf(11.5), fontWeight: '600' },
   dispValue: { fontSize: rf(30), fontWeight: '800', letterSpacing: -0.5 },
 
   row: { flexDirection: 'row', gap: 8, marginBottom: 8 },

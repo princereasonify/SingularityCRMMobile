@@ -30,7 +30,7 @@ import {
   DOC_TYPES, DOC_META, COMPANY, DocType, SalesDocData,
   emptyDocument, financialYear, computeTotals, money, finalizeDocument, validateDocument,
   isIntraStateGst, gstTotalsRows, amountInWords,
-  instalmentRows, billingPeriod, billingLine, INSTALMENT_NOTE,
+  instalmentRows, billingPeriod, billingLine, instalmentNote, amountBasis, quotationTotalLabel,
   isLegacyNumber, invoiceFieldsFromOrder, orderFieldsFromQuotation, setPath,
 } from '../../utils/salesDocUtils';
 
@@ -95,6 +95,8 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
           const bv = (blank as any)[k];
           if (bv && typeof bv === 'object' && !Array.isArray(bv)) (merged as any)[k] = { ...bv, ...((initial as any)[k] || {}) };
         });
+        // A quotation saved before the monthly basis existed keeps its old annual meaning.
+        if (type === DOC_TYPES.QUOTATION) (merged as any).amountBasis = (initial as any).amountBasis === 'monthly' ? 'monthly' : 'annual';
         if (type === DOC_TYPES.PURCHASE_ORDER && !merged.academicYearOverride?.trim()) {
           merged.academicYearOverride = (initial as any).academicYear || '';
         }
@@ -174,7 +176,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
   const intraState = isIntraStateGst(doc.school);
   const totals = useMemo(() => computeTotals(doc.qty, doc.rate, intraState), [doc.qty, doc.rate, intraState]);
   const finalLabel = type === DOC_TYPES.TAX_INVOICE ? 'GRAND TOTAL (₹)'
-    : type === DOC_TYPES.PURCHASE_ORDER ? 'TOTAL ORDER VALUE (₹)' : 'TOTAL (₹)';
+    : type === DOC_TYPES.PURCHASE_ORDER ? 'TOTAL ORDER VALUE (₹)' : quotationTotalLabel(doc);
 
   const build = (): SalesDocData | null => {
     const errs = validateDocument(type, doc);
@@ -323,7 +325,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         {type === DOC_TYPES.QUOTATION && (
           <Card style={{ marginTop: 12 }}>
             <SectionLabel>Billing plan — amount per instalment (incl. GST)</SectionLabel>
-            {instalmentRows(doc.qty, doc.rate, intraState).map((r) => {
+            {instalmentRows(doc.qty, doc.rate, intraState, amountBasis(doc)).map((r) => {
               const on = r.key === billingPeriod(doc.billingPeriod).key;
               return (
                 <TouchableOpacity key={r.key} activeOpacity={0.7} disabled={approved} onPress={() => set('billingPeriod', r.key)}
@@ -336,7 +338,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
                 </TouchableOpacity>
               );
             })}
-            <Text style={{ color: T.sub, fontSize: rf(11.5), fontStyle: 'italic', marginTop: 8 }}>{INSTALMENT_NOTE}</Text>
+            <Text style={{ color: T.sub, fontSize: rf(11.5), fontStyle: 'italic', marginTop: 8 }}>{instalmentNote(doc)}</Text>
           </Card>
         )}
       </ScrollView>
