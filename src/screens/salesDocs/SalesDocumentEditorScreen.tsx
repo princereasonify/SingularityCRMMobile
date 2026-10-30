@@ -95,8 +95,12 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
           const bv = (blank as any)[k];
           if (bv && typeof bv === 'object' && !Array.isArray(bv)) (merged as any)[k] = { ...bv, ...((initial as any)[k] || {}) };
         });
-        // A quotation saved before the monthly basis existed keeps its old annual meaning.
-        if (type === DOC_TYPES.QUOTATION) (merged as any).amountBasis = (initial as any).amountBasis === 'monthly' ? 'monthly' : 'annual';
+        // Editing an older quotation moves it to the monthly basis (Qty × Rate = one month; the other plans follow
+        // from it). An approved one is locked, so it keeps the meaning its figures were issued with.
+        if (type === DOC_TYPES.QUOTATION) {
+          const wasMonthly = (initial as any).amountBasis === 'monthly';
+          (merged as any).amountBasis = wasMonthly || res.data?.approvalStatus === 'approved' ? (wasMonthly ? 'monthly' : 'annual') : 'monthly';
+        }
         if (type === DOC_TYPES.PURCHASE_ORDER && !merged.academicYearOverride?.trim()) {
           merged.academicYearOverride = (initial as any).academicYear || '';
         }
