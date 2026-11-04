@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import RNShare from 'react-native-share';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Filter, Plus, Phone, MapPin, Upload, FileSpreadsheet, User, Users, GraduationCap, CalendarClock, Eye } from 'lucide-react-native';
@@ -45,6 +46,28 @@ const BULK_RULES = [
   'Duplicates and cap-exceeding rows are skipped; every rejected row is reported below.',
 ];
 
+// Same header + sample rows as web's "Download example CSV", so a user starts from a correctly
+// headered file. Column order is free (the server maps by header name); the second row has no
+// student Email, which is a legal phone-only student.
+const BULK_HEADER = 'StudentName,MobileNumber,Email,ParentName,ParentMobile,ParentEmail,Grade,Board,Medium,SchoolName,Nationality,City,State,Pincode,Source,EnrollmentTimeline,StudentPassword,ParentPassword,ReferralCode';
+const BULK_SAMPLE_ROWS = [
+  'Aarav Sharma,9876543210,aarav@example.com,Rajesh Sharma,9876500000,rajesh@example.com,9,CBSE,English,Delhi Public School,Indian,Mumbai,Maharashtra,400001,Website,ThreeToSixMonths,Aarav@1234,Rajesh@1234,',
+  'Meera Iyer,9876543212,,Lakshmi Iyer,9876500002,lakshmi@example.com,7,CBSE,English,Sunrise Public School,Indian,Pune,Maharashtra,411001,WalkIn,Immediate,Meera@1234,Lakshmi@1234,',
+];
+const shareExampleCsv = async () => {
+  try {
+    const csv = `${BULK_HEADER}\n${BULK_SAMPLE_ROWS.join('\n')}\n`;
+    await RNShare.open({
+      url: `data:text/csv;base64,${btoa(csv)}`,
+      filename: 'b2c-leads-example',
+      title: 'Example leads CSV',
+      failOnCancel: false,
+    });
+  } catch (err: any) {
+    if (err?.message !== 'User did not share') Alert.alert('Could not share', 'The example file could not be opened.');
+  }
+};
+
 const initialsOf = (name?: string) =>
   (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
@@ -80,7 +103,7 @@ export const B2CLeadsListScreen = () => {
   const role = (user as any)?.role;
   const isAdmin = role === 'B2CAdmin';
   // Web parity: canCreate / canUpload = ['B2CAdmin', 'Agent'].
-  const canCreate = role === 'B2CAdmin' || role === 'Agent';
+  const canCreate = role === 'B2CAdmin' || role === 'Agent' || role === 'Counselor';
   const canUpload = role === 'B2CAdmin' || role === 'Agent';
 
   const [leads, setLeads] = useState<B2CLeadListDto[]>([]);
@@ -443,6 +466,10 @@ export const B2CLeadsListScreen = () => {
                 <Text key={rule} style={[s.infoNote, { color: T.dim }]}>{`•  ${rule}`}</Text>
               ))}
             </View>
+            <TouchableOpacity onPress={shareExampleCsv} activeOpacity={0.7} style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: MIN_TAP }}>
+              <FileSpreadsheet size={14} color={T.accent} strokeWidth={ICON_STROKE} />
+              <Text style={{ color: T.accent, fontWeight: '700', fontSize: 12.5 }}>Download example CSV</Text>
+            </TouchableOpacity>
           </View>
 
           <Text style={[s.infoNote, { color: T.dim }]}>Leads will be added to you (max 50 active leads).</Text>

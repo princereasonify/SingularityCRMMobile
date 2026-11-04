@@ -21,7 +21,7 @@ const actionConfig = (T: AppTheme) => ({
 });
 
 export const AuditHistoryScreen = ({ navigation, route }: any) => {
-  const { entityType, entityId, title } = route.params as {
+  const { entityType, entityId, title } = (route.params ?? {}) as {
     entityType: string;
     entityId: number;
     title?: string;

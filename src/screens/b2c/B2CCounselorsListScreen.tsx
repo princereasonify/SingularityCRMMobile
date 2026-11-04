@@ -325,8 +325,8 @@ export const B2CCounselorsListScreen = () => {
               </View>
               {!detail.isActive && <StatusBadge label="Inactive" color={T.danger} />}
             </View>
-            {detail.specializations.length > 0 && (
-              <View style={s.chipWrap}>{detail.specializations.map(sp => <Chip key={sp} label={sp} />)}</View>
+            {(detail.specializations?.length ?? 0) > 0 && (
+              <View style={s.chipWrap}>{(detail.specializations ?? []).map(sp => <Chip key={sp} label={sp} />)}</View>
             )}
             {!!detail.bio && <Text style={[s.bio, { color: T.sub }]}>{detail.bio}</Text>}
             <View style={s.statsRow}>

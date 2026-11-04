@@ -82,7 +82,7 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
                 </View>
               ) : (
                 <View style={{ gap: 8 }}>
-                  {data.upNext.map((row) => (
+                  {(data.upNext ?? []).map((row) => (
                     <TouchableOpacity key={row.id} onPress={() => navigation.navigate('Call Queue')} activeOpacity={0.7} style={[styles.row, { backgroundColor: T.cardAlt }]}>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.rowMain, { color: T.text }]} numberOfLines={1}>{row.studentName}</Text>
@@ -118,7 +118,7 @@ export const B2CCallingDashboardScreen = ({ navigation }: any) => {
                 </View>
               ) : (
                 <View style={{ gap: 8 }}>
-                  {data.recentCalls.map((c) => (
+                  {(data.recentCalls ?? []).map((c) => (
                     // Opens the lead, as web's row does — the natural next step after
                     // seeing what you logged is reviewing (or correcting) that lead.
                     <TouchableOpacity

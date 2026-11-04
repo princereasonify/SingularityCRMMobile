@@ -117,7 +117,7 @@ const emptyEdit = {
 };
 
 export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
-  const { leadId } = route.params;
+  const { leadId } = route.params ?? ({} as any);
   const { user } = useAuth();
   const toast = useToast();
   const T = useAppTheme();
@@ -934,12 +934,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
               <Btn label="Log Activity" variant="soft" small onPress={openActivity} icon={<Clock size={13} color={T.accent} strokeWidth={ICON_STROKE} />} style={s.tap} />
             )}
             {isOwnLead && !isConverted && (
-              <Btn label="Convert" variant="success" small onPress={() => { setConvertForm({ confirmedAmount: '', paymentMode: 'OneTime', firstPaymentDate: '' }); setModal('convert'); }} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} style={s.tap} />
-            )}
-            {/* The full registration wizard keeps its own entry — it is a richer flow than
-                web's quick convert, not a replacement for it. */}
-            {isOwnLead && !isConverted && (
-              <Btn label="Enrollment" variant="secondary" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<GraduationCap size={13} color={T.text} strokeWidth={ICON_STROKE} />} style={s.tap} />
+              <Btn label="Convert" variant="success" small onPress={() => navigation.navigate('B2CConvert', { leadId })} icon={<CheckCircle2 size={13} color="#FFF" strokeWidth={ICON_STROKE} />} style={s.tap} />
             )}
             {(isAdmin || (isAgent && lead.assignedAgentId === user?.id)) && (
               <Btn label="Delete" variant="dangerGhost" small onPress={() => setShowDelete(true)} icon={<Trash2 size={13} color={T.danger} strokeWidth={ICON_STROKE} />} style={s.tap} />

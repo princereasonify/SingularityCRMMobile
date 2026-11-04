@@ -7,11 +7,12 @@
  * supports drawing on a canvas, which mobile doesn't have yet.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RNShare from 'react-native-share';
 import { ArrowLeft, Eye, Save, Download } from 'lucide-react-native';
-import { Btn, Field, Input } from '../../components/crud';
+import { Btn, Field, Input as CrudInput } from '../../components/crud';
 import { Screen, Card, SectionLabel } from '../../components/ui';
 import { DateInput } from '../../components/common/DateInput';
 import { NumField } from '../../components/common/NumField';
@@ -40,9 +41,9 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
   const T = useAppTheme();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  const type: DocType = route?.params?.type;
+  const type: DocType = route?.params?.type ?? DOC_TYPES.PURCHASE_ORDER;
   const docId: string | undefined = route?.params?.docId;
-  const meta = DOC_META[type];
+  const meta = DOC_META[type] ?? DOC_META[DOC_TYPES.PURCHASE_ORDER];
 
   const [doc, setDoc] = useState<SalesDocData>(() => emptyDocument(type));
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
@@ -87,7 +88,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
       .then((res) => {
         if (!alive) return;
         const initial = res.data?.data;
-        if (!initial) return;
+        if (!initial) { Alert.alert('Error', 'Could not open the document.'); navigation.navigate('Purchase Order & Invoice', { type }); return; }
         setApproved(res.data?.approvalStatus === 'approved');
         const blank = emptyDocument(type);
         const merged: SalesDocData = { ...blank, ...initial };
@@ -106,7 +107,10 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         }
         setDoc(merged);
       })
-      .catch((err) => Alert.alert('Error', err?.response?.data?.message || 'Could not open the document.'))
+      .catch((err) => {
+        Alert.alert('Error', err?.response?.data?.message || 'Could not open the document.');
+        navigation.navigate('Purchase Order & Invoice', { type });
+      })
       .finally(() => { if (alive) setLoadingInitial(false); });
     return () => { alive = false; };
   }, [type, docId, resetKey]);
@@ -261,7 +265,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
     setBusy(null);
     // The editor is a hidden drawer screen, so goBack() would land on the first drawer screen
     // (the dashboard) — go straight to the document list instead.
-    navigation.navigate('Purchase Order & Invoice');
+    navigation.navigate('Purchase Order & Invoice', { type });
   };
 
   const Fields = FIELD_SECTIONS[type];
@@ -283,7 +287,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView bottomOffset={90} style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]} keyboardShouldPersistTaps="handled">
         {approved && (
           <View style={[styles.errBanner, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
             <Text style={{ color: T.text, fontSize: rf(12), fontWeight: '600' }}>
@@ -345,7 +349,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
             <Text style={{ color: T.sub, fontSize: rf(11.5), fontStyle: 'italic', marginTop: 8 }}>{instalmentNote(doc)}</Text>
           </Card>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <View style={[styles.footer, { backgroundColor: T.bg, borderTopColor: T.line, paddingBottom: insets.bottom + 10 }]}>
         <Btn label="Preview" variant="secondary" small onPress={preview} loading={busy === 'preview'} disabled={!!busy} icon={<Eye size={14} color={T.text} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} />
@@ -369,6 +373,10 @@ interface FieldsProps {
   quotationBusy: boolean;
   approved?: boolean;
 }
+
+// Every text field in the document editor uses the OS keyboard: it has the paste menu, selection
+// handles, comma and every other punctuation key that addresses and payment terms need.
+const Input = (p: React.ComponentProps<typeof CrudInput>) => <CrudInput native {...p} />;
 
 const QtyRateRow = ({ doc, set, errors, approved }: FieldsProps) => (
   <>
@@ -588,7 +596,7 @@ const TaxInvoiceFields = ({ doc, set, errors, nextSuffix, pickOrder, orderBusy }
       </Card>
 
       <Card style={{ marginTop: 12 }}>
-        <SectionLabel>Teacher Login Subscription (Annual)</SectionLabel>
+        <SectionLabel>Teacher Login Subscription</SectionLabel>
         <QtyRateRow doc={doc} set={set} errors={errors} nextSuffix="" pickOrder={() => {}} orderBusy={false} pickQuotation={() => {}} quotationBusy={false} />
       </Card>
 

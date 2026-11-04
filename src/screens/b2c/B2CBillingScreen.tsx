@@ -144,12 +144,12 @@ export const B2CBillingScreen = () => {
                 </View>
                 <Text style={[s.walletLabel, { color: T.sub }]}>Wallet Balance</Text>
               </View>
-              <Text style={[s.walletBalance, { color: T.text }]}>{wallet ? wallet.balance.toLocaleString('en-IN') : '0'}</Text>
+              <Text style={[s.walletBalance, { color: T.text }]}>{wallet ? Number(wallet.balance ?? 0).toLocaleString('en-IN') : '0'}</Text>
               <Text style={[s.walletSub, { color: T.dim }]}>credits available</Text>
               {!!wallet && (
                 <View style={s.walletMeta}>
-                  <Text style={[s.metaTxt, { color: T.dim }]}>Recharged {wallet.totalRecharged.toLocaleString('en-IN')}</Text>
-                  <Text style={[s.metaTxt, { color: T.dim }]}>Consumed {wallet.totalConsumed.toLocaleString('en-IN')}</Text>
+                  <Text style={[s.metaTxt, { color: T.dim }]}>Recharged {Number(wallet.totalRecharged ?? 0).toLocaleString('en-IN')}</Text>
+                  <Text style={[s.metaTxt, { color: T.dim }]}>Consumed {Number(wallet.totalConsumed ?? 0).toLocaleString('en-IN')}</Text>
                 </View>
               )}
               {!!wallet?.planExpiresAt && (

@@ -97,15 +97,15 @@ export const B2CAdminDashboard = () => {
                 stacked one per row turned a glanceable page into a long scroll with a column
                 of empty space beside it. */}
             <View style={grid.style}>
-              {data.pipeline.length > 0 && (
+              {(data.pipeline?.length ?? 0) > 0 && (
                 <View style={[s.section, { width: grid.widthAt(idxPipe, shownSections) }]}>
                   <SectionHeader
                     title="Pipeline"
-                    total={data.pipeline.length}
+                    total={data.pipeline?.length ?? 0}
                     onViewAll={() => nav.navigate('Pipeline')}
                   />
                   <Card style={s.fillCard}>
-                    {data.pipeline.slice(0, PREVIEW_ROWS).map((p, i) => (
+                    {(data.pipeline ?? []).slice(0, PREVIEW_ROWS).map((p, i) => (
                       <View key={p.stage} style={[s.barRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
                         <View style={s.barTop}>
                           <Text style={[s.rowLabel, { color: T.text }]} numberOfLines={1}>{label(p.stage)}</Text>
@@ -118,15 +118,15 @@ export const B2CAdminDashboard = () => {
                 </View>
               )}
 
-              {data.agentPerformance.length > 0 && (
+              {(data.agentPerformance?.length ?? 0) > 0 && (
                 <View style={[s.section, { width: grid.widthAt(idxAgents, shownSections) }]}>
                   <SectionHeader
                     title="Agent Performance"
-                    total={data.agentPerformance.length}
+                    total={data.agentPerformance?.length ?? 0}
                     onViewAll={() => nav.navigate('Student Leads')}
                   />
                   <Card style={s.fillCard}>
-                    {data.agentPerformance.slice(0, PREVIEW_ROWS).map((a, i) => (
+                    {(data.agentPerformance ?? []).slice(0, PREVIEW_ROWS).map((a, i) => (
                       <View key={a.agentId} style={[s.agentRow, i > 0 && { borderTopColor: T.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
                         {/* Initials, as on the web card — a column of names alone is far harder
                             to scan than a column of faces. */}

@@ -6,7 +6,7 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
-  TextInput,
+  Pressable,
   useWindowDimensions,
   StatusBar,
   Platform,
@@ -21,6 +21,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { AuthHero } from '../../components/common/AuthHero';
 import { GradientButton } from '../../components/common/GradientButton';
 import { ThemeToggle } from '../../components/common/ThemeToggle';
+import { FauxInput } from '../../components/common/FauxInput';
 import { CustomKeyboard, KEYBOARD_PANEL_H } from '../../components/common/CustomKeyboard';
 import { Wordmark, getAuthThemeFor, B2CGreen, withAlpha } from '../../theme';
 import { rf, isTabletDevice } from '../../utils/responsive';
@@ -67,8 +68,6 @@ export const LoginScreen = ({ navigation, route }: any) => {
   const biometricAutoTriggered = useRef(false);   // one-shot guard for the auto-prompt
 
   const scrollRef = useRef<ScrollView>(null);
-  const emailRef = useRef<TextInput>(null);
-  const passwordRef = useRef<TextInput>(null);
 
   type Caret = { start: number; end: number };
   const emailCaret = useRef<Caret>({ start: 0, end: 0 });
@@ -101,11 +100,7 @@ export const LoginScreen = ({ navigation, route }: any) => {
     emailCaret.current = clampCaret(emailCaret.current, v.length);
     setEmail(v);
   };
-  const syncPassword = (v: string) => {
-    passwordValue.current = v;
-    passwordCaret.current = clampCaret(passwordCaret.current, v.length);
-    setPassword(v);
-  };
+
 
   useFocusEffect(
     useCallback(() => {
@@ -211,15 +206,20 @@ export const LoginScreen = ({ navigation, route }: any) => {
       return { value: v.slice(0, c.start - 1) + v.slice(c.start), caret: c.start - 1 };
     });
 
+  // Fields are displays, not TextInputs (see FauxInput): focusing one just makes it the active
+  // target of the in-app keyboard, with the caret at the end of its text.
+  const focusField = (f: 'email' | 'password') => {
+    const len = (f === 'email' ? emailValue.current : passwordValue.current).length;
+    (f === 'email' ? emailCaret : passwordCaret).current = { start: len, end: len };
+    setActiveField(f);
+  };
+
   const hideKeyboard = () => {
     setActiveField(null);
-    emailRef.current?.blur();
-    passwordRef.current?.blur();
   };
   const handleKbSubmit = () => {
     if (activeField === 'email') {
-      passwordRef.current?.focus();
-      setActiveField('password');
+      focusField('password');
     } else {
       hideKeyboard();
       handleLogin();
@@ -337,24 +337,17 @@ export const LoginScreen = ({ navigation, route }: any) => {
             errors.email && { borderColor: T.danger },
           ]}
         >
-          <TextInput
-            ref={emailRef}
-            value={email}
-            onChangeText={syncEmail}
-            // Uncontrolled except for the single render after one of our own edits, which is
-            // what lets the caret be tapped or dragged anywhere in the text. See handleKey.
-            selection={emailSel}
-            onSelectionChange={e => { emailCaret.current = e.nativeEvent.selection; }}
-            onFocus={() => setActiveField('email')}
-            showSoftInputOnFocus={false}
-            caretHidden={false}
-            placeholder="Enter your email"
-            placeholderTextColor={T.dim}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[styles.input, { color: T.text }]}
-          />
+          <Pressable style={{ flex: 1 }} onPress={() => focusField('email')}>
+            <FauxInput
+              value={email}
+              focused={activeField === 'email'}
+              placeholder="Enter your email"
+              textStyle={styles.input}
+              color={T.text}
+              placeholderColor={T.dim}
+              caretColor={T.accentText}
+            />
+          </Pressable>
         </View>
         {!!errors.email && <Text style={[styles.errText, { color: T.danger }]}>{errors.email}</Text>}
       </View>
@@ -370,20 +363,18 @@ export const LoginScreen = ({ navigation, route }: any) => {
             errors.password && { borderColor: T.danger },
           ]}
         >
-          <TextInput
-            ref={passwordRef}
-            value={password}
-            onChangeText={syncPassword}
-            selection={passwordSel}
-            onSelectionChange={e => { passwordCaret.current = e.nativeEvent.selection; }}
-            onFocus={() => setActiveField('password')}
-            showSoftInputOnFocus={false}
-            caretHidden={false}
-            placeholder="Enter password"
-            placeholderTextColor={T.dim}
-            secureTextEntry={!showPwd}
-            style={[styles.input, { color: T.text }]}
-          />
+          <Pressable style={{ flex: 1 }} onPress={() => focusField('password')}>
+            <FauxInput
+              value={password}
+              secure={!showPwd}
+              focused={activeField === 'password'}
+              placeholder="Enter password"
+              textStyle={styles.input}
+              color={T.text}
+              placeholderColor={T.dim}
+              caretColor={T.accentText}
+            />
+          </Pressable>
           <TouchableOpacity
             onPress={() => setShowPwd((v) => !v)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

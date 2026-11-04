@@ -28,7 +28,7 @@ export const SignatureField = ({ value, onChange, label }: Props) => {
   const pick = async () => {
     setBusy(true);
     try {
-      const res = await launchImageLibrary({ mediaType: 'photo', includeBase64: true, quality: 0.8 });
+      const res = await launchImageLibrary({ mediaType: 'photo', includeBase64: true, quality: 0.7, maxWidth: 600, maxHeight: 200 });
       if (res.didCancel) return;
       const asset = res.assets?.[0];
       if (!asset?.base64) {

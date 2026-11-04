@@ -413,28 +413,28 @@ export const B2CCounselorRecordingScreen = ({ route, navigation }: any) => {
               })}
             </Card>
 
-            {feedback.strengths.length > 0 && (
+            {(feedback.strengths?.length ?? 0) > 0 && (
               <Card style={s.cardGap}>
                 <SectionLabel>Strengths</SectionLabel>
-                {feedback.strengths.map((x, i) => (
+                {(feedback.strengths ?? []).map((x, i) => (
                   <Text key={i} style={[s.bullet, { color: T.text }]}>• {x}</Text>
                 ))}
               </Card>
             )}
 
-            {feedback.improvementAreas.length > 0 && (
+            {(feedback.improvementAreas?.length ?? 0) > 0 && (
               <Card style={s.cardGap}>
                 <SectionLabel>Areas to Improve</SectionLabel>
-                {feedback.improvementAreas.map((x, i) => (
+                {(feedback.improvementAreas ?? []).map((x, i) => (
                   <Text key={i} style={[s.bullet, { color: T.text }]}>• {x}</Text>
                 ))}
               </Card>
             )}
 
-            {feedback.suggestedPhrases.length > 0 && (
+            {(feedback.suggestedPhrases?.length ?? 0) > 0 && (
               <Card style={s.cardGap}>
                 <SectionLabel>Suggested Phrases</SectionLabel>
-                {feedback.suggestedPhrases.map((x, i) => (
+                {(feedback.suggestedPhrases ?? []).map((x, i) => (
                   <Text key={i} style={[s.bullet, { color: T.sub }]}>“{x}”</Text>
                 ))}
               </Card>

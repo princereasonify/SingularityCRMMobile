@@ -14,6 +14,6 @@ module.exports = {
   resolver: '<rootDir>/node_modules/react-native-worklets/jest/resolver.js',
   setupFiles: ['<rootDir>/jest.setup.js'],
   transformIgnorePatterns: [
-    'node_modules/(?!(?:.pnpm/)?((jest-)?react-native|@react-native(-community)?|react-native-.*|@react-navigation/.*)/)',
+    'node_modules/(?!(?:.pnpm/)?((jest-)?react-native|@react-native(-community)?|@react-native-firebase/.*|@notifee/.*|@react-native-documents/.*|react-native-.*|@react-navigation/.*)/)',
   ],
 };

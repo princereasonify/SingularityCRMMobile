@@ -242,7 +242,7 @@ function purchaseOrderBody(doc: SalesDocData): string {
     ])}
     ${signatures(
       {
-        heading: `For ${v(lh.schoolName || sc.name, '[School Name]')}`,
+        heading: `For ${lh.schoolName || sc.name || '[School Name]'}`,
         caption: 'Authorised Signatory (Principal / Trustee) & Seal',
         signature: sig.school,
         extra: `<div class="grey small extra">Name: ${v(doc.schoolSignatory?.name, '____________')}&nbsp;&nbsp;Date: ${doc.schoolSignatory?.date ? esc(displayDate(doc.schoolSignatory.date)) : '__________'}</div>`,
@@ -377,6 +377,7 @@ function annexureHtml(type: DocType, doc: SalesDocData, watermarkUri?: string | 
 }
 
 const STYLE = `
+  @page { size: 595pt 842pt; margin: 0; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; margin: 0; padding: 0; }
   /* One printed page (or the start of one). Each sheet carries its own margins and its own logo. */
@@ -406,6 +407,9 @@ const STYLE = `
   .italic { font-style: italic; }
   .small { font-size: 8pt; }
   b { font-weight: 700; }
+  /* Web sets wrap={false} on these; the print engine needs the equivalent so a box, table row or the
+     signature block moves whole to the next page instead of being cut across two. */
+  .box-row, .box, .sign-row, .sign-cell, .totals-wrap, .doc-table tr, .totals-table tr, .terms li, .header { page-break-inside: avoid; break-inside: avoid; }
 
   .header { padding-bottom: 6pt; border-bottom: 2pt solid ${NAVY}; }
   .title-row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }

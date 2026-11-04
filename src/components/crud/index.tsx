@@ -149,6 +149,10 @@ interface InputProps extends TextInputProps {
   right?: React.ReactNode;
   left?: React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
+  /** Use the OS keyboard even for a single-line field — for forms where users copy/paste
+   *  text (Sales Documents): the OS keyboard has the full paste menu, selection handles and
+   *  every punctuation key, which the app's own KeyField sheet does not. */
+  native?: boolean;
 }
 /**
  * Input — the app's single text-field primitive (used in 70+ screens across B2B and B2C).
@@ -161,11 +165,11 @@ interface InputProps extends TextInputProps {
  * containerStyle/keyboardType/secureTextEntry/maxLength/editable/...) behaves the same as
  * before, so no existing call site needs to change.
  */
-export const Input = ({ label, error, right, left, containerStyle, ...p }: InputProps) => {
+export const Input = ({ label, error, right, left, containerStyle, native, ...p }: InputProps) => {
   const T = useAppTheme();
   const [focus, setFocus] = useState(false);
 
-  if (p.multiline) {
+  if (p.multiline || native) {
     return (
       <Field label={label} style={containerStyle}>
         <View

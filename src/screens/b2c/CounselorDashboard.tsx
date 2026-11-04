@@ -73,6 +73,31 @@ export const CounselorDashboard = () => {
             <StatTile style={[st.cell, { width: kpiWidth }]} label="Avg AI Score" value={data.avgAiScore != null ? data.avgAiScore.toFixed(1) : '—'} tint={T.success} icon={<Sparkles size={16} color={T.success} />} />
           </View>
 
+          {/* AI score trend — last 8 sessions, as web's dashboard shows */}
+          <View style={{ marginTop: 18 }}>
+            <SectionHeader title="AI Score Trend" total={(data.scoreTrend || []).length} onViewAll={() => nav.navigate('Recording')} />
+            <Card>
+              {(data.scoreTrend || []).length === 0 ? (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={[st.empty, { color: T.dim, paddingBottom: 6 }]}>No sessions recorded yet</Text>
+                  <Btn label="Start your first session" variant="secondary" small onPress={() => nav.navigate('Recording')} />
+                </View>
+              ) : (
+                (data.scoreTrend || []).slice(-8).map((t, i) => (
+                  <View key={i} style={[st.row, { marginBottom: 8 }]}>
+                    <Text style={[st.sub, { color: T.sub, width: 56, marginTop: 0 }]}>
+                      {t?.date ? new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
+                    </Text>
+                    <View style={{ flex: 1, height: 8, borderRadius: 4, backgroundColor: T.cardAlt }}>
+                      <View style={{ height: 8, borderRadius: 4, backgroundColor: T.accent, width: `${Math.max(0, Math.min(100, Number(t?.score) || 0))}%` }} />
+                    </View>
+                    <Text style={[st.name, { color: T.text, width: 32, textAlign: 'right' }]}>{Number(t?.score) || 0}</Text>
+                  </View>
+                ))
+              )}
+            </Card>
+          </View>
+
           {/* Assigned leads */}
           <View style={{ marginTop: 18 }}>
             <SectionHeader title="Assigned Students" total={(data.assignedLeads || []).length}

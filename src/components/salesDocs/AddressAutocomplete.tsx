@@ -68,6 +68,7 @@ export const AddressAutocomplete = ({ value, onChangeText, onPick, placeholder, 
   return (
     <View style={styles.wrap}>
       <Input
+        native
         label={label}
         value={value}
         onChangeText={(t: string) => { onChangeText(t); search(t); }}

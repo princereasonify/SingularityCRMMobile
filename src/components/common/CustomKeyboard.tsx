@@ -5,6 +5,7 @@ import { Delete, ArrowBigUp, X, ArrowRight, ClipboardPaste } from 'lucide-react-
 import { AuthTheme } from '../../theme';
 import { isTabletDevice } from '../../utils/responsive';
 import { useKeyPress } from './useKeyPress';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { readClipboardLine } from '../../utils/clipboard';
 
 interface Props {
@@ -212,6 +213,8 @@ const Key = ({
   flexAmt?: number;
 }) => {
   const { scale, pressIn, pressOut } = useKeyPress();
+  const T = useAppTheme();
+  const [down, setDown] = useState(false);
 
   // The wrapper carries the flex; the animated child carries the face. Scaling a flex child
   // directly would make the key fight its own row for width on every press.
@@ -223,9 +226,9 @@ const Key = ({
           onPress={onPress}
           // The caller's own press handlers still run — backspace hold-to-repeat is wired
           // through these, so swallowing them would break it.
-          onPressIn={() => { pressIn(); onPressIn?.(); }}
-          onPressOut={() => { pressOut(); onPressOut?.(); }}
-          style={[styles.key, { backgroundColor: bg, height: KEY_H }]}
+          onPressIn={() => { setDown(true); pressIn(); onPressIn?.(); }}
+          onPressOut={() => { setDown(false); pressOut(); onPressOut?.(); }}
+          style={[styles.key, { backgroundColor: down ? T.accent + '55' : bg, height: KEY_H }]}
         >
           {children}
         </TouchableOpacity>

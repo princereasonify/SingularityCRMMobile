@@ -4,7 +4,7 @@
  * everyone's, with web's person/role/zone/region/date filters. The SH/SCA Register lives in
  * SalesRegisterScreen, which reuses the filters exported from here.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -128,7 +128,7 @@ const DOC_TABS: { label: string; value: DocType }[] = [
   { label: 'Quotation', value: DOC_TYPES.QUOTATION },
 ];
 
-export const SalesDocumentsListScreen = ({ navigation }: any) => {
+export const SalesDocumentsListScreen = ({ navigation, route }: any) => {
   const T = useAppTheme();
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -137,7 +137,9 @@ export const SalesDocumentsListScreen = ({ navigation }: any) => {
   const isAdmin = ADMIN_ROLES.includes(user?.role || '');
   const myId = String(user?.id ?? '');
 
-  const [type, setType] = useState<DocType>(DOC_TYPES.PURCHASE_ORDER);
+  const [type, setType] = useState<DocType>(route?.params?.type ?? DOC_TYPES.PURCHASE_ORDER);
+  // Coming back from the editor lands on the tab of the document just saved.
+  useEffect(() => { const t = route?.params?.type; if (t) setType(t); }, [route?.params?.type]);
   const [rows, setRows] = useState<SalesDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

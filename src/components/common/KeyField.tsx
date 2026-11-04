@@ -1,19 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Pressable, StyleProp, ViewStyle,
+  View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, Animated, StyleProp, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Delete, ArrowBigUp, Check } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
 import { ClipChips } from './ClipChips';
+import { useKeyPress } from './useKeyPress';
+import { FauxInput } from './FauxInput';
 
 /**
  * KeyField — a full alphanumeric text field that opens the app's OWN keyboard instead of
  * the OS one, so text entry looks and feels the same everywhere (matching the login screen's
  * keyboard and the numeric NumField). Self-contained like NumField: renders its own themed
  * bottom-sheet keyboard in a transparent Modal, so it drops into any screen with no global
- * provider and no per-input focus wiring. The sheet does mount a real <TextInput> (see the
+ * provider and no per-input focus wiring. The sheet shows the value through FauxInput — NOT a
+ * real TextInput, because a focused TextInput makes iOS draw its Passwords/mic bar over this
+ * keyboard (the old note below describing a focused TextInput is superseded). (see the
  * caret note below), but it is inside the sheet the component owns — callers still wire
  * nothing, and the field face itself is never focusable.
  *
@@ -87,7 +91,6 @@ export const KeyField = ({
   const [mode, setMode] = useState<'letters' | 'symbols'>(numericFirst ? 'symbols' : 'letters');
   const [shift, setShift] = useState(false);
 
-  const inputRef = useRef<TextInput>(null);
   // The value as the PARENT last gave it. `value` is a prop, so a burst of key presses can
   // outrun the re-render that delivers the previous one; reading this instead means each
   // press builds on the last, not on whatever React has committed so far.
@@ -195,31 +198,17 @@ export const KeyField = ({
                 {/* A password is never offered for copying. */}
                 <ClipChips onPaste={pasteText} getCopyText={secureTextEntry ? undefined : copyText} />
               </View>
-              {/* A REAL TextInput, focused, with the OS keyboard suppressed rather than the
-                  field blurred. Blurring is what costs a field its caret and its tap/drag —
-                  an unfocused input draws no cursor and ignores touches on the text. */}
-              <TextInput
-                ref={inputRef}
+              {/* A display, not a TextInput: a focused TextInput makes iOS show its Passwords/mic bar over
+                  this keyboard. Edits already run through caret/valueRef above, so nothing needs OS focus. */}
+              <FauxInput
                 value={value}
-                // Keeps the mirrors true when text arrives from outside our keyboard —
-                // an autofill, a paste, or a hardware keyboard on an iPad.
-                onChangeText={v => {
-                  valueRef.current = v;
-                  caret.current = clampCaret(caret.current, v.length);
-                  onChangeText(v);
-                }}
-                selection={sel}
-                onSelectionChange={e => { caret.current = e.nativeEvent.selection; }}
-                showSoftInputOnFocus={false}
-                caretHidden={false}
-                autoFocus
-                secureTextEntry={secureTextEntry}
+                secure={secureTextEntry}
+                focused={open}
                 placeholder={placeholder}
-                placeholderTextColor={T.dim}
-                autoCapitalize="none"
-                autoCorrect={false}
-                numberOfLines={1}
-                style={[s.dispValue, { color: T.text }]}
+                textStyle={s.dispValue}
+                color={T.text}
+                placeholderColor={T.dim}
+                caretColor={T.accent}
               />
             </View>
 
@@ -277,18 +266,28 @@ export const KeyField = ({
 };
 
 const Key = ({
-  children, onPress, bg, border, flexAmt = 1,
+  children, onPress, bg, border, flexAmt = 1, pressedBg,
 }: {
-  children: React.ReactNode; onPress: () => void; bg: string; border?: string; flexAmt?: number;
-}) => (
-  <TouchableOpacity
-    activeOpacity={0.6}
-    onPress={onPress}
-    style={[s.key, { backgroundColor: bg, borderColor: border ?? 'transparent', flex: flexAmt }]}
-  >
-    {children}
-  </TouchableOpacity>
-);
+  children: React.ReactNode; onPress: () => void; bg: string; border?: string; flexAmt?: number; pressedBg?: string;
+}) => {
+  // Same dip-and-spring (+ Android tick) the other two keyboards use, plus a colour flash while
+  // the finger is down, so a tap is visible even on the key under your thumb.
+  const { scale, pressIn, pressOut } = useKeyPress();
+  const T = useAppTheme();
+  const [down, setDown] = useState(false);
+  return (
+    <Animated.View style={{ flex: flexAmt, transform: [{ scale }] }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => { setDown(true); pressIn(); }}
+        onPressOut={() => { setDown(false); pressOut(); }}
+        style={[s.key, { marginHorizontal: 3, backgroundColor: down ? (pressedBg ?? (T.accent + '55')) : bg, borderColor: down ? T.accent : (border ?? 'transparent') }]}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+};
 
 const s = StyleSheet.create({
   field: { gap: 7 },
@@ -320,7 +319,7 @@ const s = StyleSheet.create({
 
   row: { flexDirection: 'row', justifyContent: 'center', marginVertical: 3.5, paddingHorizontal: 2 },
   key: {
-    marginHorizontal: 3, height: 44, borderRadius: 9, borderWidth: 1,
+    height: 44, borderRadius: 9, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5,
   },
   keyTxt: { fontWeight: '500', fontSize: rf(19) },

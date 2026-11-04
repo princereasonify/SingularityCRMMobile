@@ -90,8 +90,7 @@ const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
  *  hands axios an ArrayBuffer for responseType 'arraybuffer'; RNShare takes the base64 as a
  *  data: URL and writes it to a temp file itself, so the user shares a real .xlsx/.pdf. */
 /* eslint-disable no-bitwise */
-const toBase64 = (buf: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buf);
+const toBase64Slow = (bytes: Uint8Array): string => {
   const out: string[] = [];
   let i = 0;
   for (; i + 2 < bytes.length; i += 3) {
@@ -109,6 +108,25 @@ const toBase64 = (buf: ArrayBuffer): string => {
   return out.join('');
 };
 /* eslint-enable no-bitwise */
+
+/** ArrayBuffer -> base64. Uses the engine's btoa in 24 KB slices (a multiple of 3, so the pieces
+ *  concatenate into valid base64): a few hundred native calls instead of one JS string per 3 bytes,
+ *  which is what made a multi-MB PDF slow and memory-hungry on low-RAM phones. */
+const toBase64 = (buf: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buf);
+  if (typeof btoa !== 'function') return toBase64Slow(bytes);
+  const SLICE = 3 * 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += SLICE) {
+    const slice = bytes.subarray(i, Math.min(i + SLICE, bytes.length));
+    let bin = '';
+    for (let j = 0; j < slice.length; j += 4096) {
+      bin += String.fromCharCode.apply(null, Array.prototype.slice.call(slice, j, j + 4096) as number[]);
+    }
+    parts.push(btoa(bin));
+  }
+  return parts.join('');
+};
 
 /** Same Content-Disposition parse as web's registerExcel. */
 const fileNameFrom = (headers: any, fallback: string) => {

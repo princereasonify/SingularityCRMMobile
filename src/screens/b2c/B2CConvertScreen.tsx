@@ -248,7 +248,8 @@ export const B2CConvertScreen = ({ route, navigation }: any) => {
       });
       const order = res.data;
       if (!order?.paymentUrl) { setError('Could not start payment. Try again.'); return; }
-      Linking.openURL(order.paymentUrl);
+      Linking.openURL(order.paymentUrl).catch(() => setError("Could not open the payment page. Try again."));
+      if (pollRef.current) clearInterval(pollRef.current);
       setOrderId(order.orderId);
       pollRef.current = setInterval(() => runVerify(order.orderId, true), 5000);
     } catch (err: any) {

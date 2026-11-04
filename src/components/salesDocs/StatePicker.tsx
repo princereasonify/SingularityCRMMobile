@@ -41,6 +41,7 @@ export const StatePicker = ({ value, onChange, placeholder = 'Type a state', lab
   return (
     <View style={styles.wrap}>
       <Input
+        native
         label={label}
         value={value}
         onChangeText={(t: string) => { onChange(t); setOpen(true); }}

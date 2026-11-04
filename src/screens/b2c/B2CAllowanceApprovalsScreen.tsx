@@ -214,7 +214,7 @@ export const B2CAllowanceApprovalsScreen = () => {
                       </View>
                       {!!row.userRole && <Text style={[s.sub, { color: T.dim }]} numberOfLines={1}>{row.userRole}</Text>}
                       <Text style={[s.sub, { color: T.sub }]} numberOfLines={1}>
-                        {fmtDate(row.claimDate)} · {row.visitCount} visit{row.visitCount === 1 ? '' : 's'} · {row.distanceKm.toFixed(1)} km
+                        {fmtDate(row.claimDate)} · {row.visitCount} visit{row.visitCount === 1 ? '' : 's'} · {Number(row.distanceKm ?? 0).toFixed(1)} km
                       </Text>
                       <Text style={[s.amount, { color: T.text }]}>{fmtRupee(row.amount)}</Text>
                       {!!row.notes && <Text style={[s.sub, { color: T.dim }]} numberOfLines={2}>{row.notes}</Text>}

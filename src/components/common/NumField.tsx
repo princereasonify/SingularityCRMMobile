@@ -1,13 +1,14 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { FieldLabelContext } from './fieldLabelContext';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Pressable, Animated,
+  View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Delete, Check } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { rf } from '../../utils/responsive';
 import { useKeyPress } from './useKeyPress';
+import { FauxInput } from './FauxInput';
 import { ClipChips } from './ClipChips';
 
 /**
@@ -159,24 +160,16 @@ export const NumField = ({
                 <Text numberOfLines={1} style={[s.dispLabel, { color: T.sub }]}>{label || ''}</Text>
                 <ClipChips onPaste={pasteText} getCopyText={copyText} />
               </View>
-              {/* Focused, with the OS numpad suppressed — a blurred input shows no caret and
-                  cannot be tapped into, which is what limited edits to the end of the number. */}
-              <TextInput
+              {/* A display, not a TextInput: a focused TextInput makes iOS show its Passwords/mic bar over
+                  this keypad. Edits already run through caret/valueRef above. */}
+              <FauxInput
                 value={value}
-                onChangeText={v => {
-                  valueRef.current = v;
-                  caret.current = clampCaret(caret.current, v.length);
-                  onChangeText(v);
-                }}
-                selection={sel}
-                onSelectionChange={e => { caret.current = e.nativeEvent.selection; }}
-                showSoftInputOnFocus={false}
-                caretHidden={false}
-                autoFocus
+                focused={open}
                 placeholder={placeholder || '0'}
-                placeholderTextColor={T.dim}
-                numberOfLines={1}
-                style={[s.dispValue, { color: T.text }]}
+                textStyle={s.dispValue}
+                color={T.text}
+                placeholderColor={T.dim}
+                caretColor={T.accent}
               />
             </View>
 
@@ -221,6 +214,8 @@ const PadKey = ({ children, onPress, bg }: {
   children: React.ReactNode; onPress: () => void; bg: string;
 }) => {
   const { scale, pressIn, pressOut } = useKeyPress();
+  const T = useAppTheme();
+  const [down, setDown] = useState(false);
   return (
     // The wrapper holds the flex; the animated child holds the face, so a press never makes
     // the key fight its row for width.
@@ -229,9 +224,9 @@ const PadKey = ({ children, onPress, bg }: {
         <TouchableOpacity
           activeOpacity={0.6}
           onPress={onPress}
-          onPressIn={pressIn}
-          onPressOut={pressOut}
-          style={[s.key, { backgroundColor: bg }]}
+          onPressIn={() => { setDown(true); pressIn(); }}
+          onPressOut={() => { setDown(false); pressOut(); }}
+          style={[s.key, { backgroundColor: down ? T.accent + '55' : bg }]}
         >
           {children}
         </TouchableOpacity>

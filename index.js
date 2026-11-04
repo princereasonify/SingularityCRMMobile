@@ -5,6 +5,7 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { AppRegistry } from 'react-native';
+import { installGlobalErrorHandler } from './src/utils/globalErrorHandler';
 import App from './App';
 import { name as appName } from './app.json';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,6 +28,8 @@ const isB2CUser = async () => {
     return false;
   }
 };
+
+installGlobalErrorHandler();
 
 // Register FCM background handler — must be called before AppRegistry
 registerBackgroundHandler();
