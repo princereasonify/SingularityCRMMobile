@@ -175,8 +175,13 @@ export const Input = ({ label, error, right, left, containerStyle, native, ...p 
         <View
           style={[
             s.input,
+            // Focus is shown by the border colour ONLY. This used to also add shadow* props while
+            // focused; that changed the box's native view type mid-focus, React Native rebuilt the
+            // view, the TextInput inside lost focus, and Android handed focus to the NEXT field,
+            // which did the same — focus ping-ponged between fields and landed on the wrong one
+            // (tap School Name -> cursor in Address). Never style the focused state with anything
+            // that changes view flattening (shadow*, elevation, opacity, transforms).
             { backgroundColor: T.card, borderColor: error ? T.danger : focus ? T.accent : T.line },
-            focus && !error && { shadowColor: T.accent, shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
           ]}
         >
           {left}

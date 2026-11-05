@@ -3,12 +3,10 @@
  * salesDocs/SalesDocumentEditor.jsx. One screen, one shared save/preview flow; the fields
  * differ per type the same way web's PAPERS[type] does, via the three Fields components below.
  *
- * Signatures are upload-only here (see components/salesDocs/SignatureField) — web also
- * supports drawing on a canvas, which mobile doesn't have yet.
+ * Signatures can be drawn on a pad or uploaded (see components/salesDocs/SignatureField).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RNShare from 'react-native-share';
 import { ArrowLeft, Eye, Save, Download } from 'lucide-react-native';
@@ -287,7 +285,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
         </View>
       </View>
 
-      <KeyboardAwareScrollView bottomOffset={90} style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]} keyboardShouldPersistTaps="handled">
+      <ScrollView automaticallyAdjustKeyboardInsets style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]} keyboardShouldPersistTaps="handled">
         {approved && (
           <View style={[styles.errBanner, { backgroundColor: T.accentSoft, borderColor: T.line }]}>
             <Text style={{ color: T.text, fontSize: rf(12), fontWeight: '600' }}>
@@ -349,7 +347,7 @@ export const SalesDocumentEditorScreen = ({ navigation, route }: any) => {
             <Text style={{ color: T.sub, fontSize: rf(11.5), fontStyle: 'italic', marginTop: 8 }}>{instalmentNote(doc)}</Text>
           </Card>
         )}
-      </KeyboardAwareScrollView>
+      </ScrollView>
 
       <View style={[styles.footer, { backgroundColor: T.bg, borderTopColor: T.line, paddingBottom: insets.bottom + 10 }]}>
         <Btn label="Preview" variant="secondary" small onPress={preview} loading={busy === 'preview'} disabled={!!busy} icon={<Eye size={14} color={T.text} strokeWidth={ICON_STROKE} />} style={{ flex: 1 }} />
