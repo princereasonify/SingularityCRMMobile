@@ -11,6 +11,8 @@ import {
 } from '../../components/crud';
 import { Screen, Card, SectionLabel } from '../../components/ui';
 import { coinIconTone, coinValueTone, coinBalanceText } from '../../components/b2c/CoinBalance';
+import { UsernameField, UserNameStatus, userNameBlocksSave } from '../../components/b2c/UsernameField';
+import { normalizeUserName } from '../../utils/b2cUserName';
 import { launchCamera, Asset } from 'react-native-image-picker';
 import { DateInput } from '../../components/common/DateInput';
 import { b2cLeadService } from '../../api/b2c/b2cLeadService';
@@ -114,6 +116,8 @@ const emptyEdit = {
   // Never prefilled: a masked value here would be indistinguishable from a real one the user
   // meant to keep. Blank means "leave the Reasonify login alone".
   studentPassword: '', parentPassword: '',
+  // Prefilled from the lead. Sent only when it differs from what the lead has now.
+  userName: '',
 };
 
 export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
@@ -225,6 +229,8 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     );
   };
   const [editForm, setEditForm] = useState({ ...emptyEdit });
+  // Live username verdict (see UsernameField). Taken / malformed / still checking holds Save back.
+  const [editUserNameStatus, setEditUserNameStatus] = useState<UserNameStatus>('idle');
   // Scoped by the SERVER: an agent or counselor gets exactly their own code, an admin gets
   // every active one. Same endpoint as the create screen, so the two cannot disagree about
   // who may credit whom.
@@ -431,7 +437,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
       sourceReference: lead.sourceReference || '', notes: lead.notes || '',
       referralCode: lead.referralCode || '',
       studentPassword: '', parentPassword: '',
+      userName: lead.userName || '',
     });
+    setEditUserNameStatus('idle');
     setEditError('');
     setEditDup(null);
     setOpenDd(null);
@@ -653,6 +661,12 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
     }
     const missing = editMissing();
     if (missing) { setEditError(missing); return; }
+    if (userNameBlocksSave(editUserNameStatus)) {
+      setEditError(editUserNameStatus === 'checking'
+        ? 'Hold on — still checking that username.'
+        : 'Choose a different username — the one entered cannot be used.');
+      return;
+    }
     if (editForm.studentPassword && !PASSWORD_RE.test(editForm.studentPassword)) {
       setEditError(`Student password: ${PASSWORD_HINT}.`);
       return;
@@ -704,6 +718,10 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         // sending "" would fail the server's length rule and reject the whole save.
         ...(editForm.studentPassword ? { studentPassword: editForm.studentPassword } : {}),
         ...(editForm.parentPassword ? { parentPassword: editForm.parentPassword } : {}),
+        // Only when it actually changed and is not blank: omitted means "keep the current
+        // username", and a blank box never clears one. Reasonify gets the change too.
+        ...(normalizeUserName(editForm.userName) && normalizeUserName(editForm.userName) !== normalizeUserName(lead?.userName)
+          ? { userName: normalizeUserName(editForm.userName) } : {}),
         // The version this form was opened on — the server refuses (409) if someone (another
         // agent, or a counselor re-scoped onto the same lead) saved since.
         expectedUpdatedAt: lead?.updatedAt,
@@ -799,6 +817,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   }[] = lead ? [
     { icon: <Phone size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Mobile', value: lead.mobileNumber, onPress: () => Linking.openURL(`tel:${lead.mobileNumber}`) },
     { icon: <Mail size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Email', value: lead.email || DASH, onPress: lead.email ? () => Linking.openURL(`mailto:${lead.email}`) : undefined },
+    { icon: <User size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Username', value: lead.userName || DASH },
     { icon: <Users size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Parent', value: lx.parentName || DASH },
     { icon: <GraduationCap size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Standard', value: lx.grade || DASH },
     { icon: <GraduationCap size={15} color={T.dim} strokeWidth={ICON_STROKE} />, label: 'Board', value: lx.board || DASH },
@@ -839,7 +858,9 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
   );
 
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} contentStyle={s.page}>
+    // Pushed on the root stack (no header of its own): the title row is the first thing on screen, so
+    // the screen pays the status-bar / Dynamic Island inset itself.
+    <Screen scroll edges refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} contentStyle={s.page}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity
@@ -1082,6 +1103,11 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
               <View style={{ gap: 12, marginTop: 6 }}>
                 <View style={{ gap: 2 }}>
                   <Text style={[s.credWho, { color: T.dim }]}>Student</Text>
+                  {!!credentials.userName && (
+                    <Text style={[s.credVal, { color: T.text }]} selectable>
+                      Username: {credentials.userName}
+                    </Text>
+                  )}
                   {/* A student with no email of their own signs in with their MOBILE — show
                      that as the username rather than an empty line above the password. */}
                   <Text style={[s.credVal, { color: T.text }]} selectable>
@@ -1560,7 +1586,7 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
         wide
         footer={<>
           <Btn label="Cancel" variant="secondary" onPress={() => setModal(null)} style={{ flex: 1 }} />
-          <Btn label={saving ? 'Saving…' : 'Save Changes'} onPress={handleEdit} loading={saving} disabled={saving || editEmailClash || !editForm.studentName.trim()} style={{ flex: 1 }} />
+          <Btn label={saving ? 'Saving…' : 'Save Changes'} onPress={handleEdit} loading={saving} disabled={saving || editEmailClash || userNameBlocksSave(editUserNameStatus) || !editForm.studentName.trim()} style={{ flex: 1 }} />
         </>}
       >
         <View style={{ gap: 14 }}>
@@ -1660,6 +1686,20 @@ export const B2CLeadDetailScreen = ({ route, navigation }: any) => {
             {editForm.email.trim() ? ' the student and the parent.' : ' the parent (the student has no email of their own).'}
           </Text>
           <View style={s.fieldGrid}>
+            {/* Any role that can edit a lead may set or change this, old leads included. On a lead
+               whose Reasonify account exists the change is pushed there too. */}
+            <View style={{ width: formW as any }}>
+              <UsernameField
+                value={editForm.userName}
+                onChange={v => setEdit('userName', v)}
+                leadId={leadId}
+                currentUserName={lead?.userName}
+                onStatusChange={setEditUserNameStatus}
+                idleHint={lead?.userName
+                  ? 'Leave as is to keep the current username.'
+                  : 'No username yet — set one so the student can use the Username login tab.'}
+              />
+            </View>
             <View style={{ width: formW as any }}>
               <Input
                 label="New Student Password"

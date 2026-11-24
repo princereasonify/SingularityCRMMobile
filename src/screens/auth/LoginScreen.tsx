@@ -171,6 +171,9 @@ export const LoginScreen = ({ navigation, route }: any) => {
   const editActive = (
     mutate: (value: string, caret: Caret) => { value: string; caret: number },
   ) => {
+    // Typing into a field clears its own "… is required" message right away (it used to linger
+    // until the next submit, even with a valid value in the field).
+    if (activeField) setErrors((prev) => (prev[activeField] ? { ...prev, [activeField]: undefined } : prev));
     if (activeField === 'email') {
       const current = emailValue.current;
       const { value, caret } = mutate(current, clampCaret(emailCaret.current, current.length));

@@ -16,6 +16,8 @@ import {
 import { useToast } from '../../context/ToastContext';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useResponsive, MIN_TAP, Responsive } from '../../hooks/useResponsive';
+import { UsernameField, UserNameStatus, userNameBlocksSave } from '../../components/b2c/UsernameField';
+import { normalizeUserName } from '../../utils/b2cUserName';
 
 // Web parity: source enum names are shown spaced (GoogleAds → "Google Ads").
 const sourceLabel = (s: string) => s.replace(/([A-Z])/g, ' $1').trim();
@@ -36,6 +38,8 @@ const emptyForm = {
   // reports and filters read those, the registration call reads the ids.
   reasonifyBoardId: '', reasonifyLanguageId: '', reasonifyGradeId: '',
   studentPassword: '', parentPassword: '',
+  // Optional. Blank → Reasonify generates one and it comes back on the lead.
+  userName: '',
   area: '', city: '', state: '', pincode: '',
   enrollmentTimeline: 'Immediate' as B2CEnrollmentTimeline,
   source: 'Website' as B2CLeadSource,
@@ -68,6 +72,9 @@ export const B2CAddLeadScreen = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState(emptyForm);
+  // Live username verdict (see UsernameField). Taken / malformed / still checking holds Create back.
+  const [userNameStatus, setUserNameStatus] = useState<UserNameStatus>('idle');
+  const userNameBlocked = userNameBlocksSave(userNameStatus);
 
   // Referral codes this user may credit. The server decides what the list holds — an agent or
   // counselor gets exactly their own, a B2CAdmin gets every active one — so the form never has
@@ -211,6 +218,12 @@ export const B2CAddLeadScreen = () => {
 
   const submit = async () => {
     if (submitBlocked || !validate()) return;
+    if (userNameBlocked) {
+      toast.error(userNameStatus === 'checking'
+        ? 'Hold on — still checking that username.'
+        : 'Choose a different username — the one entered cannot be used.');
+      return;
+    }
     setLoading(true);
     try {
       const payload: CreateB2CLeadRequest = {
@@ -229,6 +242,7 @@ export const B2CAddLeadScreen = () => {
         reasonifyGradeId: Number(form.reasonifyGradeId),
         studentPassword: form.studentPassword,
         parentPassword: form.parentPassword,
+        userName: normalizeUserName(form.userName) || null,
         area: form.area.trim() || null,
         city: form.city.trim(),
         state: form.state.trim(),
@@ -273,7 +287,9 @@ export const B2CAddLeadScreen = () => {
   );
 
   return (
-    <Screen scroll contentStyle={s.page}>
+    // Pushed on the root stack, which has no header of its own — the screen's title row sits at
+    // the very top, so it pays the status-bar / Dynamic Island inset itself.
+    <Screen scroll edges contentStyle={s.page}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity
@@ -364,6 +380,9 @@ export const B2CAddLeadScreen = () => {
         <View style={s.grid}>
           <Input label="Student Password *" value={form.studentPassword} onChangeText={v => set('studentPassword', v)} error={errors.studentPassword} secureTextEntry autoCapitalize="none" placeholder={PASSWORD_HINT} containerStyle={{ width: colW as any }} />
           <Input label="Parent Password *" value={form.parentPassword} onChangeText={v => set('parentPassword', v)} error={errors.parentPassword} secureTextEntry autoCapitalize="none" placeholder={PASSWORD_HINT} containerStyle={{ width: colW as any }} />
+          {/* The student's own login name for Reasonify's Username tab. Optional — left blank,
+             Reasonify makes one, and it is shown on the lead afterwards. */}
+          <UsernameField value={form.userName} onChange={v => set('userName', v)} onStatusChange={setUserNameStatus} containerStyle={{ width: colW as any }} />
         </View>
       </Card>
 
@@ -417,7 +436,7 @@ export const B2CAddLeadScreen = () => {
 
       <View style={s.footerActions}>
         <Btn label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={{ flex: 1 }} />
-        <Btn label="Create Lead" onPress={submit} loading={loading} disabled={submitBlocked || emailClash || !form.referralCode} style={{ flex: 1 }} />
+        <Btn label="Create Lead" onPress={submit} loading={loading} disabled={submitBlocked || emailClash || userNameBlocked || !form.referralCode} style={{ flex: 1 }} />
       </View>
     </Screen>
   );

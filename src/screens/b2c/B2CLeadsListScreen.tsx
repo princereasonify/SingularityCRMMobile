@@ -38,21 +38,22 @@ const BULK_REQUIRED = [
   'Nationality', 'Pincode',
   'StudentPassword', 'ParentPassword',
 ];
-const BULK_OPTIONAL = ['City', 'State', 'Source', 'EnrollmentTimeline'];
+const BULK_OPTIONAL = ['City', 'State', 'Source', 'EnrollmentTimeline', 'UserName'];
 const BULK_RULES = [
   "Board, Medium and Grade must match Reasonify's own lists by name.",
   'Student and parent emails must differ — each gets its own Reasonify login.',
   'Both passwords: 8-16 chars with an uppercase letter, a number and a special character.',
+  "UserName is the student's login name (3-30 letters, numbers, . _ -; no @). Leave it blank and one is created as firstnamelastname123, counted up (…124) if taken. A name you write that is already in use rejects that row.",
   'Duplicates and cap-exceeding rows are skipped; every rejected row is reported below.',
 ];
 
 // Same header + sample rows as web's "Download example CSV", so a user starts from a correctly
 // headered file. Column order is free (the server maps by header name); the second row has no
 // student Email, which is a legal phone-only student.
-const BULK_HEADER = 'StudentName,MobileNumber,Email,ParentName,ParentMobile,ParentEmail,Grade,Board,Medium,SchoolName,Nationality,City,State,Pincode,Source,EnrollmentTimeline,StudentPassword,ParentPassword,ReferralCode';
+const BULK_HEADER = 'StudentName,MobileNumber,Email,ParentName,ParentMobile,ParentEmail,Grade,Board,Medium,SchoolName,Nationality,City,State,Pincode,Source,EnrollmentTimeline,StudentPassword,ParentPassword,ReferralCode,UserName';
 const BULK_SAMPLE_ROWS = [
-  'Aarav Sharma,9876543210,aarav@example.com,Rajesh Sharma,9876500000,rajesh@example.com,9,CBSE,English,Delhi Public School,Indian,Mumbai,Maharashtra,400001,Website,ThreeToSixMonths,Aarav@1234,Rajesh@1234,',
-  'Meera Iyer,9876543212,,Lakshmi Iyer,9876500002,lakshmi@example.com,7,CBSE,English,Sunrise Public School,Indian,Pune,Maharashtra,411001,WalkIn,Immediate,Meera@1234,Lakshmi@1234,',
+  'Aarav Sharma,9876543210,aarav@example.com,Rajesh Sharma,9876500000,rajesh@example.com,9,CBSE,English,Delhi Public School,Indian,Mumbai,Maharashtra,400001,Website,ThreeToSixMonths,Aarav@1234,Rajesh@1234,,aarav.sharma',
+  'Meera Iyer,9876543212,,Lakshmi Iyer,9876500002,lakshmi@example.com,7,CBSE,English,Sunrise Public School,Indian,Pune,Maharashtra,411001,WalkIn,Immediate,Meera@1234,Lakshmi@1234,,',
 ];
 const shareExampleCsv = async () => {
   try {
@@ -360,6 +361,12 @@ export const B2CLeadsListScreen = () => {
                          be dropped by truncation without losing the sense of the line. */}
                       <Text style={[s.sub, { color: T.dim, flexShrink: 1 }]} numberOfLines={1}>{[lead.area, lead.city, lead.pincode].filter(Boolean).join(', ') || DASH}</Text>
                     </View>
+                    {!!lead.userName && (
+                      <View style={s.subRow}>
+                        <User size={10} color={T.dim} strokeWidth={ICON_STROKE} />
+                        <Text style={[s.sub, { color: T.dim, flexShrink: 1 }]} numberOfLines={1}>{lead.userName}</Text>
+                      </View>
+                    )}
                     {(lead.grade || lead.board) && (
                       <View style={s.subRow}>
                         <GraduationCap size={10} color={T.dim} strokeWidth={ICON_STROKE} />

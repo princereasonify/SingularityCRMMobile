@@ -12,6 +12,7 @@ import {
   B2CBulkJobDto,
   B2CLookupOption,
   B2CLeadCredentialsDto,
+  B2CUserNameAvailabilityDto,
 } from '../../types/b2c';
 
 /**
@@ -129,6 +130,17 @@ export const b2cLeadService = {
    */
   getCredentials: (id: number) =>
     apiClient.get<B2CLeadCredentialsDto>(`${BASE}/${id}/credentials`),
+
+  /**
+   * Live availability of a login username, checked against Reasonify's whole account table.
+   * `leadId` is the lead being edited so its own current username is not reported as taken.
+   * Always resolves 200 — read `reason`. `signal` lets the caller cancel a stale request.
+   */
+  checkUserName: (userName: string, leadId?: number, signal?: AbortSignal) =>
+    apiClient.get<B2CUserNameAvailabilityDto>(`${BASE}/username-available`, {
+      params: { userName, leadId },
+      signal,
+    }),
 
   // Reasonify's Board/Language/Grade lookups, proxied server-side. The lead form's cascading
   // dropdowns need Reasonify's real numeric ids — its registration call takes a GradeId, not

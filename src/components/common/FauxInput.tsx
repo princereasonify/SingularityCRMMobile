@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleProp, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { Animated, Easing, StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 
 /**
  * The value display for the app's OWN keyboards (KeyField, NumField, the login keyboard).
@@ -43,14 +43,22 @@ export const FauxInput = ({
   }, [focused, blink]);
 
   const shown = secure ? '•'.repeat(value.length) : value;
+  // Callers pass a TextInput-style `flex: 1` (LoginScreen.styles.input). On a <Text> that stretches
+  // it across the whole row, so the caret — drawn right after it — lands at the far edge, under the
+  // password eye icon, instead of right after the last character. Strip the flex props so the Text
+  // is only as wide as its content; flexShrink:1 below still lets a long value shrink to fit.
+  const { flex: _f, flexGrow: _g, flexShrink: _s, flexBasis: _b, ...textOnly } = (StyleSheet.flatten(textStyle) || {}) as TextStyle;
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', flex: 1, overflow: 'hidden' }, style]}>
+    // `flex: 1` alone collapses to ZERO height inside the keyboard sheets (a column with auto height), which
+    // hid the typed value and the caret there. alignSelf:'stretch' gives full width in any parent, flexGrow
+    // lets it fill a fixed-height row (login), and minHeight guarantees a line is always visible.
+    <View style={[{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', flexGrow: 1, flexShrink: 1, minHeight: 30, overflow: 'hidden' }, style]}>
       {shown ? (
-        <Text numberOfLines={1} style={[textStyle, { color, flexShrink: 1 }]}>{shown}</Text>
+        <Text numberOfLines={1} style={[textOnly, { color, flexShrink: 1 }]}>{shown}</Text>
       ) : null}
       <Animated.View style={{ width: 2, height: 20, borderRadius: 1, backgroundColor: caretColor, opacity: blink, marginLeft: shown ? 1 : 0 }} />
       {!shown && placeholder ? (
-        <Text numberOfLines={1} style={[textStyle, { color: placeholderColor, flexShrink: 1, marginLeft: 2 }]}>{placeholder}</Text>
+        <Text numberOfLines={1} style={[textOnly, { color: placeholderColor, flexShrink: 1, marginLeft: 2 }]}>{placeholder}</Text>
       ) : null}
     </View>
   );

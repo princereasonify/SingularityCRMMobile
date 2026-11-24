@@ -123,6 +123,8 @@ export interface B2CLeadListDto {
   nationality?: string | null;
   reasonifySyncStatus?: string | null;
   reasonifyStudentId?: number | null;
+  /** The student's Reasonify login username (null on leads created before usernames existed). */
+  userName?: string | null;
   /**
    * The student's LIVE Reasonify coin balance, read from Reasonify at request time. NULL
    * means "unknown" (no Reasonify account yet, no wallet, or Reasonify didn't answer) —
@@ -248,6 +250,8 @@ export interface B2CLookupOption {
 /** Decrypted student + parent Reasonify login for a lead (GET /b2c/leads/{id}/credentials). */
 export interface B2CLeadCredentialsDto {
   leadId?: number;
+  /** The student's Reasonify login username — null for a lead that never got one. */
+  userName?: string | null;
   /** Blank for a phone-only student — they sign in to Reasonify with studentMobile. */
   studentEmail?: string | null;
   /** The student's Reasonify login when they have no email of their own. */
@@ -322,6 +326,11 @@ export interface CreateB2CLeadRequest {
   reasonifyGradeId: number;
   studentPassword: string;
   parentPassword: string;
+  /**
+   * Optional login username (3-30 chars). Omit/null and Reasonify generates one; the final value
+   * comes back on the lead. A taken or malformed one is refused before the lead is saved.
+   */
+  userName?: string | null;
 
   /**
    * The Agent/Counselor code credited for this student. REQUIRED by the server
@@ -349,6 +358,8 @@ export interface CreateB2CLeadRequest {
  * design: they are captured once at creation and read back through the credentials endpoint.
  */
 export interface UpdateB2CLeadRequest {
+  /** Set or change the login username; sent only when it changed. Pushed to Reasonify. */
+  userName?: string | null;
   studentName?: string;
   parentName?: string | null;
   mobileNumber?: string;
@@ -410,6 +421,15 @@ export interface BulkRowError {
   reason: string;
   studentName?: string | null;
   mobile?: string | null;
+}
+
+/** GET /b2c/leads/username-available — always 200; `reason` carries the verdict. */
+export interface B2CUserNameAvailabilityDto {
+  available: boolean;
+  /** 'unverified' = format is fine but Reasonify could not be asked; re-checked on save. */
+  reason: 'ok' | 'taken' | 'invalid' | 'unverified';
+  message?: string | null;
+  userName?: string | null;
 }
 
 export interface BulkUploadResult {

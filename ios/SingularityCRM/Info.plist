@@ -24,6 +24,8 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -33,24 +35,35 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSFaceIDUsageDescription</key>
-	<string>SingularityCRM uses Face ID to let you sign in quickly and securely.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>SingularityCRM needs microphone access to record demo audio and video.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SingularityCRM needs camera access to capture bill photos for expense claims and to record demos.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SingularityCRM needs access to your photo library to attach bill images for expense claims.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>SingularityCRM needs permission to save captured bill photos to your photo library.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SingularityCRM needs your location to track your daily travel for attendance and travel allowance calculation.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>SingularityCRM needs your location at all times to track your travel even when the app is in the background.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SingularityCRM uses Face ID to let you sign in quickly and securely.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SingularityCRM needs your location to track your daily travel for attendance and travel allowance calculation, even when the app is in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>SingularityCRM needs your location at all times to track your travel even when the app is in the background.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SingularityCRM needs your location to track your daily travel for attendance and travel allowance calculation.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SingularityCRM needs microphone access to record demo audio and video.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SingularityCRM needs permission to save captured bill photos to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SingularityCRM needs access to your photo library to attach bill images for expense claims.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpaceGrotesk-Regular.ttf</string>
+		<string>SpaceGrotesk-Medium.ttf</string>
+		<string>SpaceGrotesk-Bold.ttf</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -71,18 +84,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-		<string>fetch</string>
-	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>UIAppFonts</key>
-	<array>
-		<string>SpaceGrotesk-Regular.ttf</string>
-		<string>SpaceGrotesk-Medium.ttf</string>
-		<string>SpaceGrotesk-Bold.ttf</string>
-	</array>
 </dict>
 </plist>
